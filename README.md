@@ -1,9 +1,9 @@
 # rumbo-gui
 
-A desktop front end for rumbo, the agent harness. It opens a
-window on a project, starts `rumbo serve` there, and speaks rumbo's Agent
-Frontend Protocol with it: you give tasks and watch the model answer, call
-tools, and finish.
+A desktop front end for rumbo, the agent harness. It opens a window on a
+project and speaks rumbo's Agent Frontend Protocol with it: you give tasks
+and watch the model answer, call tools, and finish. It starts `rumbo serve`
+itself, or rumbo starts it as a registered front end.
 
 It is built with Rust, [GPUI](https://github.com/zed-industries/zed) and
 [GPUI Kit](https://gpui-kit.com).
@@ -16,6 +16,13 @@ cargo build --release
 
 The binary is `target/release/rumbo-gui`. rumbo itself must be installed
 separately.
+
+To find it among the desktop's applications, install the desktop entry,
+with `Exec` changed to the binary's full path when it is not on `PATH`:
+
+```sh
+install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
+```
 
 ## Use
 
@@ -38,7 +45,7 @@ In the window:
 | Enter | Sends the task. During a run, tells the run what was typed, which it reads before its next request. |
 | Shift-Enter | A new line. |
 | Up, Down | Earlier and later entries, from the first and the last line of the input. |
-| Escape | Cancels the run. |
+| Escape | Gives up a provider's function in progress, else cancels the run. |
 | Ctrl-K | Opens the commands. |
 
 A tool call opens with a click, or with the keyboard, to show the arguments
@@ -56,7 +63,15 @@ the next task.
 The commands are the functions rumbo and the provider describe, found by
 name: a form asks for their parameters, and one that cannot be undone asks
 to be confirmed. Their answers show in the conversation, marked `[host]` or
-`[provider …]`.
+`[provider …]`. A provider's function can talk with the person while it
+works, as a sign-in does: what it says shows in the conversation, and what
+it asks opens a dialog, where a secret answer is not shown and not kept.
+
+The provider and the model in the status bar open the model and the
+options the provider describes, with the values it lists. What is chosen
+there goes with every task started from the window, and is forgotten when
+the provider changes; the `use` command changes the session's own model
+instead.
 
 Closing the window ends the host, as rumbo's protocol says: a run in
 progress is cancelled and recorded. If the host ends on its own, the window
@@ -65,11 +80,18 @@ offers to start it again in the same session.
 rumbo-gui needs a rumbo whose host answers `history`, which tells a
 session's earlier conversation.
 
-## Limits
+## As rumbo's front end
 
-- A provider's function that asks the person something fails for now, and
-  the model and its options are chosen with the `use` command; dialogs for
-  both are still to come.
+rumbo can start rumbo-gui itself, as it starts its terminal UI, giving it
+the protocol on file descriptors 3 and 4:
+
+```sh
+rumbo frontend add gui /path/to/rumbo-gui --attached
+rumbo -f gui "a task"            # or `rumbo config set frontend gui`
+```
+
+The window then belongs to that rumbo: closing it ends rumbo, and when
+rumbo ends, the window closes.
 
 ## Development
 

@@ -47,6 +47,7 @@ pub const SOURCE_PROVIDER: &str = "provider";
 /// JSON-RPC error codes this front end answers with.
 pub const CODE_METHOD_NOT_FOUND: i64 = -32601;
 pub const CODE_INVALID_PARAMS: i64 = -32602;
+pub const CODE_INTERNAL: i64 = -32603;
 
 /// Types of the options and parameters a description lists.
 pub const TYPE_NUMBER: &str = "number";
@@ -80,6 +81,12 @@ pub struct RunParams {
     pub objective: String,
     #[serde(skip_serializing_if = "is_false")]
     pub resume: bool,
+    /// The model for this run, over the one the session uses.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    /// Option values for this run, over the ones the session uses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Json>,
 }
 
 /// How a run ended.
@@ -101,7 +108,22 @@ pub struct SteerParams {
 /// Names the run to cancel by the id of its run request.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelParams {
+    #[serde(skip_serializing_if = "is_zero")]
     pub run: i64,
+    /// A function in progress to give up, by the id of its invoke request.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub invoke: i64,
+}
+
+/// A question the host asks the person for a provider's function.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct AskParams {
+    /// The id of the invoke request of the function that asks.
+    pub invoke: i64,
+    pub text: String,
+    /// The answer is not shown while it is typed, nor kept.
+    pub secret: bool,
 }
 
 /// Tokens of one model response.
@@ -160,6 +182,10 @@ pub struct Parameter {
     pub description: String,
     #[serde(rename = "enum")]
     pub choices: Vec<String>,
+    /// The function of the provider that lists the accepted values.
+    pub values: String,
+    /// The value in force when none is chosen, for display.
+    pub default: Option<Json>,
     pub optional: bool,
 }
 
@@ -201,18 +227,31 @@ pub struct Value {
     pub description: String,
 }
 
+/// The answer of a function that lists the values an option accepts.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ValuesResult {
+    pub values: Vec<Value>,
+}
+
 /// What the provider of the current session offers.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct DescribeResult {
     pub provider: String,
+    /// The model and option values a run uses unless it says otherwise.
     pub model: String,
+    pub options: Option<Json>,
     pub offers: Description,
 }
 
+/// What a provider says can be chosen and asked of it.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Description {
+    /// How a model is chosen; its name is ignored.
+    pub model: Option<Parameter>,
+    pub options: Vec<Parameter>,
     pub functions: Vec<Function>,
 }
 
@@ -248,6 +287,10 @@ impl std::error::Error for RpcError {}
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn is_zero(value: &i64) -> bool {
+    *value == 0
 }
 
 #[cfg(test)]
@@ -315,12 +358,25 @@ mod tests {
     fn leaves_out_what_a_run_does_not_say() {
         let objective = RunParams {
             objective: "add a flag".into(),
-            resume: false,
+            ..RunParams::default()
         };
         let resume = RunParams {
-            objective: String::new(),
             resume: true,
+            ..RunParams::default()
         };
+        let chosen = RunParams {
+            objective: "go".into(),
+            model: "m".into(),
+            options: Some(serde_json::json!({"effort": "high"})),
+            ..RunParams::default()
+        };
+        let cancel = CancelParams { run: 0, invoke: 4 };
+
+        assert_eq!(
+            serde_json::to_string(&chosen).unwrap(),
+            r#"{"objective":"go","model":"m","options":{"effort":"high"}}"#
+        );
+        assert_eq!(serde_json::to_string(&cancel).unwrap(), r#"{"invoke":4}"#);
 
         assert_eq!(
             serde_json::to_string(&objective).unwrap(),

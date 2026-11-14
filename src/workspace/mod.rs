@@ -7,8 +7,10 @@
 //! again.
 
 mod palette;
+mod picker;
 mod rows;
 mod sidebar;
+mod talk;
 
 use std::collections::{HashMap, HashSet};
 
@@ -30,15 +32,15 @@ use gpui_kit::{
 };
 use serde_json::Value as Json;
 
+use crate::choices::Choices;
 use crate::commands::{self, Command};
 use crate::connection::Incoming;
 use crate::conversation::{Change, Conversation, ItemId, Kind, Source};
 use crate::history::History;
 use crate::host::Host;
 use crate::protocol::{
-    self, CODE_INVALID_PARAMS, CancelParams, DescribeResult, Event, Function, HistoryParams,
-    HistoryResult, HostResult, HostState, InvokeParams, RpcError, RunParams, RunResult,
-    SteerParams, Value,
+    self, CancelParams, DescribeResult, Event, Function, HistoryParams, HistoryResult, HostResult,
+    HostState, InvokeParams, RpcError, RunParams, RunResult, SteerParams, Value, ValuesResult,
 };
 use crate::usage::Spent;
 
@@ -79,6 +81,10 @@ enum Pending {
     Sessions,
     /// What the provider offers, for the palette.
     Describe,
+    /// What the provider offers, for the picker of the model and options.
+    Picker,
+    /// A list the provider gives for a row of the picker.
+    Values(usize),
     /// A function called for the person. A quiet one, such as opening a
     /// session from the sidebar, says nothing in the conversation unless
     /// it fails.
@@ -140,6 +146,12 @@ pub struct Workspace {
     provider_functions: Result<Vec<Function>, String>,
     composer: Entity<TextareaState>,
     palette: Entity<CommandState>,
+    /// The model and options chosen for the runs started from this window.
+    choices: Choices,
+    /// The picker being made, while the provider's lists arrive.
+    picking: Option<picker::Picking>,
+    /// The provider's function in progress, called from this window.
+    talking: Option<talk::Talking>,
     history: History,
     /// A passing word for the person, shown in the status bar.
     notice: Option<String>,
@@ -202,6 +214,9 @@ impl Workspace {
             provider_functions: Ok(Vec::new()),
             composer,
             palette,
+            choices: Choices::default(),
+            picking: None,
+            talking: None,
             history: History::default(),
             notice: None,
             ended: None,
@@ -369,11 +384,13 @@ impl Workspace {
     /// Starts a run in the current session.
     fn start(
         &mut self,
-        params: RunParams,
+        mut params: RunParams,
         label: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.choices.apply(&mut params);
+
         let Some(id) = self.request(protocol::METHOD_RUN, &params, Pending::Run) else {
             return;
         };
@@ -392,7 +409,14 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Gives up the provider's function in progress, else cancels the run
+    /// of the session shown, as rumbo's terminal UI does with Ctrl-C.
     fn cancel(&mut self, _: &CancelRun, _: &mut Window, cx: &mut Context<Self>) {
+        if self.talking.is_some() {
+            self.give_up(cx);
+            return;
+        }
+
         let Some(run) = self.views.get(&self.current).and_then(|view| view.run) else {
             return;
         };
@@ -400,7 +424,7 @@ impl Workspace {
         if let Err(error) = self
             .host
             .connection
-            .notify(protocol::METHOD_CANCEL, CancelParams { run })
+            .notify(protocol::METHOD_CANCEL, CancelParams { run, invoke: 0 })
         {
             self.notice = Some(format!("The cancel could not reach the host: {error}"));
         } else {
@@ -429,7 +453,7 @@ impl Workspace {
             quiet,
         };
 
-        self.request(
+        let called = self.request(
             protocol::METHOD_INVOKE,
             InvokeParams {
                 name: command.function.name.clone(),
@@ -438,6 +462,15 @@ impl Workspace {
             },
             pending,
         );
+
+        // A function of the provider may talk with the person while it
+        // works; it is followed until it answers.
+        if let (Some(invoke), Source::Provider) = (called, command.source) {
+            self.talking = Some(talk::Talking {
+                invoke,
+                name: command.function.name.clone(),
+            });
+        }
 
         cx.notify();
     }
@@ -513,15 +546,7 @@ impl Workspace {
 
             Incoming::Event(event) => self.event(*event, window, cx),
 
-            // No provider function of this window talks with the person
-            // yet, so a question can be for none it follows.
-            Incoming::Ask { id, .. } => {
-                let _ = self.host.connection.refuse(
-                    id,
-                    CODE_INVALID_PARAMS,
-                    "this front end is not following that function, so it cannot answer for it",
-                );
-            }
+            Incoming::Ask { id, params } => self.asked(id, params, window, cx),
 
             Incoming::Closed => self.closed(window, cx),
         }
@@ -575,6 +600,26 @@ impl Workspace {
 
                     Err(error) => Err(error.message),
                 };
+            }
+
+            Pending::Picker => {
+                let described = answer
+                    .map(|result| serde_json::from_value(result).unwrap_or_default())
+                    .map_err(|error| error.message);
+
+                self.described_for_picker(described, window, cx);
+            }
+
+            Pending::Values(row) => {
+                let listed = answer
+                    .map(|result| {
+                        let listed: ValuesResult =
+                            serde_json::from_value(result).unwrap_or_default();
+                        listed.values
+                    })
+                    .map_err(|error| error.message);
+
+                self.listed_for_picker(row, listed, window, cx);
             }
 
             Pending::Call {
@@ -701,6 +746,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if source == Source::Provider
+            && self
+                .talking
+                .as_ref()
+                .is_some_and(|talking| talking.name == name)
+        {
+            self.talking = None;
+            self.notice = None;
+        }
+
         let (text, failed) = match (answer, source) {
             (Err(error), _) => (error.message, true),
 
@@ -745,8 +800,10 @@ impl Workspace {
             self.dir = state.dir;
         }
 
+        // What was chosen and described was for the provider in use.
         if state.provider != self.provider {
             self.provider_functions = Ok(Vec::new());
+            self.choices = Choices::default();
             self.describe();
         }
 
@@ -841,6 +898,13 @@ impl Workspace {
     }
 
     fn closed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The rumbo that started this window is gone, and cannot be started
+        // again from here.
+        if self.host.is_attached() {
+            cx.quit();
+            return;
+        }
+
         let said = self.host.stderr();
 
         self.ended = Some(if said.is_empty() {
@@ -933,8 +997,10 @@ impl Workspace {
             return v_flex()
                 .flex_1()
                 .min_h_0()
+                .px_8()
                 .items_center()
                 .justify_center()
+                .text_center()
                 .gap_1()
                 .child(div().text_lg().child("What should rumbo do?"))
                 .child(
@@ -1043,13 +1109,21 @@ impl Workspace {
 
     fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let view = self.views.get(&self.current);
+        let model = if self.choices.model.is_empty() {
+            &self.model
+        } else {
+            &self.choices.model
+        };
         let working = view.is_some_and(|view| view.run.is_some());
         let waiting = self.steers_waiting();
         let elsewhere = self.working_elsewhere();
 
-        let state = match (&self.ended, &self.notice) {
-            (Some(ended), _) => ended.clone(),
-            (None, Some(notice)) => notice.clone(),
+        let state = match (&self.ended, &self.notice, &self.talking) {
+            (Some(ended), _, _) => ended.clone(),
+            (None, Some(notice), _) => notice.clone(),
+            (None, None, Some(talking)) => {
+                format!("Waiting for {}; Escape gives it up", talking.name)
+            }
             _ if working && waiting == 1 => "Working; 1 message waits for the next turn".into(),
             _ if working && waiting > 1 => {
                 format!("Working; {waiting} messages wait for the next turn")
@@ -1065,7 +1139,18 @@ impl Workspace {
                     .when(working, |row| row.child(Spinner::new().xsmall()))
                     .child(state),
             )
-            .child(format!("{} · {}", self.provider, self.model));
+            .child(
+                Button::new("model")
+                    .ghost()
+                    .xsmall()
+                    .label(if self.choices.is_empty() {
+                        format!("{} · {}", self.provider, model)
+                    } else {
+                        format!("{} · {} (chosen here)", self.provider, model)
+                    })
+                    .tooltip("Model and options for the tasks started here")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx))),
+            );
 
         if elsewhere > 0 {
             bar = bar.right(format!("{elsewhere} in the background"));

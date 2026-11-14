@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 
 use crate::protocol::{
-    self, CODE_METHOD_NOT_FOUND, Event, InitializeParams, InitializeResult, RpcError,
+    self, AskParams, CODE_METHOD_NOT_FOUND, Event, InitializeParams, InitializeResult, RpcError,
 };
 
 /// What the host sent.
@@ -30,7 +30,7 @@ pub enum Incoming {
     /// Something that happened in a run, or that a provider said.
     Event(Box<Event>),
     /// A question for the person, which `answer` or `refuse` must reply to.
-    Ask { id: i64 },
+    Ask { id: i64, params: AskParams },
     /// The host closed the connection. Nothing follows.
     Closed,
 }
@@ -208,7 +208,10 @@ impl Connection {
             }
 
             (Some(id), Some(method)) if method == protocol::METHOD_ASK => {
-                Some(Incoming::Ask { id })
+                let params =
+                    serde_json::from_value(frame.params.unwrap_or(Json::Null)).unwrap_or_default();
+
+                Some(Incoming::Ask { id, params })
             }
 
             (Some(id), Some(method)) => {
@@ -359,7 +362,7 @@ mod tests {
                 protocol::METHOD_RUN,
                 RunParams {
                     objective: "say hi".into(),
-                    resume: false,
+                    ..RunParams::default()
                 },
             )
             .unwrap();
@@ -413,11 +416,14 @@ mod tests {
 
         host.send(json!({"jsonrpc": "2.0", "id": 9, "method": "ask", "params": {"invoke": 4, "text": "Code?", "secret": true}}));
 
-        let Incoming::Ask { id } = incoming.recv_blocking().unwrap() else {
+        let Incoming::Ask { id, params } = incoming.recv_blocking().unwrap() else {
             panic!("the question did not arrive");
         };
 
-        assert_eq!(id, 9);
+        assert_eq!(
+            (id, params.invoke, params.text.as_str(), params.secret),
+            (9, 4, "Code?", true)
+        );
 
         connection
             .refuse(id, protocol::CODE_INVALID_PARAMS, "no")

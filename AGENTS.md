@@ -18,7 +18,9 @@ must not do. Both live in the rumbo repository.
   order it was sent. Do not split answers from events.
 - **Logic out of views.** What the window shows is built from events in
   plain modules that are tested without GPUI (`conversation`, `usage`,
-  `history`, `commands`). A view draws them and sends requests.
+  `history`, `commands`, `choices`). A view draws them and sends requests.
+- **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
+  Whatever opens first can get those numbers.
 - **No function is known by name** but the host's `sessions`, `open`, and
   `new`, which the sidebar calls. Every other command comes from the
   descriptions the host and the provider give.
@@ -43,12 +45,15 @@ The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, a tool call opened, a steer during a run,
 Escape to cancel, Up and Down in the composer, a session opened with its
 history, a run left working in another session, a command from Ctrl-K with
-a form and one with a confirmation, and closing the window, which must
-leave no `rumbo serve` behind.
+a form and one with a confirmation, the model and options picker and a run
+that uses what it chose, a provider's function that asks a secret, given
+up with Escape, the window started by `rumbo -f gui`, and closing the
+window, which must leave no `rumbo serve` behind.
 
 Run it against rumbo with a provider that needs no model, such as rumbo's
-`examples/provider.py`, and with `RUMBO_DB` pointing at a scratch database,
-so the person's own sessions and settings stay untouched:
+`examples/provider.py`, which also offers a function that asks a question,
+and with `RUMBO_DB` pointing at a scratch database, so the person's own
+sessions and settings stay untouched:
 
 ```sh
 export RUMBO_DB=/tmp/scratch/rumbo.db
@@ -64,3 +69,7 @@ it:
 hyprctl dispatch 'hl.dsp.send_shortcut({mods = "", key = "Return", window = "class:^(rumbo-gui)$"})'
 hyprctl dispatch 'hl.dsp.window.close({window = "class:^(rumbo-gui)$"})'
 ```
+
+Launch only a binary built from the code being checked: `cargo clippy` and
+`cargo test` do not rebuild it, and a build that fails leaves the old one.
+Put a time limit on anything that can open a window and wait.

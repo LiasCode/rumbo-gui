@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=rumbo
+GenericName=Agent harness
+Comment=Give an agent tasks in a project, and follow its work
+Exec=rumbo-gui %f
+Terminal=false
+Categories=Development;
+Keywords=agent;assistant;
+StartupWMClass=rumbo-gui

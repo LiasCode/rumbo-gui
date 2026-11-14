@@ -22,9 +22,19 @@ use super::{OpenPalette, Workspace};
 use crate::commands::{self, Command};
 use crate::conversation::Source;
 
-/// The palette's commands by the section and row the palette gives them.
-/// A row with nothing is a line that explains, not a command.
-type Sections = Rc<Vec<Vec<Option<Command>>>>;
+/// One row of the palette.
+#[derive(Clone)]
+enum Entry {
+    /// A function of the host or of the provider.
+    Function(Command),
+    /// The picker of the model and options, which belongs to this window.
+    Picker,
+    /// Why the provider's functions are not known.
+    Unavailable(String),
+}
+
+/// The palette's rows by the section and row the palette gives them.
+type Sections = Rc<Vec<Vec<Entry>>>;
 
 impl Workspace {
     pub(super) fn open_palette(
@@ -37,33 +47,33 @@ impl Workspace {
             return;
         }
 
-        let host: Vec<Option<Command>> = self
+        let host: Vec<Entry> = self
             .host_functions
             .iter()
             .map(|function| {
-                Some(Command {
+                Entry::Function(Command {
                     source: Source::Host,
                     function: function.clone(),
                 })
             })
             .collect();
 
-        let provider: Vec<Option<Command>> = match &self.provider_functions {
+        let provider: Vec<Entry> = match &self.provider_functions {
             Ok(functions) => functions
                 .iter()
                 .map(|function| {
-                    Some(Command {
+                    Entry::Function(Command {
                         source: Source::Provider,
                         function: function.clone(),
                     })
                 })
                 .collect(),
 
-            Err(_) => vec![None],
+            Err(problem) => vec![Entry::Unavailable(problem.clone())],
         };
 
-        let mut labels = Vec::new();
-        let mut sections = Vec::new();
+        let mut labels = vec!["Window".to_string()];
+        let mut sections = vec![vec![Entry::Picker]];
 
         if !host.is_empty() {
             labels.push("rumbo".to_string());
@@ -77,7 +87,6 @@ impl Workspace {
 
         let sections: Sections = Rc::new(sections);
         let labels = Rc::new(labels);
-        let unavailable = self.provider_functions.clone().err().unwrap_or_default();
         let state = self.palette.clone();
         let workspace = cx.weak_entity();
 
@@ -86,7 +95,6 @@ impl Workspace {
         window.open_dialog(cx, move |dialog, _, _| {
             let sections = sections.clone();
             let labels = labels.clone();
-            let unavailable = unavailable.clone();
             let state = state.clone();
             let workspace = workspace.clone();
 
@@ -94,14 +102,7 @@ impl Workspace {
                 .close_button(false)
                 .p_0()
                 .content(move |content, _, cx| {
-                    content.child(palette(
-                        &state,
-                        &sections,
-                        &labels,
-                        &unavailable,
-                        workspace.clone(),
-                        cx,
-                    ))
+                    content.child(palette(&state, &sections, &labels, workspace.clone(), cx))
                 })
         });
 
@@ -280,7 +281,6 @@ fn palette(
     state: &Entity<CommandState>,
     sections: &Sections,
     labels: &[String],
-    unavailable: &str,
     workspace: WeakEntity<Workspace>,
     cx: &gpui_kit::App,
 ) -> Palette {
@@ -291,26 +291,21 @@ fn palette(
         .w(px(480.));
 
     for (label, section) in labels.iter().zip(sections.iter()) {
-        let items = section.iter().map(|command| match command {
-            Some(command) => {
-                let name = command.function.name.clone();
-                let description = command.function.description.clone();
-                let shown = (name.clone(), description.clone());
+        let items = section.iter().map(|entry| match entry {
+            Entry::Function(command) => item(
+                command.function.name.clone(),
+                command.function.description.clone(),
+                muted,
+            ),
 
-                CommandItem::new()
-                    // Matched by name alone, as rumbo's terminal UI
-                    // completes, so the first match is the one typed.
-                    .label(name)
-                    .child(move |_, _| {
-                        v_flex()
-                            .py_1()
-                            .child(shown.0.clone())
-                            .child(div().text_xs().text_color(muted).child(shown.1.clone()))
-                    })
-            }
+            Entry::Picker => item(
+                "model".into(),
+                "Choose the model and options for the tasks started here".into(),
+                muted,
+            ),
 
-            None => CommandItem::new()
-                .label(format!("Not available: {unavailable}"))
+            Entry::Unavailable(problem) => CommandItem::new()
+                .label(format!("Not available: {problem}"))
                 .disabled(true),
         });
 
@@ -323,14 +318,29 @@ fn palette(
         let chosen = sections
             .get(index.section)
             .and_then(|section| section.get(index.row))
-            .cloned()
-            .flatten();
+            .cloned();
 
         window.close_dialog(cx);
 
-        if let Some(command) = chosen {
-            let _ = workspace.update(cx, |this, cx| this.chose(command, window, cx));
-        }
+        let _ = workspace.update(cx, |this, cx| match chosen {
+            Some(Entry::Function(command)) => this.chose(command, window, cx),
+            Some(Entry::Picker) => this.open_picker(cx),
+            _ => {}
+        });
+    })
+}
+
+/// A row with its name, which is what the search matches, as rumbo's
+/// terminal UI completes, so the first match is the one typed; and what it
+/// does below.
+fn item(name: String, description: String, muted: gpui_kit::Hsla) -> CommandItem {
+    let shown = name.clone();
+
+    CommandItem::new().label(name).child(move |_, _| {
+        v_flex()
+            .py_1()
+            .child(shown.clone())
+            .child(div().text_xs().text_color(muted).child(description.clone()))
     })
 }
 

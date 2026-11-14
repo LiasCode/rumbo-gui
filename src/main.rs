@@ -1,6 +1,8 @@
 //! rumbo-gui is a graphical front end for rumbo. It starts `rumbo serve` in
-//! a project and speaks the Agent Frontend Protocol with it.
+//! a project, or is started by rumbo as a registered front end, and speaks
+//! the Agent Frontend Protocol with it.
 
+mod choices;
 mod commands;
 mod config;
 mod connection;
@@ -15,11 +17,23 @@ mod workspace;
 use gpui_kit::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 
 use crate::config::Parsed;
-use crate::launcher::Launcher;
+use crate::host::Descriptors;
+use crate::launcher::{Launcher, Start};
 
 fn main() {
-    let config = match config::parse(std::env::args().skip(1)) {
-        Ok(Parsed::Open(config)) => config,
+    let start = match config::parse(std::env::args().skip(1)) {
+        Ok(Parsed::Open(config)) => Start::Desktop(config),
+
+        // Taken before the window opens anything that could get their
+        // numbers.
+        Ok(Parsed::Attached) => match Descriptors::take() {
+            Ok(descriptors) => Start::Attached(descriptors),
+
+            Err(message) => {
+                eprintln!("rumbo-gui: {message}");
+                std::process::exit(2);
+            }
+        },
 
         Ok(Parsed::Help) => {
             print!("{}", config::USAGE);
@@ -62,7 +76,7 @@ fn main() {
             };
 
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Launcher::new(config, window, cx))
+                cx.new(|cx| Launcher::new(start, window, cx))
             })
             .expect("the window did not open");
 

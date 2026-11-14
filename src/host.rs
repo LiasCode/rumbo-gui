@@ -1,7 +1,12 @@
-//! Starting `rumbo serve` in a folder, which is how the desktop app reaches a
-//! host: the protocol runs on the host's stdin and stdout.
+//! Reaching a host: starting `rumbo serve` in a folder, as the desktop app
+//! does, with the protocol on the host's stdin and stdout; or attaching to
+//! the rumbo that started this front end, with the protocol on file
+//! descriptors 3 and 4.
 
+use std::fs::{self, File};
 use std::io::{self, Read};
+use std::os::fd::FromRawFd;
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -17,12 +22,46 @@ use crate::protocol::InitializeParams;
 /// stop.
 const KEPT_STDERR: usize = 16 * 1024;
 
-/// A host this front end started, and is attached to.
+/// Where rumbo puts the protocol for a front end it starts.
+const READ_FD: i32 = 3;
+const WRITE_FD: i32 = 4;
+
+/// The protocol rumbo gives a front end it starts, on two pipes.
+pub struct Descriptors {
+    reader: File,
+    writer: File,
+}
+
+impl Descriptors {
+    /// Takes file descriptors 3 and 4, which must be the pipes rumbo made.
+    /// It runs first thing: any file the process opens before could get
+    /// those numbers, and be taken for the protocol.
+    pub fn take() -> Result<Descriptors, String> {
+        let pipes = [READ_FD, WRITE_FD].iter().all(|fd| {
+            fs::metadata(format!("/dev/fd/{fd}")).is_ok_and(|found| found.file_type().is_fifo())
+        });
+
+        if !pipes {
+            return Err("--attached is for rumbo to start this front end, with the protocol on file descriptors 3 and 4. Register it with `rumbo frontend add gui rumbo-gui --attached`, and run `rumbo -f gui` in a project.".into());
+        }
+
+        // SAFETY: both descriptors are open pipes, as checked above, which
+        // rumbo gave this process for the protocol alone, and nothing has
+        // taken them yet.
+        let (reader, writer) = unsafe { (File::from_raw_fd(READ_FD), File::from_raw_fd(WRITE_FD)) };
+
+        Ok(Descriptors { reader, writer })
+    }
+}
+
+/// A host this front end is attached to.
 pub struct Host {
     pub connection: Connection,
     pub initialize: InitializeParams,
     pub incoming: Receiver<Incoming>,
-    process: Arc<Mutex<Child>>,
+    /// The `rumbo serve` this front end started; none when rumbo started
+    /// this front end.
+    process: Option<Arc<Mutex<Child>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
 }
 
@@ -57,7 +96,7 @@ impl Host {
                 connection,
                 initialize,
                 incoming,
-                process,
+                process: Some(process),
                 stderr,
             }),
 
@@ -92,6 +131,28 @@ impl Host {
         }
     }
 
+    /// Attaches to the rumbo that started this front end, as a registered
+    /// one. It blocks until the host has spoken.
+    pub fn attach(descriptors: Descriptors) -> Result<Host, String> {
+        let (connection, initialize, incoming) =
+            Connection::open(descriptors.reader, descriptors.writer)
+                .map_err(|error| format!("rumbo did not start the conversation: {error}"))?;
+
+        Ok(Host {
+            connection,
+            initialize,
+            incoming,
+            process: None,
+            stderr: Arc::default(),
+        })
+    }
+
+    /// Whether rumbo started this front end, rather than the other way
+    /// round. Such a host cannot be started again from here.
+    pub fn is_attached(&self) -> bool {
+        self.process.is_none()
+    }
+
     /// What the host wrote to stderr, such as the reason it stopped.
     pub fn stderr(&self) -> String {
         let kept = self
@@ -107,7 +168,9 @@ impl Host {
     pub fn stop(&self) {
         self.connection.close();
 
-        let process = self.process.clone();
+        let Some(process) = self.process.clone() else {
+            return;
+        };
 
         thread::spawn(move || {
             let _ = process

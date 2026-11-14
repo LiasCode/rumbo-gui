@@ -4,12 +4,16 @@ use std::path::PathBuf;
 
 pub const USAGE: &str = "\
 usage: rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
+       rumbo-gui --attached
 
 Opens a window on a rumbo host working in DIR, or asks for a folder when
 DIR is left out. FLAGS go to `rumbo serve` as they are, such as -c to
 continue the latest session, -s ID for another, -m MODEL, or -single.
 
   --rumbo PATH   the rumbo executable, when it is not on PATH
+  --attached     be the front end rumbo starts: register it with
+                 `rumbo frontend add gui rumbo-gui --attached`, then
+                 run `rumbo -f gui` in a project
 ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,12 +30,26 @@ pub struct Config {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
     Open(Config),
+    /// rumbo started this front end, and gives it the protocol.
+    Attached,
     Help,
 }
 
 /// Reads the arguments after the program's name. A folder that is named
 /// must exist, so a mistake shows before any window opens.
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
+    let args: Vec<String> = args.into_iter().collect();
+
+    if args.iter().any(|arg| arg == "--attached") {
+        if args.len() > 1 {
+            return Err(
+                "--attached takes nothing else: rumbo gives the folder and its flags".into(),
+            );
+        }
+
+        return Ok(Parsed::Attached);
+    }
+
     let mut args = args.into_iter();
     let mut rumbo = PathBuf::from("rumbo");
     let mut dir = None;
@@ -166,5 +184,11 @@ mod tests {
         );
         assert!(parsed(&[".", "."]).unwrap_err().contains("second"));
         assert_eq!(parsed(&["--help"]), Ok(Parsed::Help));
+        assert_eq!(parsed(&["--attached"]), Ok(Parsed::Attached));
+        assert!(
+            parsed(&["--attached", "."])
+                .unwrap_err()
+                .contains("nothing else")
+        );
     }
 }

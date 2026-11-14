@@ -42,7 +42,7 @@ pub fn arguments(function: &Function, typed: &[String]) -> Result<Option<Json>, 
 }
 
 /// A typed value as the parameter's type asks for it.
-fn encode(parameter: &Parameter, text: &str) -> Result<Json, String> {
+pub fn encode(parameter: &Parameter, text: &str) -> Result<Json, String> {
     match parameter.kind.as_str() {
         TYPE_BOOLEAN => text
             .parse::<bool>()
