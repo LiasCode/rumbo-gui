@@ -16,8 +16,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 ```
  main ── config ── launcher ──────────────── workspace
                      │                        │   │
-                     │ starts                 │   └─ conversation, usage, history
-                     ▼                        │        (pure; tested without a window)
+                     │ starts                 │   └─ conversation, usage, history,
+                     ▼                        │      commands (pure; tested without a window)
                    host ── connection ◄───────┘
                      │        │  one ordered channel of what the host sent
                      ▼        ▼
@@ -34,13 +34,21 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   host's `initialize`, sends requests and notifications, and delivers
   everything the host sends on one channel, in order. One order matters: a
   run's last events arrive before the answer that ends it.
-- **workspace** (`src/workspace.rs`) is the window attached to a host: the
-  conversation, the composer, and the status bar. It follows the run it
-  started by the id of its run request, and answers what it cannot follow,
-  such as a question for a provider function it never called, with an error.
-- **conversation**, **usage**, and **history** hold what the workspace
-  shows, built from events alone and tested without GPUI: the items of the
-  conversation, the tokens spent, and what was entered in the composer.
+- **workspace** (`src/workspace/`) is the window attached to a host: the
+  sessions in a sidebar, the conversation of the one shown, the composer,
+  the status bar, and the command palette. It keeps a view of each session
+  it has shown, and sends each event to the view of the session it belongs
+  to: the session of the run it names, by the id of the run request, or the
+  session it names. A run in a new session learns the session's id from its
+  first event. A session shown for the first time asks the host for its
+  history, which comes before anything that happens in it after. It answers
+  what it cannot follow, such as a question for a provider function, with
+  an error.
+- **conversation**, **usage**, **history**, and **commands** hold what the
+  workspace shows and asks, built from the protocol's messages alone and
+  tested without GPUI: the items of a conversation, the tokens spent, what
+  was entered in the composer, and the functions of the host and the
+  provider as commands, with their parameters and answers.
 
 ## Threads
 

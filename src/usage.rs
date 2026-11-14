@@ -46,14 +46,16 @@ impl Spent {
     }
 
     /// The tokens spent, counted as rumbo's `status` counts them: input
-    /// written to the cache is input.
+    /// written to the cache is input. What was read from the cache is also
+    /// said as a share of all input.
     pub fn tokens(&self) -> String {
         let input = self.total.input + self.total.cache_write;
+        let cached = match self.cached_share() {
+            Some(share) => format!("{} cached ({share}%)", self.total.cache_read),
+            None => format!("{} cached", self.total.cache_read),
+        };
 
-        format!(
-            "{input} in, {} cached, {} out",
-            self.total.cache_read, self.total.output
-        )
+        format!("{input} in · {cached} · {} out", self.total.output)
     }
 
     /// The share of all input the provider read from its cache, as `status`
@@ -101,7 +103,7 @@ mod tests {
         spent.turn(&turn(10, 5, 0, 90, 105, 0));
         spent.turn(&turn(10, 5, 90, 0, 210, 0));
 
-        assert_eq!(spent.tokens(), "110 in, 90 cached, 10 out");
+        assert_eq!(spent.tokens(), "110 in · 90 cached (45%) · 10 out");
         assert_eq!(spent.cached_share(), Some(45));
         assert_eq!(spent.context(), Some("context 210 tokens".into()));
     }

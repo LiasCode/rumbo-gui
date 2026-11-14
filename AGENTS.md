@@ -18,7 +18,10 @@ must not do. Both live in the rumbo repository.
   order it was sent. Do not split answers from events.
 - **Logic out of views.** What the window shows is built from events in
   plain modules that are tested without GPUI (`conversation`, `usage`,
-  `history`). A view draws them and sends requests.
+  `history`, `commands`). A view draws them and sends requests.
+- **No function is known by name** but the host's `sessions`, `open`, and
+  `new`, which the sidebar calls. Every other command comes from the
+  descriptions the host and the provider give.
 - **GPUI Kit from its source.** Check every API in the crate sources under
   `~/.cargo/registry/src/*/` (`gpui-component-*`, `gpui-base-*`,
   `gpui-pre-*`) or at <https://gpui-kit.com/component/NAME.md> before using
@@ -38,8 +41,10 @@ cargo build --release
 
 The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, a tool call opened, a steer during a run,
-Escape to cancel, Up and Down in the composer, and closing the window,
-which must leave no `rumbo serve` behind.
+Escape to cancel, Up and Down in the composer, a session opened with its
+history, a run left working in another session, a command from Ctrl-K with
+a form and one with a confirmation, and closing the window, which must
+leave no `rumbo serve` behind.
 
 Run it against rumbo with a provider that needs no model, such as rumbo's
 `examples/provider.py`, and with `RUMBO_DB` pointing at a scratch database,

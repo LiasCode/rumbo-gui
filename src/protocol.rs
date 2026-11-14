@@ -20,6 +20,12 @@ pub const METHOD_STEER: &str = "steer";
 pub const METHOD_CANCEL: &str = "cancel";
 pub const METHOD_EVENT: &str = "event";
 pub const METHOD_ASK: &str = "ask";
+pub const METHOD_DESCRIBE: &str = "describe";
+pub const METHOD_INVOKE: &str = "invoke";
+pub const METHOD_HISTORY: &str = "history";
+
+/// The `target` of an invoke that calls a function of the host.
+pub const TARGET_HOST: &str = "host";
 
 pub const EVENT_CONTEXT: &str = "context";
 pub const EVENT_TEXT: &str = "text";
@@ -27,6 +33,9 @@ pub const EVENT_TOOL_STARTED: &str = "tool_started";
 pub const EVENT_TOOL_FINISHED: &str = "tool_finished";
 pub const EVENT_TURN: &str = "turn";
 pub const EVENT_LOG: &str = "log";
+pub const EVENT_OBJECTIVE: &str = "objective";
+pub const EVENT_STEER: &str = "steer";
+pub const EVENT_ENDED: &str = "ended";
 
 pub const RUN_DONE: &str = "done";
 pub const RUN_CANCELLED: &str = "cancelled";
@@ -39,6 +48,10 @@ pub const SOURCE_PROVIDER: &str = "provider";
 pub const CODE_METHOD_NOT_FOUND: i64 = -32601;
 pub const CODE_INVALID_PARAMS: i64 = -32602;
 
+/// Types of the options and parameters a description lists.
+pub const TYPE_NUMBER: &str = "number";
+pub const TYPE_BOOLEAN: &str = "boolean";
+
 /// What the host says it is attached to when it speaks first.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -50,6 +63,8 @@ pub struct InitializeParams {
     pub model: String,
     pub objective: String,
     pub resume: bool,
+    /// What the host itself can be asked, whatever the provider.
+    pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +134,101 @@ pub struct Event {
     pub context: i64,
     pub window: i64,
     pub usage: Option<Usage>,
+    pub status: String,
+}
+
+/// A function of the host or of the provider, which a front end offers
+/// without knowing it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Function {
+    pub name: String,
+    pub description: String,
+    pub params: Vec<Parameter>,
+    /// Set when the function cannot be undone: what to ask the person
+    /// before calling it.
+    pub confirm: String,
+}
+
+/// One value a function takes: a small subset of JSON Schema.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Parameter {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub description: String,
+    #[serde(rename = "enum")]
+    pub choices: Vec<String>,
+    pub optional: bool,
+}
+
+/// Calls a function of the provider, or of the host with `target`.
+#[derive(Debug, Clone, Serialize)]
+pub struct InvokeParams {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Json>,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub target: &'static str,
+}
+
+/// The answer of a function of the host.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct HostResult {
+    pub text: String,
+    pub values: Vec<Value>,
+    pub state: HostState,
+}
+
+/// What the front end is attached to after a function of the host.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct HostState {
+    pub dir: String,
+    pub session: String,
+    pub provider: String,
+    pub model: String,
+}
+
+/// One of the values a function lists.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Value {
+    pub value: String,
+    pub label: String,
+    pub description: String,
+}
+
+/// What the provider of the current session offers.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DescribeResult {
+    pub provider: String,
+    pub model: String,
+    pub offers: Description,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Description {
+    pub functions: Vec<Function>,
+}
+
+/// Asks what a session holds; the current one without `session`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryParams {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub session: String,
+}
+
+/// A session told in events, oldest first.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct HistoryResult {
+    pub session: String,
+    pub events: Vec<Event>,
 }
 
 /// A JSON-RPC error object.
@@ -162,6 +272,42 @@ mod tests {
                 cache_read: 90,
                 cache_write: 0
             })
+        );
+    }
+
+    #[test]
+    fn reads_functions_as_the_host_describes_them() {
+        let line = r#"{"protocol":1,"dir":"/p","provider":"anthropic","model":"m","functions":[
+            {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string"}],"confirm":"Delete it?"},
+            {"name":"status","params":[{"name":"session","optional":true}]}]}"#;
+        let params: InitializeParams = serde_json::from_str(line).unwrap();
+
+        assert_eq!(params.functions.len(), 2);
+        assert_eq!(params.functions[0].confirm, "Delete it?");
+        assert_eq!(params.functions[0].params[0].kind, "string");
+        assert!(params.functions[1].params[0].optional);
+    }
+
+    #[test]
+    fn calls_the_host_only_when_it_says_so() {
+        let provider = InvokeParams {
+            name: "models".into(),
+            params: None,
+            target: "",
+        };
+        let host = InvokeParams {
+            name: "open".into(),
+            params: Some(serde_json::json!({"session": "x"})),
+            target: TARGET_HOST,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&provider).unwrap(),
+            r#"{"name":"models"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&host).unwrap(),
+            r#"{"name":"open","params":{"session":"x"},"target":"host"}"#
         );
     }
 

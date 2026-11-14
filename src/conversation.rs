@@ -51,6 +51,13 @@ pub enum Kind {
         cancelled: bool,
         reason: String,
     },
+    /// What a command answered, or why it failed.
+    Answer {
+        source: Source,
+        command: String,
+        text: String,
+        failed: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +113,16 @@ impl Conversation {
 
             protocol::EVENT_TOOL_FINISHED => self.finish(event),
 
+            // A new objective starts a new run, so the one before is over.
+            protocol::EVENT_OBJECTIVE => {
+                self.settle();
+                self.push(Kind::Task(event.text.clone()))
+            }
+
+            protocol::EVENT_STEER => self.push(Kind::Steer(event.text.clone())),
+
+            protocol::EVENT_ENDED => self.end(&event.status, &event.text),
+
             protocol::EVENT_CONTEXT => self.push(Kind::Context(event.sections.clone())),
 
             protocol::EVENT_LOG => {
@@ -125,17 +142,9 @@ impl Conversation {
         }
     }
 
-    /// Records how a run ended, when it did not finish its task. A tool
-    /// call still open never finishes now, and is marked failed; its row
-    /// keeps its height, so only the change returned needs measuring.
+    /// Records how a run ended, when it did not finish its task.
     pub fn end(&mut self, status: &str, error: &str) -> Change {
-        for item in &mut self.items {
-            if let Kind::Tool(tool) = &mut item.kind
-                && tool.result.is_none()
-            {
-                tool.failed = true;
-            }
-        }
+        self.settle();
 
         match status {
             protocol::RUN_DONE => Change::Nothing,
@@ -148,6 +157,48 @@ impl Conversation {
                 reason: error.to_string(),
             }),
         }
+    }
+
+    /// Marks the tool calls still open as failed: their run is over, so they
+    /// never finish. Their rows keep their height, so nothing needs
+    /// measuring again.
+    pub fn settle(&mut self) {
+        for item in &mut self.items {
+            if let Kind::Tool(tool) = &mut item.kind
+                && tool.is_open()
+            {
+                tool.failed = true;
+            }
+        }
+    }
+
+    /// Puts a session's history before what the conversation holds, and
+    /// returns how many items that added. Every run a history tells is
+    /// over: one in progress started after the history was told.
+    pub fn earlier(&mut self, events: &[Event]) -> usize {
+        let mut told = Conversation::default();
+
+        for event in events {
+            told.apply(event);
+        }
+
+        told.settle();
+
+        let count = told.items.len();
+        let mut items = Vec::with_capacity(count + self.items.len());
+
+        for item in told.items {
+            self.next_id += 1;
+            items.push(Item {
+                id: self.next_id,
+                kind: item.kind,
+            });
+        }
+
+        items.append(&mut self.items);
+        self.items = items;
+
+        count
     }
 
     /// Streams text into the reply at the end, or starts one.
@@ -174,7 +225,7 @@ impl Conversation {
                 .iter_mut()
                 .enumerate()
                 .find_map(|(index, item)| match &mut item.kind {
-                    Kind::Tool(tool) if tool.name == event.name && tool.result.is_none() => {
+                    Kind::Tool(tool) if tool.name == event.name && tool.is_open() => {
                         Some((index, tool))
                     }
                     _ => None,
@@ -188,6 +239,13 @@ impl Conversation {
         tool.failed = event.failed;
 
         Change::Updated(index)
+    }
+}
+
+impl Tool {
+    /// Whether the call may still finish.
+    pub fn is_open(&self) -> bool {
+        self.result.is_none() && !self.failed
     }
 }
 
@@ -400,6 +458,61 @@ mod tests {
         );
         assert!(
             matches!(&conversation.items()[0].kind, Kind::Tool(tool) if tool.failed && tool.result.is_none())
+        );
+    }
+
+    #[test]
+    fn tells_a_history_before_what_happens_now() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("now".into()));
+
+        let history = [
+            event(json!({"type": "objective", "text": "before"})),
+            event(json!({"type": "tool_started", "name": "bash"})),
+            event(json!({"type": "steer", "text": "faster"})),
+            event(json!({"type": "objective", "text": "again"})),
+            event(json!({"type": "text", "text": "done"})),
+            event(json!({"type": "ended", "status": "failed", "text": "no credit"})),
+        ];
+
+        assert_eq!(conversation.earlier(&history), 6);
+
+        let kinds = kinds(&conversation);
+
+        assert_eq!(kinds[0], Kind::Task("before".into()));
+        assert!(matches!(&kinds[1], Kind::Tool(tool) if tool.failed && tool.result.is_none()));
+        assert_eq!(kinds[2], Kind::Steer("faster".into()));
+        assert_eq!(kinds[3], Kind::Task("again".into()));
+        assert_eq!(
+            kinds[5],
+            Kind::Stopped {
+                cancelled: false,
+                reason: "no credit".into()
+            }
+        );
+        assert_eq!(kinds[6], Kind::Task("now".into()));
+
+        let mut ids: Vec<ItemId> = conversation.items().iter().map(|item| item.id).collect();
+        ids.sort();
+        ids.dedup();
+
+        assert_eq!(ids.len(), 7, "every item keeps an id of its own");
+    }
+
+    #[test]
+    fn a_closed_call_takes_no_result() {
+        let mut conversation = Conversation::default();
+
+        conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
+        conversation.end("cancelled", "");
+        conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
+
+        assert_eq!(
+            conversation.apply(&event(
+                json!({"type": "tool_finished", "name": "bash", "result": "ok"})
+            )),
+            Change::Updated(2)
         );
     }
 

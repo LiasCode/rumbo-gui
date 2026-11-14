@@ -39,25 +39,37 @@ In the window:
 | Shift-Enter | A new line. |
 | Up, Down | Earlier and later entries, from the first and the last line of the input. |
 | Escape | Cancels the run. |
+| Ctrl-K | Opens the commands. |
 
 A tool call opens with a click, or with the keyboard, to show the arguments
-the model gave and the result it got back. The status bar shows the
-provider and the model, what is happening, the session, how full the
-model's context is, and the tokens spent, with the share of the input the
+the model gave and the result it got back. The status bar shows what is
+happening, the provider and the model, how full the model's context is,
+and the tokens the session has spent, with the share of the input the
 provider read from its cache.
+
+The sidebar lists the project's sessions. Opening one shows what it holds,
+as if the window had followed every run; a run in the session left behind
+goes on in the background, marked in the sidebar, and its conversation is
+whole when the session is shown again. The `+` starts a new session with
+the next task.
+
+The commands are the functions rumbo and the provider describe, found by
+name: a form asks for their parameters, and one that cannot be undone asks
+to be confirmed. Their answers show in the conversation, marked `[host]` or
+`[provider …]`.
 
 Closing the window ends the host, as rumbo's protocol says: a run in
 progress is cancelled and recorded. If the host ends on its own, the window
 offers to start it again in the same session.
 
+rumbo-gui needs a rumbo whose host answers `history`, which tells a
+session's earlier conversation.
+
 ## Limits
 
-- The window shows what happens while it is open. A session continued with
-  `-c` or `-s` starts with an empty conversation, since the protocol has no
-  way to ask for an earlier one.
-- One session at a time; sessions in the background, the command palette,
-  the model picker, and provider functions that talk with the person are
-  still to come.
+- A provider's function that asks the person something fails for now, and
+  the model and its options are chosen with the `use` command; dialogs for
+  both are still to come.
 
 ## Development
 

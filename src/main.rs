@@ -1,6 +1,7 @@
 //! rumbo-gui is a graphical front end for rumbo. It starts `rumbo serve` in
 //! a project and speaks the Agent Frontend Protocol with it.
 
+mod commands;
 mod config;
 mod connection;
 mod conversation;
