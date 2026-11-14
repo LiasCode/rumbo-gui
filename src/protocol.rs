@@ -1,0 +1,188 @@
+//! The messages of the Agent Frontend Protocol, version 1, as rumbo specifies
+//! them in `docs/frontend-protocol.md` and its Go package `protocol`.
+//!
+//! Only what this front end sends or reads is here. Fields it does not know
+//! are ignored when reading, as the protocol asks, so a newer host still
+//! works.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
+
+/// The protocol version this front end speaks.
+pub const VERSION: i64 = 1;
+
+/// The name this front end gives the host.
+pub const NAME: &str = "rumbo-gui";
+
+pub const METHOD_INITIALIZE: &str = "initialize";
+pub const METHOD_RUN: &str = "run";
+pub const METHOD_STEER: &str = "steer";
+pub const METHOD_CANCEL: &str = "cancel";
+pub const METHOD_EVENT: &str = "event";
+pub const METHOD_ASK: &str = "ask";
+
+pub const EVENT_CONTEXT: &str = "context";
+pub const EVENT_TEXT: &str = "text";
+pub const EVENT_TOOL_STARTED: &str = "tool_started";
+pub const EVENT_TOOL_FINISHED: &str = "tool_finished";
+pub const EVENT_TURN: &str = "turn";
+pub const EVENT_LOG: &str = "log";
+
+pub const RUN_DONE: &str = "done";
+pub const RUN_CANCELLED: &str = "cancelled";
+pub const RUN_FAILED: &str = "failed";
+
+/// The `source` of a log event that is the provider's own output.
+pub const SOURCE_PROVIDER: &str = "provider";
+
+/// JSON-RPC error codes this front end answers with.
+pub const CODE_METHOD_NOT_FOUND: i64 = -32601;
+pub const CODE_INVALID_PARAMS: i64 = -32602;
+
+/// What the host says it is attached to when it speaks first.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct InitializeParams {
+    pub protocol: i64,
+    pub dir: String,
+    pub session: String,
+    pub provider: String,
+    pub model: String,
+    pub objective: String,
+    pub resume: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InitializeResult {
+    pub protocol: i64,
+    pub name: &'static str,
+}
+
+/// Starts a run on `objective`, or continues the session's last one.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RunParams {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub objective: String,
+    #[serde(skip_serializing_if = "is_false")]
+    pub resume: bool,
+}
+
+/// How a run ended.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct RunResult {
+    pub status: String,
+    pub error: String,
+    pub session: String,
+}
+
+/// What the person tells a run while it works.
+#[derive(Debug, Clone, Serialize)]
+pub struct SteerParams {
+    pub run: i64,
+    pub text: String,
+}
+
+/// Names the run to cancel by the id of its run request.
+#[derive(Debug, Clone, Serialize)]
+pub struct CancelParams {
+    pub run: i64,
+}
+
+/// Tokens of one model response.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Usage {
+    pub input: i64,
+    pub output: i64,
+    pub cache_read: i64,
+    pub cache_write: i64,
+}
+
+/// Something that happened in a run. `kind` selects the other fields, as
+/// the protocol's table of event types says.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Event {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub run: i64,
+    pub session: String,
+    pub invoke: i64,
+    pub text: String,
+    pub sections: Vec<String>,
+    pub name: String,
+    pub args: Option<Json>,
+    pub result: String,
+    pub failed: bool,
+    pub source: String,
+    pub context: i64,
+    pub window: i64,
+    pub usage: Option<Usage>,
+}
+
+/// A JSON-RPC error object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RpcError {
+    pub code: i64,
+    pub message: String,
+}
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RpcError {}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_events_with_fields_it_does_not_know() {
+        let line = r#"{"type":"turn","run":7,"session":"4cf0261c","usage":{"input":10,"output":5,"cache_read":90},"context":105,"window":200000,"later":true}"#;
+        let event: Event = serde_json::from_str(line).unwrap();
+
+        assert_eq!(event.kind, EVENT_TURN);
+        assert_eq!(event.run, 7);
+        assert_eq!(event.session, "4cf0261c");
+        assert_eq!(event.context, 105);
+        assert_eq!(event.window, 200_000);
+        assert_eq!(
+            event.usage,
+            Some(Usage {
+                input: 10,
+                output: 5,
+                cache_read: 90,
+                cache_write: 0
+            })
+        );
+    }
+
+    #[test]
+    fn leaves_out_what_a_run_does_not_say() {
+        let objective = RunParams {
+            objective: "add a flag".into(),
+            resume: false,
+        };
+        let resume = RunParams {
+            objective: String::new(),
+            resume: true,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&objective).unwrap(),
+            r#"{"objective":"add a flag"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&resume).unwrap(),
+            r#"{"resume":true}"#
+        );
+    }
+}
