@@ -74,7 +74,7 @@ impl Workspace {
                         .small()
                         .icon(IconName::Menu)
                         .label("Commands")
-                        .tooltip("Ctrl-K")
+                        .tooltip("Ctrl-P")
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.open_palette(&OpenPalette, window, cx)
                         })),

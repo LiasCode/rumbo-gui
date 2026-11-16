@@ -57,6 +57,7 @@ const STEER_HINT: &str = "Tell the run something; it reads it before its next re
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CancelRun, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-p", OpenPalette, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-k", OpenPalette, Some(KEY_CONTEXT)),
     ]);
 }

@@ -44,7 +44,7 @@ cargo build --release
 The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, a tool call opened, a steer during a run,
 Escape to cancel, Up and Down in the composer, a session opened with its
-history, a run left working in another session, a command from Ctrl-K with
+history, a run left working in another session, a command from Ctrl-P with
 a form and one with a confirmation, the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given
 up with Escape, the window started by `rumbo -f gui`, and closing the

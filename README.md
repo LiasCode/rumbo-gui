@@ -46,7 +46,7 @@ In the window:
 | Shift-Enter | A new line. |
 | Up, Down | Earlier and later entries, from the first and the last line of the input. |
 | Escape | Gives up a provider's function in progress, else cancels the run. |
-| Ctrl-K | Opens the commands. |
+| Ctrl-P, Ctrl-K | Opens the commands. |
 
 A tool call opens with a click, or with the keyboard, to show the arguments
 the model gave and the result it got back. The status bar shows what is
