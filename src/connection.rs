@@ -101,6 +101,7 @@ impl Connection {
             InitializeResult {
                 protocol: protocol::VERSION,
                 name: protocol::NAME,
+                config: json!({}),
             },
         )?;
 
@@ -330,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn answers_initialize_with_its_name() {
+    fn answers_initialize_with_its_name_and_its_configuration() {
         let (_connection, params, _incoming, mut host) = connect(initialize()).unwrap();
 
         assert_eq!(params.dir, "/project");
@@ -338,7 +339,7 @@ mod tests {
         assert_eq!(params.provider, "anthropic");
         assert_eq!(
             host.receive(),
-            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 1, "name": "rumbo-gui"}})
+            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 1, "name": "rumbo-gui", "config": {}}})
         );
     }
 

@@ -1,17 +1,136 @@
 //! The functions of the host and of the provider as commands: what a person
-//! types for their parameters, and their answers in words. rumbo's terminal
-//! UI reads and shows them the same way.
+//! types for their parameters, the values a parameter offers, and their
+//! answers in words. rumbo's terminal UI reads and shows them the same way.
 
 use serde_json::{Map, Value as Json};
 
 use crate::conversation::Source;
-use crate::protocol::{Function, HostResult, Parameter, TYPE_BOOLEAN, TYPE_NUMBER, Value};
+use crate::protocol::{
+    self, Function, HostResult, Parameter, TYPE_BOOLEAN, TYPE_NUMBER, Value, ValuesResult,
+};
 
 /// A function someone offers, and whose it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command {
     pub source: Source,
     pub function: Function,
+}
+
+/// Where the values a parameter takes come from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Lister {
+    /// One of these values.
+    Fixed(Vec<Value>),
+    /// One of the values this function lists. It belongs to whoever
+    /// described the parameter: the host for its own functions, the
+    /// provider for its options and functions.
+    Function(String),
+    /// Whatever is typed, as the parameter's type reads it.
+    Typed,
+}
+
+/// What a parameter, an option, or the model accepts.
+pub fn lister(parameter: &Parameter) -> Lister {
+    if !parameter.values.is_empty() {
+        return Lister::Function(parameter.values.clone());
+    }
+
+    let values: Vec<&str> = if !parameter.choices.is_empty() {
+        parameter.choices.iter().map(String::as_str).collect()
+    } else if parameter.kind == TYPE_BOOLEAN {
+        vec!["true", "false"]
+    } else {
+        return Lister::Typed;
+    };
+
+    Lister::Fixed(
+        values
+            .into_iter()
+            .map(|value| Value {
+                value: value.to_string(),
+                ..Value::default()
+            })
+            .collect(),
+    )
+}
+
+/// What a function that lists values is given: what was typed for the
+/// parameters before the one it lists for, those it takes, so the models
+/// listed after the `provider` of `use` are that provider's. None when it
+/// takes none of them, or is not described.
+pub fn passed(lister: Option<&Function>, given: &[(&str, &str)]) -> Option<Json> {
+    let mut params = Map::new();
+
+    for parameter in &lister?.params {
+        let typed = given
+            .iter()
+            .find(|(name, _)| *name == parameter.name)
+            .map(|(_, text)| text.trim())
+            .unwrap_or_default();
+
+        if !typed.is_empty() {
+            params.insert(parameter.name.clone(), Json::String(typed.to_string()));
+        }
+    }
+
+    (!params.is_empty()).then_some(Json::Object(params))
+}
+
+/// The values a function listed, and what it said with them: a function of
+/// the host answers as all of them do, and a provider's with its values.
+pub fn listed(source: Source, answer: Json) -> (Vec<Value>, String) {
+    match source {
+        Source::Host => {
+            let result: HostResult = serde_json::from_value(answer).unwrap_or_default();
+
+            (result.values, result.text)
+        }
+
+        Source::Provider => {
+            let result: ValuesResult = serde_json::from_value(answer).unwrap_or_default();
+
+            (result.values, String::new())
+        }
+    }
+}
+
+/// The functions of the host by what they act on, in the order the host
+/// lists them, each group named for a person.
+pub fn by_group(functions: &[Function]) -> Vec<(String, Vec<Function>)> {
+    let mut groups: Vec<(String, Vec<Function>)> = Vec::new();
+
+    for function in functions {
+        let title = group_title(&function.group);
+
+        match groups.iter_mut().find(|(known, _)| *known == title) {
+            Some((_, listed)) => listed.push(function.clone()),
+            None => groups.push((title, vec![function.clone()])),
+        }
+    }
+
+    groups
+}
+
+/// A group's name for a person. One this window does not know is shown as
+/// the host names it, and a function without one is rumbo's.
+fn group_title(group: &str) -> String {
+    match group {
+        protocol::GROUP_SYSTEM => "System".into(),
+        protocol::GROUP_SESSION => "Session".into(),
+        protocol::GROUP_PROVIDER => "Providers".into(),
+        "" => "rumbo".into(),
+        other => capitalized(other),
+    }
+}
+
+/// A name with its first letter in capitals, as a label or a button says it.
+pub fn capitalized(name: &str) -> String {
+    let mut letters = name.chars();
+
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => String::new(),
+    }
 }
 
 /// The parameters of a call, from what was typed for each, in the order the
@@ -199,5 +318,95 @@ mod tests {
             provider_answer(&json!({"ok": true})),
             "{\n  \"ok\": true\n}"
         );
+    }
+
+    #[test]
+    fn says_where_the_values_of_a_parameter_come_from() {
+        let mut effort = parameter("effort", "string", false);
+        effort.choices = vec!["low".into(), "high".into()];
+
+        let mut session = parameter("session", "string", false);
+        session.values = "sessions".into();
+
+        assert_eq!(lister(&session), Lister::Function("sessions".into()));
+        assert_eq!(
+            lister(&parameter("depth", TYPE_NUMBER, false)),
+            Lister::Typed
+        );
+        assert!(
+            matches!(lister(&parameter("on", TYPE_BOOLEAN, false)), Lister::Fixed(values) if values.len() == 2)
+        );
+        assert!(matches!(lister(&effort), Lister::Fixed(values) if values[1].value == "high"));
+    }
+
+    #[test]
+    fn gives_a_lister_what_was_typed_before_for_what_it_takes() {
+        let models = Function {
+            name: "provider-models".into(),
+            params: vec![parameter("provider", "string", true)],
+            ..Function::default()
+        };
+
+        assert_eq!(
+            passed(Some(&models), &[("provider", " openai "), ("other", "x")]),
+            Some(json!({"provider": "openai"}))
+        );
+        assert_eq!(passed(Some(&models), &[("provider", "")]), None);
+        assert_eq!(passed(Some(&models), &[]), None);
+        assert_eq!(passed(None, &[("provider", "openai")]), None);
+    }
+
+    #[test]
+    fn reads_what_a_lister_answered_by_whose_it_is() {
+        let host = json!({"text": "the models toy offers:", "values": [{"value": "big", "label": "Big"}], "state": {}});
+        let provider = json!({"values": [{"value": "small"}]});
+
+        let (values, text) = listed(Source::Host, host);
+
+        assert_eq!(values[0].label, "Big");
+        assert_eq!(text, "the models toy offers:");
+
+        let (values, text) = listed(Source::Provider, provider);
+
+        assert_eq!(values[0].value, "small");
+        assert!(text.is_empty());
+        assert!(listed(Source::Provider, json!("odd")).0.is_empty());
+    }
+
+    #[test]
+    fn groups_the_functions_of_the_host_by_what_they_act_on() {
+        let function = |name: &str, group: &str| Function {
+            name: name.into(),
+            group: group.into(),
+            ..Function::default()
+        };
+
+        let groups = by_group(&[
+            function("system", "system"),
+            function("status", "session"),
+            function("quit", "system"),
+            function("providers", "provider"),
+            function("plugins", "plugin"),
+            function("older", ""),
+        ]);
+
+        let titles: Vec<&str> = groups.iter().map(|(title, _)| title.as_str()).collect();
+        let system: Vec<&str> = groups[0]
+            .1
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect();
+
+        assert_eq!(
+            titles,
+            ["System", "Session", "Providers", "Plugin", "rumbo"]
+        );
+        assert_eq!(system, ["system", "quit"]);
+    }
+
+    #[test]
+    fn capitalizes_a_name() {
+        assert_eq!(capitalized("delete"), "Delete");
+        assert_eq!(capitalized(""), "");
     }
 }

@@ -1,112 +1,114 @@
-//! What the person chose for the runs started from this window: a model and
-//! option values over what the session uses, as rumbo's terminal UI keeps
-//! them. They go with every run, and are forgotten when the provider
-//! changes, since they were the old provider's.
+//! The model and the options a session uses, and the changes the picker asks
+//! the host for. The session keeps them, as rumbo's terminal UI leaves them:
+//! a run gets the session's model, and the provider's option values with
+//! those chosen in the session over them. `use` changes the provider and the
+//! model, and `session-options` one option at a time.
 
 use serde_json::{Map, Value as Json};
 
 use crate::commands;
-use crate::protocol::{Parameter, RunParams, TYPE_BOOLEAN, Value};
+use crate::protocol::Parameter;
 
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct Choices {
-    /// Empty keeps the session's model.
-    pub model: String,
-    pub options: Map<String, Json>,
+/// What a row of the picker changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// A parameter of `use`: the provider or the model.
+    Use,
+    /// An option of the provider the session uses now.
+    Option,
 }
 
-impl Choices {
-    pub fn is_empty(&self) -> bool {
-        self.model.is_empty() && self.options.is_empty()
-    }
+/// One row of the picker: what it opened with, and what it holds now.
+#[derive(Debug, Clone, Copy)]
+pub struct Row<'a> {
+    pub role: Role,
+    pub parameter: &'a Parameter,
+    pub before: &'a str,
+    pub after: &'a str,
+}
 
-    /// Adds the choices to a run's parameters.
-    pub fn apply(&self, params: &mut RunParams) {
-        params.model = self.model.clone();
-
-        if !self.options.is_empty() {
-            params.options = Some(Json::Object(self.options.clone()));
-        }
+impl Row<'_> {
+    fn changed(&self) -> bool {
+        self.before.trim() != self.after.trim()
     }
 }
 
-/// What a choice can be.
+/// A change to ask of the host, in the order it is sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Accepts {
-    /// One of these values.
-    Values(Vec<Value>),
-    /// One of the values this function of the provider lists.
-    Listed(String),
-    /// Whatever is typed, as the option's type reads it.
-    Typed,
+pub enum Change {
+    /// Change the provider and the model, with these parameters of `use`.
+    Use(Json),
+    /// Change one option, as `name=value`. An empty value removes what the
+    /// session chose, so the provider's own applies.
+    Option(String),
 }
 
-/// What an option, or the model, accepts.
-pub fn accepts(parameter: &Parameter) -> Accepts {
-    if !parameter.values.is_empty() {
-        return Accepts::Listed(parameter.values.clone());
-    }
-
-    let values: Vec<&str> = if !parameter.choices.is_empty() {
-        parameter.choices.iter().map(String::as_str).collect()
-    } else if parameter.kind == TYPE_BOOLEAN {
-        vec!["true", "false"]
-    } else {
-        return Accepts::Typed;
-    };
-
-    Accepts::Values(
-        values
-            .into_iter()
-            .map(|value| Value {
-                value: value.to_string(),
-                ..Value::default()
-            })
-            .collect(),
-    )
-}
-
-/// The value an option has for the next run, in words: what the window
-/// chose, else what the session stores, else the provider's default.
-pub fn in_force(parameter: &Parameter, stored: Option<&Json>, chosen: &Choices) -> Option<String> {
-    let stored = stored.and_then(|stored| stored.get(&parameter.name));
-
-    chosen
-        .options
-        .get(&parameter.name)
-        .or(stored)
+/// The value an option has in the session, in words: what the host says is
+/// in force there, else the provider's default.
+pub fn in_force(parameter: &Parameter, options: Option<&Json>) -> String {
+    options
+        .and_then(|options| options.get(&parameter.name))
         .or(parameter.default.as_ref())
-        .map(words)
-}
-
-/// What a value chosen for an option reads as, in the picker.
-pub fn chosen_text(parameter: &Parameter, chosen: &Choices) -> String {
-    chosen
-        .options
-        .get(&parameter.name)
         .map(words)
         .unwrap_or_default()
 }
 
-/// The choices for what the picker holds: the model, and the text for each
-/// option in order. Empty text keeps what the session uses.
-pub fn choose(model: &str, options: &[Parameter], picked: &[String]) -> Result<Choices, String> {
-    let mut chosen = Choices {
-        model: model.trim().to_string(),
-        options: Map::new(),
-    };
+/// The changes the rows ask for. A new provider takes the options it offers
+/// instead of the old one's, so the options are left as they are then.
+pub fn changes(rows: &[Row]) -> Result<Vec<Change>, String> {
+    let mut changes = Vec::new();
+    let using: Vec<&Row> = rows.iter().filter(|row| row.role == Role::Use).collect();
 
-    for (parameter, text) in options.iter().zip(picked) {
-        let text = text.trim();
+    if using.iter().any(|row| row.changed()) {
+        let mut params = Map::new();
 
-        if !text.is_empty() {
-            chosen
-                .options
-                .insert(parameter.name.clone(), commands::encode(parameter, text)?);
+        for row in &using {
+            let text = row.after.trim();
+
+            if text.is_empty() {
+                if row.parameter.optional {
+                    continue;
+                }
+
+                return Err(format!(
+                    "{} is needed",
+                    commands::capitalized(&row.parameter.name)
+                ));
+            }
+
+            params.insert(
+                row.parameter.name.clone(),
+                commands::encode(row.parameter, text)?,
+            );
         }
+
+        changes.push(Change::Use(Json::Object(params)));
     }
 
-    Ok(chosen)
+    let new_provider = using
+        .iter()
+        .any(|row| row.parameter.name == "provider" && row.changed());
+
+    if new_provider {
+        return Ok(changes);
+    }
+
+    for row in rows
+        .iter()
+        .filter(|row| row.role == Role::Option && row.changed())
+    {
+        let text = row.after.trim();
+
+        // What the provider accepts is the provider's to say, but a value of
+        // the wrong type is caught here.
+        if !text.is_empty() {
+            commands::encode(row.parameter, text)?;
+        }
+
+        changes.push(Change::Option(format!("{}={text}", row.parameter.name)));
+    }
+
+    Ok(changes)
 }
 
 fn words(value: &Json) -> String {
@@ -123,7 +125,7 @@ mod tests {
     use super::*;
     use crate::protocol::TYPE_NUMBER;
 
-    fn option(name: &str, kind: &str) -> Parameter {
+    fn parameter(name: &str, kind: &str) -> Parameter {
         Parameter {
             name: name.into(),
             kind: kind.into(),
@@ -131,66 +133,101 @@ mod tests {
         }
     }
 
-    #[test]
-    fn says_what_each_option_accepts() {
-        let mut effort = option("effort", "string");
-        effort.choices = vec!["low".into(), "high".into()];
-
-        let mut model = option("", "string");
-        model.values = "models".into();
-
-        assert_eq!(accepts(&model), Accepts::Listed("models".into()));
-        assert_eq!(accepts(&option("temperature", TYPE_NUMBER)), Accepts::Typed);
-        assert!(
-            matches!(accepts(&option("verbose", TYPE_BOOLEAN)), Accepts::Values(values) if values.len() == 2)
-        );
-        assert!(matches!(accepts(&effort), Accepts::Values(values) if values[1].value == "high"));
+    fn row<'a>(role: Role, parameter: &'a Parameter, before: &'a str, after: &'a str) -> Row<'a> {
+        Row {
+            role,
+            parameter,
+            before,
+            after,
+        }
     }
 
     #[test]
-    fn tells_the_value_in_force_by_who_set_it() {
-        let mut effort = option("effort", "string");
+    fn tells_the_value_in_force_and_else_the_default() {
+        let mut effort = parameter("effort", "string");
         effort.default = Some(json!("medium"));
 
-        let stored = json!({"effort": "high"});
-        let mut chosen = Choices::default();
+        let stored = json!({"effort": "high", "depth": 2});
 
-        assert_eq!(in_force(&effort, None, &chosen).as_deref(), Some("medium"));
+        assert_eq!(in_force(&effort, None), "medium");
+        assert_eq!(in_force(&effort, Some(&stored)), "high");
         assert_eq!(
-            in_force(&effort, Some(&stored), &chosen).as_deref(),
-            Some("high")
+            in_force(&parameter("depth", TYPE_NUMBER), Some(&stored)),
+            "2"
         );
-
-        chosen.options.insert("effort".into(), json!("low"));
-
-        assert_eq!(
-            in_force(&effort, Some(&stored), &chosen).as_deref(),
-            Some("low")
-        );
-        assert_eq!(in_force(&option("depth", TYPE_NUMBER), None, &chosen), None);
+        assert_eq!(in_force(&parameter("web", "boolean"), None), "");
     }
 
     #[test]
-    fn chooses_from_what_was_picked() {
-        let options = [
-            option("effort", "string"),
-            option("temperature", TYPE_NUMBER),
+    fn asks_for_nothing_when_nothing_changed() {
+        let provider = parameter("provider", "string");
+        let effort = parameter("effort", "string");
+
+        let rows = [
+            row(Role::Use, &provider, "toy", " toy "),
+            row(Role::Option, &effort, "high", "high"),
         ];
-        let picked = ["high".to_string(), " ".to_string()];
 
-        let chosen = choose(" m2 ", &options, &picked).unwrap();
-        let mut params = RunParams::default();
+        assert_eq!(changes(&rows), Ok(vec![]));
+    }
 
-        chosen.apply(&mut params);
+    #[test]
+    fn changes_the_model_and_the_options_of_the_same_provider() {
+        let provider = parameter("provider", "string");
+        let model = parameter("model", "string");
+        let effort = parameter("effort", "string");
+        let depth = parameter("depth", TYPE_NUMBER);
 
-        assert_eq!(params.model, "m2");
-        assert_eq!(params.options, Some(json!({"effort": "high"})));
-        assert_eq!(chosen_text(&options[0], &chosen), "high");
-        assert!(choose("", &options, &["x".into(), "warm".into()]).is_err());
-        assert!(
-            choose("", &options, &[String::new(), String::new()])
-                .unwrap()
-                .is_empty()
+        let rows = [
+            row(Role::Use, &provider, "toy", "toy"),
+            row(Role::Use, &model, "small", "big"),
+            row(Role::Option, &effort, "high", ""),
+            row(Role::Option, &depth, "", "3"),
+        ];
+
+        assert_eq!(
+            changes(&rows),
+            Ok(vec![
+                Change::Use(json!({"provider": "toy", "model": "big"})),
+                Change::Option("effort=".into()),
+                Change::Option("depth=3".into()),
+            ])
         );
+    }
+
+    #[test]
+    fn leaves_the_options_to_a_new_provider() {
+        let provider = parameter("provider", "string");
+        let model = parameter("model", "string");
+        let effort = parameter("effort", "string");
+
+        let rows = [
+            row(Role::Use, &provider, "toy", "openai"),
+            row(Role::Use, &model, "small", "gpt"),
+            row(Role::Option, &effort, "high", "low"),
+        ];
+
+        assert_eq!(
+            changes(&rows),
+            Ok(vec![Change::Use(
+                json!({"provider": "openai", "model": "gpt"})
+            )])
+        );
+    }
+
+    #[test]
+    fn refuses_what_cannot_be_sent() {
+        let provider = parameter("provider", "string");
+        let model = parameter("model", "string");
+        let depth = parameter("depth", TYPE_NUMBER);
+
+        let missing = [
+            row(Role::Use, &provider, "toy", "openai"),
+            row(Role::Use, &model, "small", ""),
+        ];
+        let mistyped = [row(Role::Option, &depth, "", "deep")];
+
+        assert_eq!(changes(&missing), Err("Model is needed".into()));
+        assert_eq!(changes(&mistyped), Err("depth is a number".into()));
     }
 }

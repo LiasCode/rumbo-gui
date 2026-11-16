@@ -1,248 +1,194 @@
-//! The model and the options for the runs started from this window, chosen
-//! among what the provider describes. What it lists in a function is asked
-//! for first, so the picker opens with every list whole.
+//! The model and the options of the session shown, which the session keeps.
+//! The provider and the model are the parameters of the host's `use`, with
+//! the values it lists for them; the options are those the provider
+//! describes, each changed with the host's `session-options`. A run in
+//! progress goes on with what it started with.
 
 use std::rc::Rc;
 
 use gpui_kit::component::{
-    ActiveTheme as _, IndexPath, WindowExt as _,
+    ActiveTheme as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dialog::{DialogAction, DialogClose, DialogFooter},
-    h_flex,
-    input::{Input, InputState},
-    select::{SearchableVec, Select, SelectItem, SelectState},
     v_flex,
 };
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, SharedString,
-    Styled as _, Window, div, prelude::FluentBuilder as _, px,
+    App, Context, Entity, ParentElement as _, Styled as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
-use serde_json::Value as Json;
+use serde_json::{Value as Json, json};
 
-use super::{Pending, Workspace};
-use crate::choices::{self, Accepts, Choices};
-use crate::protocol::{self, DescribeResult, InvokeParams, Parameter, Value};
+use super::form::{Field, Form};
+use super::{Feedback, Pending, Workspace};
+use crate::choices::{self, Change, Role};
+use crate::conversation::Source;
+use crate::protocol::{self, DescribeResult, Function, Parameter};
 
-/// What the picker is being made of, while the provider's lists arrive.
-pub(super) struct Picking {
-    described: DescribeResult,
-    /// The model first, then each option the provider describes.
-    rows: Vec<Row>,
-    /// How many lists are still to arrive.
-    waiting: usize,
-}
-
-struct Row {
-    parameter: Parameter,
-    accepts: Accepts,
-    /// What a function listed, or why it could not.
-    listed: Option<Result<Vec<Value>, String>>,
-    in_force: Option<String>,
-    chosen: String,
-}
-
-/// How a row is picked.
-enum Control {
-    List(Entity<SelectState<SearchableVec<Choice>>>),
-    Text(Entity<InputState>),
-}
-
-impl Control {
-    fn text(&self, cx: &App) -> String {
-        match self {
-            Control::List(state) => state
-                .read(cx)
-                .selected_value()
-                .map(|value| value.to_string())
-                .unwrap_or_default(),
-            Control::Text(state) => state.read(cx).value().to_string(),
-        }
-    }
-}
-
-/// One value in a list, with what tells it apart. An empty value keeps what
-/// the session uses.
-#[derive(Clone)]
-struct Choice {
-    value: SharedString,
-    title: SharedString,
-    detail: SharedString,
-}
-
-impl SelectItem for Choice {
-    type Value = SharedString;
-
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
-    fn value(&self) -> &SharedString {
-        &self.value
-    }
-
-    /// One line: the list measures its rows as one.
-    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        h_flex().gap_2().child(self.title.clone()).child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(self.detail.clone()),
-        )
-    }
-
-    fn matches(&self, query: &str) -> bool {
-        let query = query.to_lowercase();
-
-        self.title.to_lowercase().contains(&query) || self.detail.to_lowercase().contains(&query)
-    }
+/// What the picker opened with: the parameters of `use` and the options,
+/// in the order of the form's fields.
+struct Opened {
+    rows: Vec<(Role, Parameter)>,
+    initial: Vec<String>,
+    /// The provider in use when it opened, and where its row is.
+    provider: String,
+    provider_row: Option<usize>,
 }
 
 impl Workspace {
     /// Asks the provider what can be chosen, to open the picker with it.
     pub(super) fn open_picker(&mut self, cx: &mut Context<Self>) {
-        if self.ended.is_some() || self.picking.is_some() {
+        if self.ended.is_some() || self.picking {
             return;
         }
 
+        self.picking = true;
         self.notice = Some("Asking the provider what can be chosen".into());
         self.request(protocol::METHOD_DESCRIBE, Json::Null, Pending::Picker);
         cx.notify();
     }
 
-    /// Takes what the provider described, and asks for the lists it names.
+    /// Opens the picker with what the provider described. A provider that
+    /// could not say still leaves the provider and the model to change.
     pub(super) fn described_for_picker(
         &mut self,
         described: Result<DescribeResult, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let described = match described {
-            Ok(described) => described,
-            Err(problem) => {
-                self.notice = Some(format!(
-                    "The provider could not say what it offers: {problem}"
-                ));
-                return;
-            }
+        self.picking = false;
+        self.notice = None;
+
+        let using = self.host_function(protocol::FUNCTION_USE).cloned();
+        let options = self
+            .host_function(protocol::FUNCTION_SESSION_OPTIONS)
+            .is_some();
+
+        let (provider, model) = match &described {
+            Ok(described) => (described.provider.clone(), described.model.clone()),
+            Err(_) => (self.provider.clone(), self.model.clone()),
         };
 
-        let mut model = described.offers.model.clone().unwrap_or_default();
-        model.name = "model".into();
+        let mut fields = Vec::new();
+        let mut rows = Vec::new();
 
-        let mut rows = vec![Row {
-            accepts: choices::accepts(&model),
-            parameter: model,
-            listed: None,
-            in_force: Some(described.model.clone()).filter(|model| !model.is_empty()),
-            chosen: self.choices.model.clone(),
-        }];
+        for parameter in using.iter().flat_map(|function| &function.params) {
+            let initial = match parameter.name.as_str() {
+                "provider" => provider.clone(),
+                "model" => model.clone(),
+                _ => String::new(),
+            };
 
-        for option in &described.offers.options {
-            rows.push(Row {
-                accepts: choices::accepts(option),
-                listed: None,
-                in_force: choices::in_force(
-                    option,
-                    described.options.as_ref(),
-                    &Choices::default(),
-                ),
-                chosen: choices::chosen_text(option, &self.choices),
-                parameter: option.clone(),
+            rows.push((Role::Use, parameter.clone()));
+            fields.push(Field {
+                parameter: parameter.clone(),
+                source: Source::Host,
+                initial,
+                empty: parameter.optional.then(|| "Leave out".to_string()),
+                heading: None,
             });
         }
 
-        let mut waiting = 0;
+        let (offered, provider_functions, problem): (Vec<Parameter>, Vec<Function>, _) =
+            match described {
+                Ok(described) if options => {
+                    for (index, option) in described.offers.options.iter().enumerate() {
+                        rows.push((Role::Option, option.clone()));
+                        fields.push(Field {
+                            parameter: option.clone(),
+                            source: Source::Provider,
+                            initial: choices::in_force(option, described.options.as_ref()),
+                            empty: Some("As the provider has it".into()),
+                            heading: (index == 0).then(|| format!("Options of {provider}")),
+                        });
+                    }
 
-        for (index, row) in rows.iter().enumerate() {
-            if let Accepts::Listed(function) = &row.accepts {
-                let asked = self.request(
-                    protocol::METHOD_INVOKE,
-                    InvokeParams {
-                        name: function.clone(),
-                        params: None,
-                        target: "",
-                    },
-                    Pending::Values(index),
-                );
+                    (described.offers.options, described.offers.functions, None)
+                }
 
-                waiting += usize::from(asked.is_some());
-            }
+                Ok(described) => (Vec::new(), described.offers.functions, None),
+
+                Err(problem) => (
+                    Vec::new(),
+                    Vec::new(),
+                    Some(format!(
+                        "{provider} could not say what it offers: {problem}"
+                    )),
+                ),
+            };
+
+        if fields.is_empty() {
+            self.notice = Some(problem.unwrap_or_else(|| {
+                "Neither the host nor the provider offer anything to choose".into()
+            }));
+            return;
         }
 
-        self.picking = Some(Picking {
-            described,
+        let opened = Rc::new(Opened {
+            initial: fields.iter().map(|field| field.initial.clone()).collect(),
+            provider_row: rows
+                .iter()
+                .position(|(role, parameter)| *role == Role::Use && parameter.name == "provider"),
+            provider,
             rows,
-            waiting,
         });
 
-        if waiting == 0 {
-            self.show_picker(window, cx);
-        }
+        let form = self.open_form(fields, provider_functions, window, cx);
+        let without_options = offered.is_empty() && problem.is_none();
+
+        self.show_picker(form, opened, problem, without_options, window, cx);
     }
 
-    /// Takes a list the provider gave for a row, and opens the picker once
-    /// every list is in.
-    pub(super) fn listed_for_picker(
+    fn show_picker(
         &mut self,
-        index: usize,
-        listed: Result<Vec<Value>, String>,
+        form: Entity<Form>,
+        opened: Rc<Opened>,
+        problem: Option<String>,
+        without_options: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(picking) = self.picking.as_mut() else {
-            return;
-        };
-
-        if let Some(row) = picking.rows.get_mut(index) {
-            row.listed = Some(listed);
-        }
-
-        picking.waiting = picking.waiting.saturating_sub(1);
-
-        if picking.waiting == 0 {
-            self.show_picker(window, cx);
-        }
-    }
-
-    fn show_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(picking) = self.picking.take() else {
-            return;
-        };
-
-        self.notice = None;
-
-        let controls: Vec<Control> = picking
-            .rows
-            .iter()
-            .map(|row| control(row, window, cx))
-            .collect();
-
-        let rows = Rc::new(picking.rows);
-        let controls = Rc::new(controls);
-        let provider = picking.described.provider.clone();
         let workspace = cx.weak_entity();
+        let focused = form.clone();
 
         window.open_dialog(cx, move |dialog, _, cx| {
-            let form = rows.iter().zip(controls.iter()).fold(v_flex().gap_3(), |form, (row, control)| {
-                form.child(render_row(row, control, cx))
-            });
+            let values = form.read(cx).values(cx);
+
+            // The options shown are the provider's in use; another provider
+            // has others.
+            let other_provider = opened
+                .provider_row
+                .and_then(|row| values.get(row))
+                .filter(|chosen| chosen.trim() != opened.provider)
+                .map(|chosen| {
+                    format!(
+                        "The options of {} can be chosen once the session uses it.",
+                        chosen.trim()
+                    )
+                });
 
             let apply = {
-                let rows = rows.clone();
-                let controls = controls.clone();
+                let form = form.clone();
+                let opened = opened.clone();
                 let workspace = workspace.clone();
 
                 move |_: &_, window: &mut Window, cx: &mut App| {
-                    let picked: Vec<String> = controls.iter().map(|control| control.text(cx)).collect();
-                    let options: Vec<Parameter> = rows[1..].iter().map(|row| row.parameter.clone()).collect();
+                    let after = form.read(cx).values(cx);
+                    let rows: Vec<choices::Row> = opened
+                        .rows
+                        .iter()
+                        .zip(&opened.initial)
+                        .zip(&after)
+                        .map(|(((role, parameter), before), after)| choices::Row {
+                            role: *role,
+                            parameter,
+                            before,
+                            after,
+                        })
+                        .collect();
 
-                    match choices::choose(&picked[0], &options, &picked[1..]) {
-                        Ok(chosen) => {
-                            let _ = workspace.update(cx, |this, cx| {
-                                this.choices = chosen;
-                                cx.notify();
-                            });
-
+                    match choices::changes(&rows) {
+                        Ok(changes) => {
+                            let _ = workspace.update(cx, |this, cx| this.change_session(changes, cx));
                             true
                         }
 
@@ -254,132 +200,58 @@ impl Workspace {
                 }
             };
 
-            let reset = {
-                let workspace = workspace.clone();
-
-                move |_: &_, window: &mut Window, cx: &mut App| {
-                    let _ = workspace.update(cx, |this, cx| {
-                        this.choices = Choices::default();
-                        cx.notify();
-                    });
-
-                    window.close_dialog(cx);
-                }
-            };
+            let muted = cx.theme().muted_foreground;
 
             dialog
-                .title("Model and options")
+                .title("Model and Options")
                 .w(px(480.))
                 .child(
                     v_flex()
                         .gap_3()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(format!(
-                                    "For the tasks started from this window, with provider {provider}. What is left as the session has it keeps its value."
-                                )),
-                        )
-                        .child(form),
+                        .child(div().text_sm().text_color(muted).child(
+                            "The session keeps what is chosen here, for the tasks that start after. A task in progress goes on with what it started with.",
+                        ))
+                        .child(form.clone())
+                        .when(without_options, |column| {
+                            column.child(div().text_xs().text_color(muted).child(format!(
+                                "{} describes no options.",
+                                opened.provider
+                            )))
+                        })
+                        .when_some(problem.clone(), |column, problem| {
+                            column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
+                        })
+                        .when_some(other_provider, |column, note| {
+                            column.child(div().text_xs().text_color(cx.theme().warning).child(note))
+                        }),
                 )
                 .on_ok(apply)
                 .footer(
                     DialogFooter::new()
                         .gap_2()
-                        .child(Button::new("reset").ghost().label("Use the Session's").on_click(reset))
                         .child(DialogClose::new().child(Button::new("cancel").outline().label("Cancel")))
                         .child(DialogAction::new().child(Button::new("apply").primary().label("Apply"))),
                 )
         });
+
+        // After the dialog opens, which takes the focus and remembers where
+        // it was, to give it back on closing.
+        focused.update(cx, |form, cx| form.focus(window, cx));
     }
-}
 
-/// The control for a row: a list when the values are known, else a field.
-fn control(row: &Row, window: &mut Window, cx: &mut Context<Workspace>) -> Control {
-    let values = match (&row.accepts, &row.listed) {
-        (Accepts::Values(values), _) => Some(values.clone()),
-        (Accepts::Listed(_), Some(Ok(values))) => Some(values.clone()),
-        _ => None,
-    };
+    /// Asks the host for the changes the picker holds, in order: the host
+    /// answers each before it reads the next.
+    fn change_session(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
+        for change in changes {
+            let (name, params) = match change {
+                Change::Use(params) => (protocol::FUNCTION_USE, params),
+                Change::Option(change) => (
+                    protocol::FUNCTION_SESSION_OPTIONS,
+                    json!({ "change": change }),
+                ),
+            };
 
-    let Some(values) = values else {
-        let in_force = row.in_force.clone().unwrap_or_default();
-        let chosen = row.chosen.clone();
-
-        return Control::Text(cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(in_force)
-                .default_value(chosen)
-        }));
-    };
-
-    let session = match &row.in_force {
-        Some(value) => format!("As the session has it: {value}"),
-        None => "As the session has it".to_string(),
-    };
-
-    let mut items = vec![Choice {
-        value: SharedString::default(),
-        title: session.into(),
-        detail: SharedString::default(),
-    }];
-
-    items.extend(values.iter().map(|value| {
-        Choice {
-            value: value.value.clone().into(),
-            title: value.value.clone().into(),
-            detail: [value.label.as_str(), value.description.as_str()]
-                .iter()
-                .filter(|part| !part.is_empty())
-                .copied()
-                .collect::<Vec<_>>()
-                .join(" · ")
-                .into(),
+            self.call_host(name, Some(params), Feedback::Notice, cx);
         }
-    }));
-
-    let selected = items
-        .iter()
-        .position(|item| item.value.as_ref() == row.chosen)
-        .unwrap_or(0);
-    let searchable = items.len() > 8;
-
-    Control::List(cx.new(|cx| {
-        SelectState::new(
-            SearchableVec::new(items),
-            Some(IndexPath::new(selected)),
-            window,
-            cx,
-        )
-        .searchable(searchable)
-    }))
-}
-
-fn render_row(row: &Row, control: &Control, cx: &App) -> impl IntoElement {
-    let field = match control {
-        Control::List(state) => Select::new(state).into_any_element(),
-        Control::Text(state) => Input::new(state).into_any_element(),
-    };
-
-    let unlisted = match &row.listed {
-        Some(Err(problem)) => Some(format!("The provider could not list them: {problem}")),
-        _ => None,
-    };
-
-    v_flex()
-        .gap_1()
-        .child(div().text_sm().child(row.parameter.name.clone()))
-        .when(!row.parameter.description.is_empty(), |column| {
-            column.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(row.parameter.description.clone()),
-            )
-        })
-        .child(field)
-        .when_some(unlisted, |column, problem| {
-            column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
-        })
+    }
 }

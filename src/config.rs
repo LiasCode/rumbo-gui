@@ -8,7 +8,8 @@ usage: rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 
 Opens a window on a rumbo host working in DIR, or asks for a folder when
 DIR is left out. FLAGS go to `rumbo serve` as they are, such as -c to
-continue the latest session, -s ID for another, -m MODEL, or -single.
+continue the latest session, -s ID for another, -p PROVIDER and -m MODEL,
+or -single.
 
   --rumbo PATH   the rumbo executable, when it is not on PATH
   --attached     be the front end rumbo starts: register it with
@@ -125,6 +126,16 @@ pub fn continuing(flags: &[String], session: &str) -> Vec<String> {
     again
 }
 
+/// The flags that start a host in another project, in the session used
+/// last there. What the first start asked for once is not asked again; how
+/// the person works is.
+pub fn continuing_latest(flags: &[String]) -> Vec<String> {
+    let mut again = continuing(flags, "");
+
+    again.push("-c".to_string());
+    again
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +182,8 @@ mod tests {
             ["-single", "-s", "4cf0261c"]
         );
         assert!(continuing(&[], "").is_empty());
+        assert_eq!(continuing_latest(&flags), ["-single", "-c"]);
+        assert_eq!(continuing_latest(&[]), ["-c"]);
     }
 
     #[test]

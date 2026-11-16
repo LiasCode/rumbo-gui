@@ -9,16 +9,20 @@ mod connection;
 mod conversation;
 mod history;
 mod host;
-mod launcher;
+mod preferences;
 mod protocol;
+mod shell;
 mod usage;
 mod workspace;
 
+use std::path::PathBuf;
+
+use gpui_kit::component::TitleBar;
 use gpui_kit::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 
 use crate::config::Parsed;
 use crate::host::Descriptors;
-use crate::launcher::{Launcher, Start};
+use crate::shell::{Preferred, Shell, Start};
 
 fn main() {
     let start = match config::parse(std::env::args().skip(1)) {
@@ -46,10 +50,26 @@ fn main() {
         }
     };
 
+    // After the descriptors are taken, so the file cannot get their numbers.
+    let path = preferences::path(
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    );
+    let (preferences, problem) = match &path {
+        Some(path) => preferences::load(path),
+        None => Default::default(),
+    };
+    let preferred = Preferred {
+        preferences,
+        path,
+        problem,
+    };
+
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
+            shell::bind_keys(cx);
             workspace::bind_keys(cx);
 
             // Closing the last window ends the app, and with it the host.
@@ -60,23 +80,24 @@ fn main() {
             })
             .detach();
 
+            // The toolbar is the title bar, as it draws itself.
             let options = WindowOptions {
                 app_id: Some(protocol::NAME.into()),
                 titlebar: Some(TitlebarOptions {
                     title: Some("rumbo".into()),
-                    ..TitlebarOptions::default()
+                    ..TitleBar::title_bar_options()
                 }),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
-                    size(px(960.), px(720.)),
+                    size(px(1120.), px(760.)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(480.), px(360.))),
-                ..WindowOptions::default()
+                window_min_size: Some(size(px(640.), px(420.))),
+                ..TitleBar::window_options()
             };
 
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Launcher::new(start, window, cx))
+                cx.new(|cx| Shell::new(start, preferred, window, cx))
             })
             .expect("the window did not open");
 

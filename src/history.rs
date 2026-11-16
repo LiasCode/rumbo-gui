@@ -1,5 +1,6 @@
 //! What was entered in the composer, for Up and Down to bring back, the way
-//! rumbo's terminal UI does it.
+//! rumbo's terminal UI does it: what the host recalls of the project's
+//! sessions, and then what was entered in this window.
 
 #[derive(Debug, Default)]
 pub struct History {
@@ -12,6 +13,22 @@ pub struct History {
 }
 
 impl History {
+    /// Puts what the host recalls, most recent first, before what was
+    /// entered here. An entry being shown stays the one shown.
+    pub fn recalled(&mut self, asked: &[String]) {
+        let mut earlier: Vec<String> = asked.iter().rev().cloned().collect();
+
+        // What was entered here before the answer came may repeat the most
+        // recent of them.
+        if earlier.last() == self.entries.first() {
+            earlier.pop();
+        }
+
+        self.recalled += earlier.len();
+        earlier.append(&mut self.entries);
+        self.entries = earlier;
+    }
+
     /// Adds what was entered, unless it repeats the entry before, and leaves
     /// the history at its end.
     pub fn remember(&mut self, text: &str) {
@@ -77,5 +94,39 @@ mod tests {
         history.remember("again");
 
         assert_eq!(history.recall(-1, "").as_deref(), Some("again"));
+    }
+
+    #[test]
+    fn brings_back_what_the_host_recalls_before_what_was_entered_here() {
+        let mut history = History::default();
+
+        history.remember("here");
+        history.recalled(&["here".into(), "and its tests".into(), "fix the test".into()]);
+
+        assert_eq!(history.recall(-1, "").as_deref(), Some("here"));
+        assert_eq!(history.recall(-1, "here").as_deref(), Some("and its tests"));
+        assert_eq!(
+            history.recall(-1, "and its tests").as_deref(),
+            Some("fix the test")
+        );
+        assert_eq!(history.recall(-1, "fix the test"), None);
+    }
+
+    #[test]
+    fn keeps_the_entry_shown_when_the_recall_arrives() {
+        let mut history = History::default();
+
+        history.remember("one");
+        history.remember("two");
+
+        assert_eq!(history.recall(-1, "draft").as_deref(), Some("two"));
+
+        history.recalled(&["older".into()]);
+
+        assert_eq!(history.recall(-1, "two").as_deref(), Some("one"));
+        assert_eq!(history.recall(-1, "one").as_deref(), Some("older"));
+        assert_eq!(history.recall(1, "older").as_deref(), Some("one"));
+        assert_eq!(history.recall(1, "one").as_deref(), Some("two"));
+        assert_eq!(history.recall(1, "two").as_deref(), Some("draft"));
     }
 }

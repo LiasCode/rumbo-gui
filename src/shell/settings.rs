@@ -1,0 +1,582 @@
+//! The settings, shown in place of the work: the window's theme, which it
+//! keeps itself, and rumbo's system settings and providers, which are asked
+//! of the host of the project shown. rumbo keeps them the same for every
+//! project, so any host answers for all.
+//!
+//! What the host says is shown as it says it, and every change goes through
+//! the host's functions, with the form their descriptions make.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use gpui_kit::component::{
+    ActiveTheme as _, Selectable as _, Sizable as _,
+    button::{Button, ButtonGroup, ButtonVariants as _},
+    h_flex,
+    setting::{SettingGroup, SettingItem, SettingPage, Settings},
+    spinner::Spinner,
+    v_flex,
+};
+use gpui_kit::{
+    AnyElement, App, Context, ElementId, Entity, EventEmitter, FocusHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, WeakEntity,
+    Window, div, prelude::FluentBuilder as _,
+};
+use serde_json::Value as Json;
+
+use crate::preferences::Theme as Colors;
+use crate::protocol::{self, HostResult, Value};
+use crate::workspace::Workspace;
+
+pub(super) const KEY_CONTEXT: &str = "Settings";
+
+pub(super) enum SettingsEvent {
+    /// The person chose a theme.
+    Theme(Colors),
+}
+
+/// What the host answered for a part of the settings.
+#[derive(Clone)]
+enum Asked<T> {
+    Asking,
+    Here(T),
+    Failed(String),
+}
+
+pub(super) struct SettingsView {
+    /// The workspace whose host is asked; none with no project open.
+    workspace: Option<WeakEntity<Workspace>>,
+    theme: Colors,
+    /// Where the preferences are kept, and why they could not be.
+    path: Option<PathBuf>,
+    problem: Option<String>,
+    /// None for what the host does not offer.
+    system: Option<Asked<String>>,
+    keys: Option<Asked<Vec<Value>>>,
+    providers: Option<Asked<Vec<Value>>>,
+    /// What each provider shown says it offers.
+    details: HashMap<String, Asked<String>>,
+    focus_handle: FocusHandle,
+}
+
+impl EventEmitter<SettingsEvent> for SettingsView {}
+
+impl SettingsView {
+    pub(super) fn new(
+        workspace: Option<Entity<Workspace>>,
+        theme: Colors,
+        path: Option<PathBuf>,
+        problem: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut view = SettingsView {
+            workspace: workspace.map(|workspace| workspace.downgrade()),
+            theme,
+            path,
+            problem,
+            system: None,
+            keys: None,
+            providers: None,
+            details: HashMap::new(),
+            focus_handle: cx.focus_handle(),
+        };
+
+        view.refresh(cx);
+        view
+    }
+
+    pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus_handle.focus(window, cx);
+    }
+
+    /// Asks the host again what the settings show, after a change. What was
+    /// shown stays until the new answer comes.
+    pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
+        let system = self.ask(protocol::FUNCTION_SYSTEM, None, cx, |view, answer| {
+            view.system = Some(asked(answer.map(|result| result.text)));
+        });
+        let keys = self.ask(protocol::FUNCTION_SYSTEM_KEYS, None, cx, |view, answer| {
+            view.keys = Some(asked(answer.map(|result| result.values)));
+        });
+        let providers = self.ask(protocol::FUNCTION_PROVIDERS, None, cx, |view, answer| {
+            view.providers = Some(asked(answer.map(|result| result.values)));
+        });
+
+        waiting(&mut self.system, system);
+        waiting(&mut self.keys, keys);
+        waiting(&mut self.providers, providers);
+
+        // What a provider says it offers can change with its configuration.
+        let shown: Vec<String> = self.details.keys().cloned().collect();
+
+        for provider in shown {
+            self.ask_details(provider, cx);
+        }
+    }
+
+    /// Asks the host's function `name`, and gives its answer to `take`.
+    /// False when there is no host to ask, or it does not offer it.
+    fn ask(
+        &self,
+        name: &str,
+        params: Option<Json>,
+        cx: &mut Context<Self>,
+        take: impl FnOnce(&mut Self, Result<HostResult, String>) + 'static,
+    ) -> bool {
+        let Some(workspace) = self.workspace.as_ref().and_then(WeakEntity::upgrade) else {
+            return false;
+        };
+
+        let view = cx.weak_entity();
+
+        workspace.update(cx, |workspace, _| {
+            workspace.ask_host(
+                name,
+                params,
+                Box::new(move |answer, _, cx| {
+                    let _ = view.update(cx, |view, cx| {
+                        take(view, answer);
+                        cx.notify();
+                    });
+                }),
+            )
+        })
+    }
+
+    /// Shows what a provider offers, starting it, or hides it.
+    fn toggle_details(&mut self, provider: String, cx: &mut Context<Self>) {
+        if self.details.remove(&provider).is_none() {
+            self.ask_details(provider, cx);
+        }
+
+        cx.notify();
+    }
+
+    fn ask_details(&mut self, provider: String, cx: &mut Context<Self>) {
+        let name = provider.clone();
+        let params = serde_json::json!({ "provider": provider });
+
+        let asking = self.ask(
+            protocol::FUNCTION_PROVIDER_SHOW,
+            Some(params),
+            cx,
+            move |view, answer| {
+                // Hidden meanwhile, it stays hidden.
+                if view.details.contains_key(&name) {
+                    view.details
+                        .insert(name, asked(answer.map(|result| result.text)));
+                }
+            },
+        );
+
+        if asking {
+            self.details.entry(provider).or_insert(Asked::Asking);
+        }
+    }
+
+    /// Whether the host of the project shown offers a function.
+    fn offers(&self, name: &str, cx: &App) -> bool {
+        self.workspace
+            .as_ref()
+            .and_then(WeakEntity::upgrade)
+            .is_some_and(|workspace| workspace.read(cx).offers(name))
+    }
+
+    fn appearance_page(&self, cx: &mut Context<Self>) -> SettingPage {
+        let view = cx.weak_entity();
+        let theme = self.theme;
+        let kept = match &self.path {
+            Some(path) => format!("The window keeps it in {}.", path.display()),
+            None => "Without $HOME, it is kept for this start only.".into(),
+        };
+        let problem = self.problem.clone();
+
+        let item = SettingItem::render(move |_, _, cx| {
+            // Each button chooses by itself: the group's own handler hears
+            // only the mouse, and the keyboard should choose too.
+            let choices =
+                ButtonGroup::new("theme")
+                    .outline()
+                    .small()
+                    .children(Colors::ALL.iter().map(|choice| {
+                        let view = view.clone();
+                        let chosen = *choice;
+
+                        Button::new(choice.label())
+                            .label(choice.label())
+                            .selected(chosen == theme)
+                            .on_click(move |_, _, cx| {
+                                let _ = view.update(cx, |view, cx| {
+                                    view.theme = chosen;
+                                    cx.emit(SettingsEvent::Theme(chosen));
+                                    cx.notify();
+                                });
+                            })
+                    }));
+
+            v_flex()
+                .gap_2()
+                .child(
+                    h_flex()
+                        .gap_4()
+                        .justify_between()
+                        .child(described(
+                            "Theme",
+                            "System follows the desktop, and changes when it does.",
+                            cx,
+                        ))
+                        .child(choices),
+                )
+                .child(note(&kept, cx))
+                .when_some(problem.clone(), |column, problem| {
+                    column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
+                })
+        })
+        .keywords(["theme", "dark", "light", "appearance"]);
+
+        SettingPage::new("Appearance").group(SettingGroup::new().title("Window").item(item))
+    }
+
+    fn system_page(&self, cx: &mut Context<Self>) -> SettingPage {
+        let page = SettingPage::new("System");
+
+        if self.workspace.is_none() {
+            return page.group(unreachable());
+        }
+
+        let shown = self.system.clone();
+        let in_force = SettingItem::render(move |_, _, cx| match &shown {
+            Some(answer) => said(answer, cx),
+            None => note("This rumbo does not show its settings.", cx).into_any_element(),
+        })
+        .keywords(["settings", "in force"]);
+
+        let can_set = self.offers(protocol::FUNCTION_SYSTEM_SET, cx);
+        let can_unset = self.offers(protocol::FUNCTION_SYSTEM_UNSET, cx);
+        let workspace = self.workspace.clone();
+
+        let keys: Vec<SettingItem> = match &self.keys {
+            Some(Asked::Here(keys)) => keys
+                .iter()
+                .map(|key| {
+                    let name = key.value.clone();
+                    let help = key.description.clone();
+                    let workspace = workspace.clone();
+
+                    SettingItem::render(move |_, _, cx| {
+                        let change = action(
+                            element_id("change", &name),
+                            "Change…",
+                            &workspace,
+                            protocol::FUNCTION_SYSTEM_SET,
+                            ("key", name.clone()),
+                            true,
+                        );
+                        let unset = action(
+                            element_id("unset", &name),
+                            "Use Default",
+                            &workspace,
+                            protocol::FUNCTION_SYSTEM_UNSET,
+                            ("key", name.clone()),
+                            false,
+                        );
+
+                        h_flex()
+                            .gap_4()
+                            .justify_between()
+                            .child(described(&name, &help, cx))
+                            .child(
+                                h_flex()
+                                    .gap_1()
+                                    .flex_shrink_0()
+                                    .when(can_set, |row| row.child(change))
+                                    .when(can_unset, |row| row.child(unset)),
+                            )
+                    })
+                    .keywords([key.value.clone(), key.description.clone()])
+                })
+                .collect(),
+
+            Some(answer) => {
+                let answer = unlisted(answer);
+
+                vec![SettingItem::render(move |_, _, cx| said(&answer, cx))]
+            }
+
+            None => Vec::new(),
+        };
+
+        let page = page.group(
+            SettingGroup::new()
+                .title("In Force")
+                .description("As rumbo applies them, and where each value comes from. A session's own choice wins over them in it.")
+                .item(in_force),
+        );
+
+        if keys.is_empty() {
+            return page;
+        }
+
+        page.group(
+            SettingGroup::new()
+                .title("Settings")
+                .description("Each applies to the runs that start after it is stored.")
+                .items(keys),
+        )
+    }
+
+    fn providers_page(&self, cx: &mut Context<Self>) -> SettingPage {
+        let page = SettingPage::new("Providers");
+
+        if self.workspace.is_none() {
+            return page.group(unreachable());
+        }
+
+        let workspace = self.workspace.clone();
+        let view = cx.weak_entity();
+
+        let offered = [
+            (protocol::FUNCTION_PROVIDER_OPTIONS, "Options…", true),
+            (protocol::FUNCTION_PROVIDER_CONFIG, "Configuration…", true),
+            (protocol::FUNCTION_PROVIDER_RM, "Remove…", false),
+        ]
+        .into_iter()
+        .filter(|(name, _, _)| self.offers(name, cx))
+        .collect::<Vec<_>>();
+        let can_show = self.offers(protocol::FUNCTION_PROVIDER_SHOW, cx);
+
+        let providers: Vec<SettingItem> = match &self.providers {
+            Some(Asked::Here(providers)) => providers
+                .iter()
+                .map(|provider| {
+                    let name = provider.value.clone();
+                    let command = provider.description.clone();
+                    let details = self.details.get(&name).cloned();
+                    let workspace = workspace.clone();
+                    let offered = offered.clone();
+                    let view = view.clone();
+
+                    SettingItem::render(move |_, _, cx| {
+                        let toggling = view.clone();
+                        let toggled = name.clone();
+
+                        let details_button = Button::new(element_id("details", &name))
+                            .ghost()
+                            .small()
+                            .label(if details.is_some() { "Hide" } else { "Details" })
+                            .tooltip("What the provider offers; it is started to say")
+                            .on_click(move |_, _, cx| {
+                                let _ = toggling.update(cx, |view, cx| {
+                                    view.toggle_details(toggled.clone(), cx)
+                                });
+                            });
+
+                        let actions = offered.iter().map(|(function, label, ask)| {
+                            action(
+                                element_id(function, &name),
+                                label,
+                                &workspace,
+                                function,
+                                ("provider", name.clone()),
+                                *ask,
+                            )
+                        });
+
+                        v_flex()
+                            .gap_2()
+                            .child(
+                                h_flex()
+                                    .gap_4()
+                                    .justify_between()
+                                    .child(described(&name, &command, cx))
+                                    .child(
+                                        h_flex()
+                                            .gap_1()
+                                            .flex_shrink_0()
+                                            .when(can_show, |row| row.child(details_button))
+                                            .children(actions),
+                                    ),
+                            )
+                            .when_some(details.clone(), |column, details| {
+                                column.child(said(&details, cx))
+                            })
+                    })
+                    .keywords([provider.value.clone(), provider.description.clone()])
+                })
+                .collect(),
+
+            Some(answer) => {
+                let answer = unlisted(answer);
+
+                vec![SettingItem::render(move |_, _, cx| said(&answer, cx))]
+            }
+
+            None => vec![SettingItem::render(|_, _, cx| {
+                note("This rumbo does not list its providers.", cx)
+            })],
+        };
+
+        let can_add = self.offers(protocol::FUNCTION_PROVIDER_ADD, cx);
+        let adding = workspace.clone();
+
+        let page = page.group(
+            SettingGroup::new()
+                .title("Registered")
+                .description("The programs that reach a model. Each session uses one; a new session starts with the default provider, a system setting.")
+                .items(providers),
+        );
+
+        if !can_add {
+            return page;
+        }
+
+        page.group(SettingGroup::new().item(SettingItem::render(move |_, _, cx| {
+                h_flex()
+                    .gap_4()
+                    .justify_between()
+                    .child(described(
+                        "Add a provider",
+                        "A name and the command that starts it, which is started to keep its defaults.",
+                        cx,
+                    ))
+                    .child(action(
+                        "add-provider",
+                        "Add Provider…",
+                        &adding,
+                        protocol::FUNCTION_PROVIDER_ADD,
+                        ("name", String::new()),
+                        true,
+                    ))
+        })))
+    }
+}
+
+impl Render for SettingsView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let pages = [
+            self.appearance_page(cx),
+            self.system_page(cx),
+            self.providers_page(cx),
+        ];
+
+        div()
+            .key_context(KEY_CONTEXT)
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .child(Settings::new("settings").pages(pages))
+    }
+}
+
+/// An answer, once the host gave it.
+fn asked<T>(answer: Result<T, String>) -> Asked<T> {
+    match answer {
+        Ok(value) => Asked::Here(value),
+        Err(problem) => Asked::Failed(problem),
+    }
+}
+
+/// A list that is not here yet, or could not be had, said as words are.
+fn unlisted<T>(answer: &Asked<T>) -> Asked<String> {
+    match answer {
+        Asked::Failed(problem) => Asked::Failed(problem.clone()),
+        _ => Asked::Asking,
+    }
+}
+
+/// Records what is being asked: nothing when it could not be asked, and
+/// what was shown before until the answer comes.
+fn waiting<T>(shown: &mut Option<Asked<T>>, asking: bool) {
+    if !asking {
+        *shown = None;
+    } else if shown.is_none() {
+        *shown = Some(Asked::Asking);
+    }
+}
+
+/// What the host said, as it said it, or that it is being asked.
+fn said(answer: &Asked<String>, cx: &App) -> AnyElement {
+    match answer {
+        Asked::Asking => h_flex()
+            .gap_2()
+            .child(Spinner::new().xsmall())
+            .child(note("Asking rumbo", cx))
+            .into_any_element(),
+
+        Asked::Here(text) => div()
+            .p_3()
+            .rounded_md()
+            .bg(cx.theme().muted)
+            .font_family(cx.theme().mono_font_family.clone())
+            .text_xs()
+            .child(text.clone())
+            .into_any_element(),
+
+        Asked::Failed(problem) => div()
+            .text_sm()
+            .text_color(cx.theme().danger)
+            .child(problem.clone())
+            .into_any_element(),
+    }
+}
+
+/// A button that offers a function of the host with one parameter given:
+/// with a form for the rest when `ask`, else with its confirmation.
+fn action(
+    id: impl Into<ElementId>,
+    label: &str,
+    workspace: &Option<WeakEntity<Workspace>>,
+    function: &'static str,
+    given: (&'static str, String),
+    ask: bool,
+) -> Button {
+    let workspace = workspace.clone();
+
+    Button::new(id)
+        .outline()
+        .small()
+        .label(label.to_string())
+        .on_click(move |_, window, cx| {
+            let Some(workspace) = workspace.as_ref().and_then(WeakEntity::upgrade) else {
+                return;
+            };
+
+            let given = [(given.0, given.1.clone())];
+
+            workspace.update(cx, |workspace, cx| {
+                workspace.offer(function, &given, ask, window, cx)
+            });
+        })
+}
+
+/// An id for a control of one row, such as a provider's.
+fn element_id(control: &str, row: &str) -> ElementId {
+    ElementId::Name(format!("{control}-{row}").into())
+}
+
+/// A title with what it is for below it.
+fn described(title: &str, description: &str, cx: &App) -> impl IntoElement {
+    v_flex()
+        .min_w_0()
+        .gap_0p5()
+        .child(div().text_sm().child(title.to_string()))
+        .when(!description.is_empty(), |column| {
+            column.child(note(description, cx))
+        })
+}
+
+fn note(text: &str, cx: &App) -> gpui_kit::Div {
+    div()
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(text.to_string())
+}
+
+/// What a page of rumbo's says with no project open.
+fn unreachable() -> SettingGroup {
+    SettingGroup::new().item(SettingItem::render(|_, _, cx| {
+        note(
+            "rumbo's settings are asked of the rumbo working in a project. Open a project to see and change them.",
+            cx,
+        )
+    }))
+}

@@ -23,9 +23,39 @@ pub const METHOD_ASK: &str = "ask";
 pub const METHOD_DESCRIBE: &str = "describe";
 pub const METHOD_INVOKE: &str = "invoke";
 pub const METHOD_HISTORY: &str = "history";
+pub const METHOD_RECALL: &str = "recall";
 
 /// The `target` of an invoke that calls a function of the host.
 pub const TARGET_HOST: &str = "host";
+
+/// What a function of the host acts on. A front end lists them apart, and
+/// takes a group it does not know for one more.
+pub const GROUP_SYSTEM: &str = "system";
+pub const GROUP_SESSION: &str = "session";
+pub const GROUP_PROVIDER: &str = "provider";
+
+/// The functions of the host the window offers in a place of its own: the
+/// sidebar lists every project and its sessions, and opens and starts
+/// sessions, the picker changes the model and the options a session keeps,
+/// and the settings show and change the system settings and the providers.
+/// Each is offered only when `initialize` lists it, and called with the
+/// parameters it describes there.
+pub const FUNCTION_SESSIONS: &str = "sessions";
+pub const FUNCTION_PROJECTS: &str = "projects";
+pub const FUNCTION_OPEN: &str = "open";
+pub const FUNCTION_NEW: &str = "new";
+pub const FUNCTION_USE: &str = "use";
+pub const FUNCTION_SESSION_OPTIONS: &str = "session-options";
+pub const FUNCTION_SYSTEM: &str = "system";
+pub const FUNCTION_SYSTEM_KEYS: &str = "system-keys";
+pub const FUNCTION_SYSTEM_SET: &str = "system-set";
+pub const FUNCTION_SYSTEM_UNSET: &str = "system-unset";
+pub const FUNCTION_PROVIDERS: &str = "providers";
+pub const FUNCTION_PROVIDER_SHOW: &str = "provider-show";
+pub const FUNCTION_PROVIDER_OPTIONS: &str = "provider-options";
+pub const FUNCTION_PROVIDER_CONFIG: &str = "provider-config";
+pub const FUNCTION_PROVIDER_ADD: &str = "provider-add";
+pub const FUNCTION_PROVIDER_RM: &str = "provider-rm";
 
 pub const EVENT_CONTEXT: &str = "context";
 pub const EVENT_TEXT: &str = "text";
@@ -72,21 +102,19 @@ pub struct InitializeParams {
 pub struct InitializeResult {
     pub protocol: i64,
     pub name: &'static str,
+    /// The start configuration in force, which the host keeps with the
+    /// registration. This front end has no fields of its own yet.
+    pub config: Json,
 }
 
-/// Starts a run on `objective`, or continues the session's last one.
+/// Starts a run on `objective`, or continues the session's last one. The
+/// run uses the model and the options its session keeps.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RunParams {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub objective: String,
     #[serde(skip_serializing_if = "is_false")]
     pub resume: bool,
-    /// The model for this run, over the one the session uses.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub model: String,
-    /// Option values for this run, over the ones the session uses.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub options: Option<Json>,
 }
 
 /// How a run ended.
@@ -170,6 +198,8 @@ pub struct Function {
     /// Set when the function cannot be undone: what to ask the person
     /// before calling it.
     pub confirm: String,
+    /// What a function of the host acts on; empty for a provider's.
+    pub group: String,
 }
 
 /// One value a function takes: a small subset of JSON Schema.
@@ -270,6 +300,14 @@ pub struct HistoryResult {
     pub events: Vec<Event>,
 }
 
+/// What the person asked in the project's sessions, most recent first and
+/// each once.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct RecallResult {
+    pub asked: Vec<String>,
+}
+
 /// A JSON-RPC error object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RpcError {
@@ -321,14 +359,17 @@ mod tests {
     #[test]
     fn reads_functions_as_the_host_describes_them() {
         let line = r#"{"protocol":1,"dir":"/p","provider":"anthropic","model":"m","functions":[
-            {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string"}],"confirm":"Delete it?"},
+            {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string","values":"sessions"}],"confirm":"Delete it?","group":"session"},
             {"name":"status","params":[{"name":"session","optional":true}]}]}"#;
         let params: InitializeParams = serde_json::from_str(line).unwrap();
 
         assert_eq!(params.functions.len(), 2);
         assert_eq!(params.functions[0].confirm, "Delete it?");
+        assert_eq!(params.functions[0].group, GROUP_SESSION);
         assert_eq!(params.functions[0].params[0].kind, "string");
+        assert_eq!(params.functions[0].params[0].values, "sessions");
         assert!(params.functions[1].params[0].optional);
+        assert!(params.functions[1].group.is_empty());
     }
 
     #[test]
@@ -364,18 +405,8 @@ mod tests {
             resume: true,
             ..RunParams::default()
         };
-        let chosen = RunParams {
-            objective: "go".into(),
-            model: "m".into(),
-            options: Some(serde_json::json!({"effort": "high"})),
-            ..RunParams::default()
-        };
         let cancel = CancelParams { run: 0, invoke: 4 };
 
-        assert_eq!(
-            serde_json::to_string(&chosen).unwrap(),
-            r#"{"objective":"go","model":"m","options":{"effort":"high"}}"#
-        );
         assert_eq!(serde_json::to_string(&cancel).unwrap(), r#"{"invoke":4}"#);
 
         assert_eq!(

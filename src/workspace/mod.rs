@@ -1,26 +1,28 @@
-//! The window attached to a host: the sessions of the project, the
-//! conversation of the one shown, the composer, and the status bar.
+//! One project of the window, attached to a host of its own: its sessions,
+//! the conversation of the one shown, the composer, and the status bar. The
+//! window around it lists the sessions and opens them through it.
 //!
-//! The window shows the host's current session. Runs started in other
+//! The workspace shows the host's current session. Runs started in other
 //! sessions go on in the background, and their events go to the session
 //! they work in, so each session's conversation is whole when it is shown
 //! again.
 
+mod form;
 mod palette;
 mod picker;
 mod rows;
-mod sidebar;
 mod talk;
 
 use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::{
-    ActiveTheme as _, IconName, Sizable as _,
+    ActiveTheme as _, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     command::CommandState,
     h_flex,
     input::{InputEvent, MoveDown, MoveUp, Position, Textarea, TextareaState},
     message_scroller::{MessageScroller, MessageScrollerState},
+    notification::Notification,
     spinner::Spinner,
     status_bar::StatusBar,
     v_flex,
@@ -30,9 +32,8 @@ use gpui_kit::{
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, StyleRefinement,
     Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _,
 };
-use serde_json::Value as Json;
+use serde_json::{Value as Json, json};
 
-use crate::choices::Choices;
 use crate::commands::{self, Command};
 use crate::connection::Incoming;
 use crate::conversation::{Change, Conversation, ItemId, Kind, Source};
@@ -40,11 +41,13 @@ use crate::history::History;
 use crate::host::Host;
 use crate::protocol::{
     self, CancelParams, DescribeResult, Event, Function, HistoryParams, HistoryResult, HostResult,
-    HostState, InvokeParams, RpcError, RunParams, RunResult, SteerParams, Value, ValuesResult,
+    HostState, InvokeParams, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
 };
 use crate::usage::Spent;
 
-actions!(workspace, [CancelRun, OpenPalette]);
+use form::{Changed, Field, Form};
+
+actions!(workspace, [CancelRun]);
 
 const KEY_CONTEXT: &str = "Workspace";
 
@@ -55,18 +58,27 @@ const STEER_HINT: &str = "Tell the run something; it reads it before its next re
 /// The keys of the workspace. Escape reaches it after the composer, which
 /// lets it through when it has nothing of its own to dismiss.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("escape", CancelRun, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-p", OpenPalette, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-k", OpenPalette, Some(KEY_CONTEXT)),
-    ]);
+    cx.bind_keys([KeyBinding::new("escape", CancelRun, Some(KEY_CONTEXT))]);
 }
 
 /// What the workspace asks of the window around it.
 pub enum WorkspaceEvent {
     /// Start a host again, in this session, after the last one ended.
-    StartAgain { session: String },
+    StartAgain {
+        session: String,
+    },
+    /// The person chose a command of the window in the palette.
+    OpenProject,
+    OpenSettings,
+    CloseProject,
+    /// A function of the host answered, so what the settings show may have
+    /// changed.
+    Answered,
 }
+
+/// What is done with the answer of a function of the host asked for by the
+/// window, such as what the settings show.
+pub type Reply = Box<dyn FnOnce(Result<HostResult, String>, &mut Window, &mut App)>;
 
 /// A request whose answer the workspace waits for.
 enum Pending {
@@ -78,22 +90,52 @@ enum Pending {
     },
     /// The history of a session, for its view.
     History(String),
+    /// What the person asked in the project's sessions, for the composer.
+    Recall,
     /// The project's sessions, for the sidebar.
     Sessions,
     /// What the provider offers, for the palette.
     Describe,
     /// What the provider offers, for the picker of the model and options.
     Picker,
-    /// A list the provider gives for a row of the picker.
-    Values(usize),
-    /// A function called for the person. A quiet one, such as opening a
-    /// session from the sidebar, says nothing in the conversation unless
-    /// it fails.
+    /// A list a field of the open form asked for.
+    Listed {
+        form: u64,
+        field: usize,
+        generation: u64,
+        source: Source,
+    },
+    /// A function called for the person.
     Call {
         source: Source,
         name: String,
-        quiet: bool,
+        feedback: Feedback,
     },
+    /// A function of the host the window asked, whose answer it reads.
+    Reply(Reply),
+}
+
+/// Where the answer of a function called for the person shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feedback {
+    /// In the conversation, as a command from the palette answers.
+    Conversation,
+    /// In the status bar, as the picker's changes say they were made.
+    Notice,
+    /// In a notification, as the settings' changes say they were made,
+    /// since the conversation is not in view.
+    Toast,
+    /// Nowhere unless it fails, as opening a session from the sidebar,
+    /// which shows the session instead.
+    Quiet,
+}
+
+/// The form in a dialog, whose lists arrive as answers.
+struct OpenForm {
+    /// Tells this form's answers from those of one that came before.
+    serial: u64,
+    form: Entity<Form>,
+    _changes: Subscription,
 }
 
 /// What the window keeps of one session.
@@ -147,10 +189,11 @@ pub struct Workspace {
     provider_functions: Result<Vec<Function>, String>,
     composer: Entity<TextareaState>,
     palette: Entity<CommandState>,
-    /// The model and options chosen for the runs started from this window.
-    choices: Choices,
-    /// The picker being made, while the provider's lists arrive.
-    picking: Option<picker::Picking>,
+    /// The picker waits for what the provider offers.
+    picking: bool,
+    /// The form of the dialog shown, and how many were opened.
+    form: Option<OpenForm>,
+    forms: u64,
     /// The provider's function in progress, called from this window.
     talking: Option<talk::Talking>,
     history: History,
@@ -215,8 +258,9 @@ impl Workspace {
             provider_functions: Ok(Vec::new()),
             composer,
             palette,
-            choices: Choices::default(),
-            picking: None,
+            picking: false,
+            form: None,
+            forms: 0,
             talking: None,
             history: History::default(),
             notice: None,
@@ -232,6 +276,10 @@ impl Workspace {
         workspace.show_session(initialize.session, window, cx);
         workspace.refresh_sessions();
         workspace.describe();
+
+        // A host without it answers that it does not know it, and the
+        // composer brings back only what is entered here.
+        workspace.request(protocol::METHOD_RECALL, json!({}), Pending::Recall);
 
         // What the command line already asked for runs without asking again.
         if initialize.resume {
@@ -306,15 +354,162 @@ impl Workspace {
 
     /// Asks for the project's sessions, which the sidebar lists.
     fn refresh_sessions(&mut self) {
+        if self.host_function(protocol::FUNCTION_SESSIONS).is_none() {
+            return;
+        }
+
         self.request(
             protocol::METHOD_INVOKE,
             InvokeParams {
-                name: "sessions".into(),
+                name: protocol::FUNCTION_SESSIONS.into(),
                 params: None,
                 target: protocol::TARGET_HOST,
             },
             Pending::Sessions,
         );
+    }
+
+    /// A function the host described in `initialize`, by name.
+    fn host_function(&self, name: &str) -> Option<&Function> {
+        self.host_functions
+            .iter()
+            .find(|function| function.name == name)
+    }
+
+    /// The project's sessions, most recently used first, as the host lists
+    /// them.
+    pub fn sessions(&self) -> &[Value] {
+        &self.listed
+    }
+
+    /// The session shown, empty for a new one until its first run makes it.
+    pub fn current(&self) -> &str {
+        &self.current
+    }
+
+    /// Whether a run of this window works in the session.
+    pub fn is_working(&self, session: &str) -> bool {
+        self.runs.values().any(|key| key == session)
+    }
+
+    /// How many runs of this window work in the project.
+    pub fn working(&self) -> usize {
+        self.runs.len()
+    }
+
+    /// Whether the host is gone; the window can start it again.
+    pub fn has_ended(&self) -> bool {
+        self.ended.is_some()
+    }
+
+    /// Whether the host offers a function of its own, by name.
+    pub fn offers(&self, name: &str) -> bool {
+        self.host_function(name).is_some()
+    }
+
+    /// The title the host gives the session shown, once it has one.
+    pub fn session_title(&self) -> Option<String> {
+        self.listed
+            .iter()
+            .find(|session| session.value == self.current && !self.current.is_empty())
+            .map(|session| session.label.clone())
+            .filter(|label| !label.is_empty())
+    }
+
+    /// Gives the keyboard to the composer.
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.composer
+            .update(cx, |state, cx| state.focus(window, cx));
+    }
+
+    /// Makes another session the current one. A run working in the one left
+    /// behind goes on in the background.
+    pub fn open_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id == self.current || self.ended.is_some() {
+            return;
+        }
+
+        self.call_host(
+            protocol::FUNCTION_OPEN,
+            Some(json!({ "session": id })),
+            Feedback::Quiet,
+            cx,
+        );
+    }
+
+    /// Makes the next task start a new session.
+    pub fn new_session(&mut self, cx: &mut Context<Self>) {
+        if self.current.is_empty() || self.ended.is_some() {
+            return;
+        }
+
+        self.call_host(protocol::FUNCTION_NEW, None, Feedback::Quiet, cx);
+    }
+
+    /// Asks a function of the host for the window, which reads its answer,
+    /// as the settings do. False when the host does not offer it, or is
+    /// gone.
+    pub fn ask_host(&mut self, name: &str, params: Option<Json>, reply: Reply) -> bool {
+        if self.ended.is_some() || self.host_function(name).is_none() {
+            return false;
+        }
+
+        self.request(
+            protocol::METHOD_INVOKE,
+            InvokeParams {
+                name: name.into(),
+                params,
+                target: protocol::TARGET_HOST,
+            },
+            Pending::Reply(reply),
+        )
+        .is_some()
+    }
+
+    /// Offers a function of the host with some of its parameters given, as
+    /// the settings do for a provider: a form for the rest when `ask` or when
+    /// one is missing, else its confirmation, or the call. Its answer shows
+    /// in a notification.
+    pub fn offer(
+        &mut self,
+        name: &str,
+        given: &[(&str, String)],
+        ask: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(function) = self.host_function(name).cloned() else {
+            return;
+        };
+
+        if self.ended.is_some() {
+            return;
+        }
+
+        let typed: Vec<String> = function
+            .params
+            .iter()
+            .map(|parameter| {
+                given
+                    .iter()
+                    .find(|(name, _)| *name == parameter.name)
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        let command = Command {
+            source: Source::Host,
+            function,
+        };
+
+        match commands::arguments(&command.function, &typed) {
+            Ok(params) if !ask => {
+                self.confirm_and_call(command, params, Feedback::Toast, window, cx);
+            }
+
+            _ => self.ask_parameters(command, typed, Feedback::Toast, window, cx),
+        }
     }
 
     /// Asks what the provider offers, which the palette lists.
@@ -382,16 +577,15 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Starts a run in the current session.
+    /// Starts a run in the current session, with the model and the options
+    /// the session keeps.
     fn start(
         &mut self,
-        mut params: RunParams,
+        params: RunParams,
         label: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.choices.apply(&mut params);
-
         let Some(id) = self.request(protocol::METHOD_RUN, &params, Pending::Run) else {
             return;
         };
@@ -440,7 +634,7 @@ impl Workspace {
         &mut self,
         command: &Command,
         params: Option<Json>,
-        quiet: bool,
+        feedback: Feedback,
         cx: &mut Context<Self>,
     ) {
         let target = match command.source {
@@ -451,7 +645,7 @@ impl Workspace {
         let pending = Pending::Call {
             source: command.source,
             name: command.function.name.clone(),
-            quiet,
+            feedback,
         };
 
         let called = self.request(
@@ -476,18 +670,90 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Calls a function of the host by name, as the sidebar does, without
-    /// an answer in the conversation.
-    fn call_host(&mut self, name: &str, params: Option<Json>, cx: &mut Context<Self>) {
-        let command = Command {
-            source: Source::Host,
-            function: Function {
-                name: name.into(),
-                ..Function::default()
-            },
+    /// Calls a function of the host by name, as the sidebar and the picker
+    /// do. One the host did not describe is not called, and says so.
+    fn call_host(
+        &mut self,
+        name: &str,
+        params: Option<Json>,
+        feedback: Feedback,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(function) = self.host_function(name).cloned() else {
+            self.notice = Some(format!("This host does not offer {name}"));
+            cx.notify();
+            return;
         };
 
-        self.call(&command, params, true, cx);
+        let command = Command {
+            source: Source::Host,
+            function,
+        };
+
+        self.call(&command, params, feedback, cx);
+    }
+
+    /// Opens a form whose lists the workspace asks for, in place of any
+    /// form before it.
+    fn open_form(
+        &mut self,
+        fields: Vec<Field>,
+        provider_functions: Vec<Function>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<Form> {
+        let host_functions = self.host_functions.clone();
+        let form = cx.new(|cx| Form::new(fields, host_functions, provider_functions, window, cx));
+
+        // The dialog around the form says things that depend on its values,
+        // and is drawn again only with the whole window.
+        let changes = cx.subscribe_in(&form, window, |this, _, _: &Changed, window, cx| {
+            window.refresh();
+            this.list_for_form(cx);
+        });
+
+        self.forms += 1;
+        self.form = Some(OpenForm {
+            serial: self.forms,
+            form: form.clone(),
+            _changes: changes,
+        });
+
+        self.list_for_form(cx);
+
+        form
+    }
+
+    /// Asks for the lists the open form needs now.
+    fn list_for_form(&mut self, cx: &mut Context<Self>) {
+        let Some(open) = &self.form else {
+            return;
+        };
+
+        let (serial, form) = (open.serial, open.form.clone());
+        let wanted = form.update(cx, |form, cx| form.wanted(cx));
+
+        for wanted in wanted {
+            let target = match wanted.source {
+                Source::Host => protocol::TARGET_HOST,
+                Source::Provider => "",
+            };
+
+            self.request(
+                protocol::METHOD_INVOKE,
+                InvokeParams {
+                    name: wanted.function,
+                    params: wanted.params,
+                    target,
+                },
+                Pending::Listed {
+                    form: serial,
+                    field: wanted.field,
+                    generation: wanted.generation,
+                    source: wanted.source,
+                },
+            );
+        }
     }
 
     /// Records whether the shown session has a run in progress in the
@@ -584,6 +850,15 @@ impl Workspace {
                 self.told(&session, &told.events, cx);
             }
 
+            // Without it, the composer brings back what is entered here.
+            Pending::Recall => {
+                if let Ok(result) = answer {
+                    let recalled: RecallResult = serde_json::from_value(result).unwrap_or_default();
+
+                    self.history.recalled(&recalled.asked);
+                }
+            }
+
             Pending::Sessions => {
                 if let Ok(result) = answer {
                     let listed: HostResult = serde_json::from_value(result).unwrap_or_default();
@@ -611,23 +886,38 @@ impl Workspace {
                 self.described_for_picker(described, window, cx);
             }
 
-            Pending::Values(row) => {
+            Pending::Listed {
+                form,
+                field,
+                generation,
+                source,
+            } => {
+                let Some(open) = self.form.as_ref().filter(|open| open.serial == form) else {
+                    return;
+                };
+
                 let listed = answer
-                    .map(|result| {
-                        let listed: ValuesResult =
-                            serde_json::from_value(result).unwrap_or_default();
-                        listed.values
-                    })
+                    .map(|result| commands::listed(source, result))
                     .map_err(|error| error.message);
 
-                self.listed_for_picker(row, listed, window, cx);
+                open.form.update(cx, |form, cx| {
+                    form.listed(field, generation, listed, window, cx)
+                });
             }
 
             Pending::Call {
                 source,
                 name,
-                quiet,
-            } => self.call_answered(source, name, quiet, answer, window, cx),
+                feedback,
+            } => self.call_answered(source, name, feedback, answer, window, cx),
+
+            Pending::Reply(reply) => {
+                let answer = answer
+                    .map(|result| serde_json::from_value(result).unwrap_or_default())
+                    .map_err(|error| error.message);
+
+                reply(answer, window, cx);
+            }
         }
     }
 
@@ -742,7 +1032,7 @@ impl Workspace {
         &mut self,
         source: Source,
         name: String,
-        quiet: bool,
+        feedback: Feedback,
         answer: Result<Json, RpcError>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -773,15 +1063,45 @@ impl Workspace {
 
         if source == Source::Host {
             self.refresh_sessions();
+            cx.emit(WorkspaceEvent::Answered);
         }
 
-        if quiet && failed {
-            self.notice = Some(text);
-            return;
-        }
+        match feedback {
+            Feedback::Toast if failed => {
+                window.push_notification(Notification::error(text), cx);
+                return;
+            }
 
-        if quiet || text.is_empty() {
-            return;
+            // The first line says what was done.
+            Feedback::Toast => {
+                if let Some(line) = text.lines().next().filter(|line| !line.is_empty()) {
+                    window.push_notification(commands::capitalized(line), cx);
+                }
+
+                return;
+            }
+
+            Feedback::Quiet | Feedback::Notice if failed => {
+                self.notice = Some(text);
+                return;
+            }
+
+            Feedback::Quiet => return,
+
+            // The first line says what was done; the rest is what it
+            // applies to now.
+            Feedback::Notice => {
+                self.notice = text
+                    .lines()
+                    .next()
+                    .filter(|line| !line.is_empty())
+                    .map(commands::capitalized);
+                return;
+            }
+
+            Feedback::Conversation if text.is_empty() => return,
+
+            Feedback::Conversation => {}
         }
 
         let current = self.current.clone();
@@ -801,10 +1121,9 @@ impl Workspace {
             self.dir = state.dir;
         }
 
-        // What was chosen and described was for the provider in use.
+        // What was described was for the provider in use.
         if state.provider != self.provider {
             self.provider_functions = Ok(Vec::new());
-            self.choices = Choices::default();
             self.describe();
         }
 
@@ -1110,11 +1429,6 @@ impl Workspace {
 
     fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let view = self.views.get(&self.current);
-        let model = if self.choices.model.is_empty() {
-            &self.model
-        } else {
-            &self.choices.model
-        };
         let working = view.is_some_and(|view| view.run.is_some());
         let waiting = self.steers_waiting();
         let elsewhere = self.working_elsewhere();
@@ -1144,12 +1458,8 @@ impl Workspace {
                 Button::new("model")
                     .ghost()
                     .xsmall()
-                    .label(if self.choices.is_empty() {
-                        format!("{} · {}", self.provider, model)
-                    } else {
-                        format!("{} · {} (chosen here)", self.provider, model)
-                    })
-                    .tooltip("Model and options for the tasks started here")
+                    .label(format!("{} · {}", self.provider, self.model))
+                    .tooltip("The model and the options of this session")
                     .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx))),
             );
 
@@ -1171,24 +1481,17 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
+        v_flex()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::cancel))
-            .on_action(cx.listener(Self::open_palette))
             .size_full()
-            .items_stretch()
+            .min_w_0()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.render_sidebar(cx))
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .child(self.render_conversation(cx))
-                    .child(self.render_composer(cx))
-                    .child(self.render_status(cx)),
-            )
+            .child(self.render_conversation(cx))
+            .child(self.render_composer(cx))
+            .child(self.render_status(cx))
     }
 }
 
