@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" role="img" aria-labelledby="title desc">
+  <title id="title">How rumbo-gui works</title>
+  <desc id="desc">The rumbo-gui window speaks rumbo's Agent Frontend Protocol, JSON-RPC on stdin and stdout, with one rumbo serve for each project open in it, which runs its tasks and tells their history, and with one more, started in your home, which only lists every project and its sessions. The hosts reach the providers through the Agent Provider Protocol, and keep the sessions of every project, the system settings, and the providers in rumbo's database. The window keeps only its theme.</desc>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .head { font-size: 15px; font-weight: 600; }
+    .name { font-size: 14px; font-weight: 600; }
+    .step { font-size: 13px; }
+    .sub, .label { font-size: 12px; fill: #59636e; }
+    .card { fill: #ffffff; stroke: #d0d7de; }
+    .front { fill: #ddf4ff; stroke: #0969da; }
+    .front-ink { fill: #0969da; }
+    .prov { fill: #fff1e5; stroke: #bc4c00; }
+    .prov-ink { fill: #bc4c00; }
+    .host { fill: #f6f8fa; stroke: #8c959f; }
+    .lists { stroke-dasharray: 5 4; }
+    .chip { fill: #ffffff; }
+    .wire { stroke: #59636e; stroke-width: 1.5; fill: none; }
+    .tip { fill: #59636e; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .sub, .label { fill: #9198a1; }
+      .card { fill: #0d1117; stroke: #30363d; }
+      .front { fill: #0c2d6b; stroke: #4493f8; }
+      .front-ink { fill: #4493f8; }
+      .prov { fill: #3d1d00; stroke: #f0883e; }
+      .prov-ink { fill: #f0883e; }
+      .host { fill: #161b22; stroke: #6e7681; }
+      .chip { fill: #0d1117; }
+      .wire { stroke: #9198a1; }
+      .tip { fill: #9198a1; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="tip"/>
+    </marker>
+  </defs>
+
+  <rect class="card" x="0.5" y="0.5" width="999" height="419" rx="16"/>
+
+  <!-- The window -->
+  <text class="head front-ink" x="144" y="44" text-anchor="middle">The window</text>
+  <rect class="front" x="24" y="64" width="240" height="292" rx="12"/>
+  <text class="name mono" x="44" y="94">rumbo-gui</text>
+  <text class="sub" x="44" y="112">one window for every project</text>
+
+  <rect class="chip" x="40" y="132" width="208" height="44" rx="8"/>
+  <text class="step" x="54" y="152">Open projects</text>
+  <text class="sub" x="54" y="168">a conversation per session</text>
+
+  <rect class="chip" x="40" y="188" width="208" height="44" rx="8"/>
+  <text class="step" x="54" y="208">Recent projects</text>
+  <text class="sub" x="54" y="224">all that rumbo holds</text>
+
+  <rect class="chip" x="40" y="244" width="208" height="44" rx="8"/>
+  <text class="step" x="54" y="264">Settings</text>
+  <text class="sub" x="54" y="280">rumbo's, through rumbo</text>
+
+  <text class="sub" x="44" y="316">keeps only its theme, in</text>
+  <text class="sub mono" x="44" y="334">preferences.json</text>
+
+  <!-- The hosts -->
+  <text class="head" x="502" y="44" text-anchor="middle">rumbo hosts</text>
+  <text class="label" x="318" y="60" text-anchor="middle">Agent Frontend</text>
+  <text class="label" x="318" y="74" text-anchor="middle">Protocol</text>
+
+  <rect class="host" x="372" y="84" width="260" height="68" rx="10"/>
+  <text class="name mono" x="390" y="110">rumbo serve</text>
+  <text class="step" x="496" y="110">in alpha</text>
+  <text class="sub" x="390" y="132">runs its tasks, tells its history</text>
+
+  <rect class="host" x="372" y="176" width="260" height="68" rx="10"/>
+  <text class="name mono" x="390" y="202">rumbo serve</text>
+  <text class="step" x="496" y="202">in beta</text>
+  <text class="sub" x="390" y="224">one per open project</text>
+
+  <rect class="host lists" x="372" y="268" width="260" height="68" rx="10"/>
+  <text class="name mono" x="390" y="294">rumbo serve</text>
+  <text class="step" x="496" y="294">in your home</text>
+  <text class="sub" x="390" y="316">only lists every project</text>
+
+  <path class="wire" d="M264 150 C310 150 330 118 370 118" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <path class="wire" d="M264 210 C310 210 330 210 370 210" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <path class="wire" d="M264 266 C310 266 330 302 370 302" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text class="label" x="318" y="380" text-anchor="middle">JSON-RPC on stdin/stdout</text>
+
+  <!-- What is rumbo's -->
+  <text class="head prov-ink" x="858" y="44" text-anchor="middle">rumbo's own</text>
+
+  <rect class="prov" x="740" y="84" width="236" height="100" rx="12"/>
+  <text class="name" x="758" y="112">Providers</text>
+  <text class="sub mono" x="758" y="134">anthropic · openai</text>
+  <text class="sub mono" x="758" y="152">chatgpt · yours</text>
+  <text class="sub" x="758" y="170">reach the model</text>
+
+  <rect class="host" x="740" y="212" width="236" height="124" rx="12"/>
+  <text class="name" x="758" y="240">rumbo's database</text>
+  <text class="sub" x="758" y="262">the sessions of every project</text>
+  <text class="sub" x="758" y="280">the system settings</text>
+  <text class="sub" x="758" y="298">the providers and their options</text>
+  <text class="sub" x="758" y="316">what each session chose</text>
+
+  <path class="wire" d="M632 118 C680 118 700 134 738 134" marker-end="url(#arrow)"/>
+  <path class="wire" d="M632 210 C680 210 700 150 738 150" marker-end="url(#arrow)"/>
+  <text class="label" x="686" y="98" text-anchor="middle">Agent Provider</text>
+  <text class="label" x="686" y="112" text-anchor="middle">Protocol</text>
+
+  <path class="wire" d="M632 132 C690 132 700 256 738 256" marker-end="url(#arrow)"/>
+  <path class="wire" d="M632 226 C690 226 700 274 738 274" marker-end="url(#arrow)"/>
+  <path class="wire" d="M632 302 C690 302 700 292 738 292" marker-end="url(#arrow)"/>
+</svg>

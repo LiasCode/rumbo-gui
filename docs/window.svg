@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-labelledby="title desc">
+  <title id="title">The rumbo-gui window</title>
+  <desc id="desc">The window has a toolbar along the top with the commands and the settings. The sidebar lists the projects open in the window, each with its sessions, a working one marked, and under Recent the other projects rumbo holds. The conversation of the session shown has the task, the model's answer as Markdown, and tool calls that open to show their arguments and result. Below it, the composer takes a task, or tells a run in progress something. The status bar shows what is happening, the provider and the model, which open the session's model and options, how full the context is, and the tokens spent.</desc>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .ui { font-size: 13px; }
+    .small { font-size: 12px; fill: #59636e; }
+    .caps { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; fill: #59636e; }
+    .note-head { font-size: 14px; font-weight: 600; fill: #0969da; }
+    .note { font-size: 12px; fill: #59636e; }
+    .card { fill: #ffffff; stroke: #d0d7de; }
+    .frame { fill: #ffffff; stroke: #8c959f; }
+    .bar { fill: #f6f8fa; }
+    .side { fill: #f6f8fa; }
+    .rule { stroke: #d0d7de; }
+    .chip { fill: #eaeef2; }
+    .active { fill: #ddf4ff; }
+    .bubble { fill: #eaeef2; }
+    .field { fill: #ffffff; stroke: #d0d7de; }
+    .send { fill: #1f2328; }
+    .send-ink { fill: #ffffff; }
+    .ok { fill: #1a7f37; }
+    .busy { fill: #0969da; }
+    .wire { stroke: #0969da; stroke-width: 1.2; fill: none; stroke-dasharray: 3 3; }
+    .dot { fill: #0969da; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .small, .caps, .note { fill: #9198a1; }
+      .note-head { fill: #4493f8; }
+      .card { fill: #0d1117; stroke: #30363d; }
+      .frame { fill: #0d1117; stroke: #6e7681; }
+      .bar, .side { fill: #161b22; }
+      .rule { stroke: #30363d; }
+      .chip, .bubble { fill: #262c36; }
+      .active { fill: #0c2d6b; }
+      .field { fill: #0d1117; stroke: #30363d; }
+      .send { fill: #e6edf3; }
+      .send-ink { fill: #0d1117; }
+      .ok { fill: #3fb950; }
+      .busy { fill: #4493f8; }
+      .wire { stroke: #4493f8; }
+      .dot { fill: #4493f8; }
+    }
+  </style>
+
+  <rect class="card" x="0.5" y="0.5" width="999" height="559" rx="16"/>
+
+  <!-- The window -->
+  <rect class="frame" x="24" y="24" width="640" height="512" rx="10"/>
+
+  <!-- Toolbar -->
+  <path class="bar" d="M34 25 H654 A9 9 0 0 1 663 34 V60 H25 V34 A9 9 0 0 1 34 25 Z"/>
+  <line class="rule" x1="25" y1="60" x2="663" y2="60"/>
+  <text class="ui" x="40" y="47">fix the failing test — alpha</text>
+  <rect class="chip" x="500" y="33" width="80" height="20" rx="6"/>
+  <text class="small" x="512" y="47">Commands</text>
+  <rect class="chip" x="588" y="33" width="64" height="20" rx="6"/>
+  <text class="small" x="600" y="47">Settings</text>
+
+  <!-- Sidebar -->
+  <rect class="side" x="25" y="61" width="180" height="474"/>
+  <line class="rule" x1="205" y1="61" x2="205" y2="535"/>
+  <rect class="chip" x="37" y="72" width="156" height="24" rx="6"/>
+  <text class="small" x="49" y="88">Open Project…</text>
+
+  <text class="caps" x="41" y="122">OPEN</text>
+  <text class="ui" x="41" y="144">▾ alpha</text>
+  <text class="small" x="180" y="144">+</text>
+  <rect class="active" x="37" y="153" width="160" height="22" rx="5"/>
+  <text class="ui" x="61" y="168">fix the failing test</text>
+  <text class="ui" x="61" y="192">add a --json flag</text>
+  <circle class="busy" cx="184" cy="188" r="3.5"/>
+  <text class="ui" x="61" y="216">rename the module</text>
+
+  <text class="caps" x="41" y="252">RECENT</text>
+  <text class="ui" x="41" y="274">▸ beta</text>
+  <text class="ui" x="41" y="298">▸ notes</text>
+
+  <!-- Conversation -->
+  <rect class="bubble" x="474" y="76" width="172" height="30" rx="10"/>
+  <text class="ui" x="490" y="96">fix the failing test</text>
+
+  <text class="ui" x="224" y="136">Let me run the tests first.</text>
+  <text class="ui mono" x="224" y="166">▸ bash go test ./...</text>
+  <circle class="ok" cx="392" cy="162" r="4"/>
+  <text class="ui mono" x="224" y="192">▸ read export_test.go</text>
+  <circle class="ok" cx="400" cy="188" r="4"/>
+  <text class="ui mono" x="224" y="218">▸ edit export.go</text>
+  <circle class="ok" cx="360" cy="214" r="4"/>
+  <text class="ui" x="224" y="250">The test expected UTC; the export used local</text>
+  <text class="ui" x="224" y="270">time. It passes now.</text>
+
+  <!-- Composer -->
+  <line class="rule" x1="205" y1="420" x2="663" y2="420"/>
+  <rect class="field" x="220" y="434" width="384" height="40" rx="10"/>
+  <text class="small" x="236" y="459">Give rumbo a task</text>
+  <rect class="send" x="614" y="436" width="36" height="36" rx="9"/>
+  <text class="send-ink" x="626" y="459" font-size="15">↑</text>
+
+  <!-- Status bar -->
+  <line class="rule" x1="205" y1="490" x2="663" y2="490"/>
+  <text class="small" x="220" y="517">Ready</text>
+  <rect class="chip" x="272" y="503" width="150" height="22" rx="6"/>
+  <text class="small" x="282" y="518">anthropic · claude-opus</text>
+  <text class="small" x="436" y="518">context 23% of 200k · 12k in</text>
+
+  <!-- Notes -->
+  <path class="wire" d="M620 33 C640 12 676 14 690 30"/>
+  <circle class="dot" cx="690" cy="30" r="3"/>
+  <text class="note-head" x="700" y="36">Toolbar</text>
+  <text class="note" x="700" y="54">The commands of rumbo and the</text>
+  <text class="note" x="700" y="70">provider (Ctrl-P), and the settings.</text>
+
+  <path class="wire" d="M197 164 C214 138 214 116 240 116 L690 116"/>
+  <circle class="dot" cx="690" cy="116" r="3"/>
+  <text class="note-head" x="700" y="124">Sidebar</text>
+  <text class="note" x="700" y="142">Every project and its sessions.</text>
+  <text class="note" x="700" y="158">Each open one has its own rumbo;</text>
+  <text class="note" x="700" y="174">a Recent one opens when chosen.</text>
+
+  <path class="wire" d="M470 200 C560 200 640 214 690 214"/>
+  <circle class="dot" cx="690" cy="214" r="3"/>
+  <text class="note-head" x="700" y="220">Conversation</text>
+  <text class="note" x="700" y="238">The answer as Markdown; a tool</text>
+  <text class="note" x="700" y="254">call opens to show what it got.</text>
+
+  <path class="wire" d="M604 454 C640 454 660 330 690 330"/>
+  <circle class="dot" cx="690" cy="330" r="3"/>
+  <text class="note-head" x="700" y="336">Composer</text>
+  <text class="note" x="700" y="354">Enter sends a task; during a run,</text>
+  <text class="note" x="700" y="370">it tells the run something.</text>
+
+  <path class="wire" d="M634 514 C662 514 672 440 690 440"/>
+  <circle class="dot" cx="690" cy="440" r="3"/>
+  <text class="note-head" x="700" y="446">Status bar</text>
+  <text class="note" x="700" y="464">The model and its options, which</text>
+  <text class="note" x="700" y="480">the session keeps; the context</text>
+  <text class="note" x="700" y="496">and the tokens spent.</text>
+</svg>
