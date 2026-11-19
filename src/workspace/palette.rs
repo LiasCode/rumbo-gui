@@ -1,7 +1,8 @@
-//! The command palette: every function the host and the provider describe,
-//! offered by name without knowing any of them, the host's by what they act
-//! on, with a form for their parameters and a confirmation for what cannot
-//! be undone.
+//! The command palette: the window's own actions, the project's sessions to
+//! show one, and every function the host and the provider describe, offered
+//! by name without knowing any of them, the host's by what they act on,
+//! with a form for their parameters and a confirmation for what cannot be
+//! undone.
 
 use std::rc::Rc;
 
@@ -22,6 +23,7 @@ use super::form::Field;
 use super::{Feedback, Workspace, WorkspaceEvent};
 use crate::commands::{self, Command};
 use crate::conversation::Source;
+use crate::protocol;
 
 /// One row of the palette.
 #[derive(Clone)]
@@ -30,6 +32,14 @@ enum Entry {
     Function(Command),
     /// The picker of the model and options, which belongs to this window.
     Picker,
+    /// Actions of the workspace.
+    NewSession,
+    Changes,
+    Details,
+    Export,
+    Editor,
+    /// A session of the project, by its id and how it is shown.
+    Session(String, String, String),
     /// Commands of the window around the workspace.
     OpenProject,
     OpenSettings,
@@ -51,11 +61,35 @@ impl Workspace {
 
         let mut labels = vec!["Window".to_string()];
         let mut sections = vec![vec![
+            Entry::NewSession,
             Entry::Picker,
+            Entry::Changes,
+            Entry::Details,
+            Entry::Export,
+            Entry::Editor,
             Entry::OpenProject,
             Entry::OpenSettings,
             Entry::CloseProject,
         ]];
+
+        let sessions: Vec<Entry> = self
+            .listed
+            .iter()
+            .filter(|session| session.value != self.current)
+            .map(|session| {
+                let name = match session.label.is_empty() {
+                    true => session.value.clone(),
+                    false => session.label.clone(),
+                };
+
+                Entry::Session(session.value.clone(), name, session.description.clone())
+            })
+            .collect();
+
+        if !sessions.is_empty() && self.host_function(protocol::FUNCTION_OPEN).is_some() {
+            labels.push("Sessions".to_string());
+            sections.push(sessions);
+        }
 
         for (title, functions) in commands::by_group(&self.host_functions) {
             labels.push(title);
@@ -278,7 +312,7 @@ fn palette(
     let muted = cx.theme().muted_foreground;
     let mut palette = Palette::new(state)
         .bordered(false)
-        .placeholder("Type a command")
+        .placeholder("Type a command or a session")
         .w(px(480.));
 
     for (label, section) in labels.iter().zip(sections.iter()) {
@@ -294,6 +328,38 @@ fn palette(
                 "Choose the model and the options this session keeps".into(),
                 muted,
             ),
+
+            Entry::NewSession => item(
+                "New Session".into(),
+                "Start the next task in a new session (Ctrl-N)".into(),
+                muted,
+            ),
+
+            Entry::Changes => item(
+                "Changes".into(),
+                "What changed in the project's folder, as Git sees it (Ctrl-Shift-G)".into(),
+                muted,
+            ),
+
+            Entry::Details => item(
+                "Details".into(),
+                "How the session stands, and its skills (Ctrl-Alt-B)".into(),
+                muted,
+            ),
+
+            Entry::Export => item(
+                "Export as Markdown…".into(),
+                "Write this session's conversation to a file".into(),
+                muted,
+            ),
+
+            Entry::Editor => item(
+                "Open in Editor".into(),
+                "Open the project's folder in your editor (Ctrl-Shift-E)".into(),
+                muted,
+            ),
+
+            Entry::Session(_, name, said) => item(name.clone(), said.clone(), muted),
 
             Entry::OpenProject => item(
                 "Open Project…".into(),
@@ -334,6 +400,14 @@ fn palette(
         let _ = workspace.update(cx, |this, cx| match chosen {
             Some(Entry::Function(command)) => this.chose(command, window, cx),
             Some(Entry::Picker) => this.open_picker(cx),
+            Some(Entry::NewSession) => this.new_session(cx),
+            Some(Entry::Changes) => this.toggle_panel(super::Panel::Changes, window, cx),
+            Some(Entry::Details) => this.toggle_panel(super::Panel::Details, window, cx),
+            Some(Entry::Export) => this.export(window, cx),
+            Some(Entry::Editor) => cx.emit(WorkspaceEvent::OpenInEditor {
+                path: this.dir.clone(),
+            }),
+            Some(Entry::Session(id, _, _)) => this.open_session(&id, cx),
             Some(Entry::OpenProject) => cx.emit(WorkspaceEvent::OpenProject),
             Some(Entry::OpenSettings) => cx.emit(WorkspaceEvent::OpenSettings),
             Some(Entry::CloseProject) => cx.emit(WorkspaceEvent::CloseProject),

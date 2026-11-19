@@ -35,15 +35,23 @@ pub const GROUP_SESSION: &str = "session";
 pub const GROUP_PROVIDER: &str = "provider";
 
 /// The functions of the host the window offers in a place of its own: the
-/// sidebar lists every project and its sessions, and opens and starts
-/// sessions, the picker changes the model and the options a session keeps,
-/// and the settings show and change the system settings and the providers.
+/// sidebar lists every project and its sessions, and opens, starts, renames,
+/// and deletes sessions; the session's menu and its messages rename,
+/// branch, and compact it; the details panel shows its status and skills;
+/// the picker changes the model and the options a session keeps; and the
+/// settings show and change the system settings and the providers.
 /// Each is offered only when `initialize` lists it, and called with the
 /// parameters it describes there.
 pub const FUNCTION_SESSIONS: &str = "sessions";
 pub const FUNCTION_PROJECTS: &str = "projects";
 pub const FUNCTION_OPEN: &str = "open";
 pub const FUNCTION_NEW: &str = "new";
+pub const FUNCTION_RENAME: &str = "rename";
+pub const FUNCTION_DELETE: &str = "delete";
+pub const FUNCTION_BRANCH: &str = "branch";
+pub const FUNCTION_COMPACT: &str = "compact";
+pub const FUNCTION_STATUS: &str = "status";
+pub const FUNCTION_SKILLS: &str = "skills";
 pub const FUNCTION_USE: &str = "use";
 pub const FUNCTION_SESSION_OPTIONS: &str = "session-options";
 pub const FUNCTION_SYSTEM: &str = "system";

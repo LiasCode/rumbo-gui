@@ -29,6 +29,23 @@ impl History {
         self.entries = earlier;
     }
 
+    /// The most recent entries, newest first and each once, at most `count`.
+    pub fn latest(&self, count: usize) -> Vec<String> {
+        let mut latest: Vec<String> = Vec::new();
+
+        for entry in self.entries.iter().rev() {
+            if latest.len() == count {
+                break;
+            }
+
+            if !latest.contains(entry) {
+                latest.push(entry.clone());
+            }
+        }
+
+        latest
+    }
+
     /// Adds what was entered, unless it repeats the entry before, and leaves
     /// the history at its end.
     pub fn remember(&mut self, text: &str) {
@@ -65,6 +82,17 @@ impl History {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gives_the_latest_entries_newest_first_and_each_once() {
+        let mut history = History::default();
+
+        history.recalled(&["c".into(), "a".into(), "b".into(), "a".into()]);
+        history.remember("d");
+
+        assert_eq!(history.latest(3), ["d", "c", "a"]);
+        assert_eq!(history.latest(10), ["d", "c", "a", "b"]);
+    }
+
     use super::*;
 
     #[test]

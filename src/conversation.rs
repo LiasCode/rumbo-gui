@@ -18,6 +18,13 @@ pub enum Source {
     Provider,
 }
 
+/// One line of what a call changes in a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Line {
+    Removed(String),
+    Added(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: String,
@@ -25,6 +32,9 @@ pub struct Tool {
     pub summary: String,
     /// The arguments as the model gave them, laid out for reading.
     pub args: String,
+    /// What the call changes in a file, when its arguments say: the text it
+    /// replaces and the text it puts instead, or what it writes.
+    pub change: Vec<Line>,
     /// What the model received, once the call finished.
     pub result: Option<String>,
     /// The call failed, or never finished because its run ended first.
@@ -50,6 +60,12 @@ pub enum Kind {
     Stopped {
         cancelled: bool,
         reason: String,
+    },
+    /// A run this window followed that finished its task: how long it took
+    /// and how many tools it called.
+    Finished {
+        seconds: u64,
+        tools: usize,
     },
     /// What a command answered, or why it failed.
     Answer {
@@ -107,6 +123,7 @@ impl Conversation {
                 name: event.name.clone(),
                 summary: summary(&event.name, event.args.as_ref()),
                 args: layout(event.args.as_ref()),
+                change: change(event.args.as_ref()),
                 result: None,
                 failed: false,
             })),
@@ -144,10 +161,31 @@ impl Conversation {
 
     /// Records how a run ended, when it did not finish its task.
     pub fn end(&mut self, status: &str, error: &str) -> Change {
+        self.end_after(status, error, None)
+    }
+
+    /// Records how a run ended, and, for one that finished and was followed
+    /// for `seconds`, how long it took and the tools it called since its
+    /// task.
+    pub fn end_after(&mut self, status: &str, error: &str, seconds: Option<u64>) -> Change {
         self.settle();
 
         match status {
-            protocol::RUN_DONE => Change::Nothing,
+            protocol::RUN_DONE => match seconds {
+                Some(seconds) => {
+                    let tools = self
+                        .items
+                        .iter()
+                        .rev()
+                        .take_while(|item| !matches!(item.kind, Kind::Task(_)))
+                        .filter(|item| matches!(item.kind, Kind::Tool(_)))
+                        .count();
+
+                    self.push(Kind::Finished { seconds, tools })
+                }
+
+                None => Change::Nothing,
+            },
             protocol::RUN_CANCELLED => self.push(Kind::Stopped {
                 cancelled: true,
                 reason: String::new(),
@@ -170,6 +208,24 @@ impl Conversation {
                 tool.failed = true;
             }
         }
+    }
+
+    /// The number of the person's message an item is, counted from 1 among
+    /// the tasks, as the host numbers the points a branch starts before.
+    pub fn task_number(&self, id: ItemId) -> Option<usize> {
+        let mut number = 0;
+
+        for item in &self.items {
+            if matches!(item.kind, Kind::Task(_)) {
+                number += 1;
+            }
+
+            if item.id == id {
+                return matches!(item.kind, Kind::Task(_)).then_some(number);
+            }
+        }
+
+        None
     }
 
     /// Puts a session's history before what the conversation holds, and
@@ -259,6 +315,28 @@ fn summary(name: &str, args: Option<&Json>) -> String {
     match identifying {
         Some(value) => format!("{name} {}", first_line(value)),
         None => name.to_string(),
+    }
+}
+
+/// What a call changes in a file, as its arguments say: the text it
+/// replaces and the text it puts instead, or the content it writes.
+fn change(args: Option<&Json>) -> Vec<Line> {
+    let text = |key: &str| args?.get(key)?.as_str();
+    let lines = |text: &str, line: fn(String) -> Line| -> Vec<Line> {
+        text.lines().map(|each| line(each.to_string())).collect()
+    };
+
+    match (text("old"), text("new"), text("content")) {
+        (Some(old), Some(new), _) => {
+            let mut change = lines(old, Line::Removed);
+
+            change.extend(lines(new, Line::Added));
+            change
+        }
+
+        (_, _, Some(content)) => lines(content, Line::Added),
+
+        _ => Vec::new(),
     }
 }
 
@@ -534,5 +612,67 @@ mod tests {
 
         assert_eq!(first_line("  one\ntwo"), "one");
         assert_eq!(first_line(&long).chars().count(), 163);
+    }
+
+    #[test]
+    fn shows_what_an_edit_replaces_and_what_a_write_puts() {
+        assert_eq!(
+            change(Some(
+                &json!({"path": "a.rs", "old": "fn a() {}", "new": "fn a() {\n    b();\n}"})
+            )),
+            [
+                Line::Removed("fn a() {}".into()),
+                Line::Added("fn a() {".into()),
+                Line::Added("    b();".into()),
+                Line::Added("}".into()),
+            ]
+        );
+        assert_eq!(
+            change(Some(&json!({"path": "b.txt", "content": "hello"}))),
+            [Line::Added("hello".into())]
+        );
+        assert!(change(Some(&json!({"command": "ls"}))).is_empty());
+    }
+
+    #[test]
+    fn says_how_long_a_followed_run_took_and_the_tools_it_called() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("first".into()));
+        conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
+        conversation.end_after("done", "", Some(3));
+        conversation.push(Kind::Task("second".into()));
+        conversation.apply(&event(json!({"type": "tool_started", "name": "read"})));
+        conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
+
+        assert_eq!(
+            conversation.end_after("done", "", Some(12)),
+            Change::Appended
+        );
+        assert_eq!(
+            conversation.items().last().map(|item| item.kind.clone()),
+            Some(Kind::Finished {
+                seconds: 12,
+                tools: 2
+            })
+        );
+        assert_eq!(conversation.end_after("done", "", None), Change::Nothing);
+    }
+
+    #[test]
+    fn numbers_the_tasks_as_the_host_numbers_branch_points() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("first".into()));
+        conversation.apply(&event(json!({"type": "text", "text": "ok"})));
+        conversation.push(Kind::Steer("faster".into()));
+        conversation.push(Kind::Task("second".into()));
+
+        let ids: Vec<ItemId> = conversation.items().iter().map(|item| item.id).collect();
+
+        assert_eq!(conversation.task_number(ids[0]), Some(1));
+        assert_eq!(conversation.task_number(ids[1]), None);
+        assert_eq!(conversation.task_number(ids[2]), None);
+        assert_eq!(conversation.task_number(ids[3]), Some(2));
     }
 }

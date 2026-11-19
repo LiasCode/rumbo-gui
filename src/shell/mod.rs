@@ -14,17 +14,19 @@ use gpui_kit::component::{
     ActiveTheme as _, IconName, Sizable as _, Theme, ThemeMode, WindowExt as _,
     button::{Button, ButtonVariant, ButtonVariants as _},
     h_flex,
+    input::{InputEvent, InputState},
     notification::Notification,
     spinner::Spinner,
     v_flex,
 };
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement as _, PathPromptOptions, Render, Styled as _,
-    Subscription, Window, actions, div, prelude::FluentBuilder as _,
+    IntoElement, KeyBinding, MouseButton, ParentElement as _, PathPromptOptions, Render,
+    Styled as _, Subscription, Window, actions, div, prelude::FluentBuilder as _,
 };
 
 use crate::config::{self, Config};
+use crate::editor;
 use crate::environment::Environment;
 use crate::host::{Descriptors, Host};
 use crate::preferences::{self, Preferences, Theme as Colors};
@@ -35,7 +37,25 @@ use settings::{SettingsEvent, SettingsView};
 
 actions!(
     shell,
-    [OpenPalette, OpenSettings, OpenProject, CloseSettings]
+    [
+        OpenPalette,
+        OpenSettings,
+        OpenProject,
+        CloseSettings,
+        NewSession,
+        ToggleSidebar,
+        OpenInEditor,
+        FocusSearch,
+        Jump1,
+        Jump2,
+        Jump3,
+        Jump4,
+        Jump5,
+        Jump6,
+        Jump7,
+        Jump8,
+        Jump9
+    ]
 );
 
 const KEY_CONTEXT: &str = "Shell";
@@ -50,9 +70,45 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-k", OpenPalette, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-,", OpenSettings, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-o", OpenProject, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-n", NewSession, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-b", ToggleSidebar, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-shift-e", OpenInEditor, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-f", FocusSearch, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-1", Jump1, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-2", Jump2, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-3", Jump3, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-4", Jump4, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-5", Jump5, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-6", Jump6, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-7", Jump7, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-8", Jump8, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-9", Jump9, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", CloseSettings, Some(settings::KEY_CONTEXT)),
     ]);
 }
+
+/// The window's keys, for the person to read: the keys, and what they do.
+/// They are bound in `bind_keys` here and in the workspace's.
+pub const SHORTCUTS: [(&str, &str); 15] = [
+    ("Enter", "Send the task, or tell the run in progress"),
+    ("Shift-Enter", "Start a new line"),
+    ("Up / Down", "Bring back what was asked in the project"),
+    ("Escape", "Cancel the run, or give up a provider's function"),
+    ("Ctrl-K, Ctrl-P", "Commands, sessions, and projects"),
+    ("Ctrl-N", "New session"),
+    (
+        "Ctrl-1 … Ctrl-9",
+        "Show the project's sessions, most recent first",
+    ),
+    ("Ctrl-B", "Show or put away the sidebar"),
+    ("Ctrl-Shift-G", "Changes in the project's folder"),
+    ("Ctrl-Alt-B", "The session's details"),
+    ("Ctrl-Shift-E", "Open the project in the editor"),
+    ("Ctrl-O", "Open a project"),
+    ("Ctrl-F", "Search the sessions"),
+    ("Ctrl-,", "Settings"),
+    ("Escape, in the settings", "Back to the work"),
+];
 
 /// How the window reaches its first host.
 pub enum Start {
@@ -121,6 +177,10 @@ pub struct Shell {
     /// The main action of a screen without a workspace, which has the
     /// keyboard.
     action_focus: FocusHandle,
+    /// What the sidebar is narrowed to.
+    search: Entity<InputState>,
+    /// The sidebar was dragged to another width, kept once the drag ends.
+    resized: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -147,6 +207,13 @@ impl Shell {
             }
         });
 
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search sessions"));
+        let searching = cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        });
+
         let mut shell = Shell {
             config: None,
             environment: Environment::inherited(),
@@ -158,7 +225,9 @@ impl Shell {
             preferred,
             focus_handle: cx.focus_handle(),
             action_focus: cx.focus_handle(),
-            _subscriptions: vec![appearance, activation],
+            search,
+            resized: false,
+            _subscriptions: vec![appearance, activation, searching],
         };
 
         match start {
@@ -388,7 +457,13 @@ impl Shell {
     }
 
     fn attach(&mut self, id: ProjectId, host: Host, window: &mut Window, cx: &mut Context<Self>) {
-        let workspace = cx.new(|cx| Workspace::new(host, window, cx));
+        let width = self.preferred.preferences.width.pixels();
+        let workspace = cx.new(|cx| {
+            let mut workspace = Workspace::new(host, window, cx);
+
+            workspace.set_width(width, cx);
+            workspace
+        });
 
         let subscriptions = vec![
             cx.subscribe_in(
@@ -456,7 +531,64 @@ impl Shell {
                     settings.update(cx, |settings, cx| settings.refresh(cx));
                 }
             }
+
+            WorkspaceEvent::OpenInEditor { path } => open_with_editor(
+                &self.preferred.preferences.editor,
+                &self.environment,
+                Path::new(path),
+                window,
+                cx,
+            ),
+
+            WorkspaceEvent::EndedElsewhere {
+                session,
+                title,
+                status,
+            } => {
+                let _ = session;
+
+                self.ended_elsewhere(id, title, status, window, cx)
+            }
         }
+    }
+
+    /// Says that a run ended in a session that is not shown, unless the
+    /// person asked for quiet. The sidebar marks the session until it is
+    /// shown.
+    fn ended_elsewhere(
+        &mut self,
+        id: ProjectId,
+        title: &str,
+        status: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.preferred.preferences.quiet {
+            return;
+        }
+
+        let project = self
+            .project(id)
+            .map(|project| folder_name(&project.dir))
+            .unwrap_or_default();
+        let said = match status {
+            crate::protocol::RUN_DONE => "finished",
+            crate::protocol::RUN_CANCELLED => "was cancelled",
+            _ => "failed",
+        };
+        let note = Notification::new()
+            .title(format!("A run {said} in {project}"))
+            .message(title.to_string());
+
+        let note = match status {
+            crate::protocol::RUN_DONE => {
+                note.with_type(gpui_kit::component::notification::NotificationType::Success)
+            }
+            crate::protocol::RUN_CANCELLED => note,
+            _ => note.with_type(gpui_kit::component::notification::NotificationType::Error),
+        };
+
+        window.push_notification(note, cx);
     }
 
     /// Shows a project: the session its host has current, or why it has
@@ -496,6 +628,84 @@ impl Shell {
         if let Some(workspace) = self.workspace_of(id) {
             workspace.update(cx, |workspace, cx| workspace.new_session(cx));
         }
+    }
+
+    /// Makes the next task of the project shown start a new session.
+    fn new_session_shown(&mut self, _: &NewSession, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.selected {
+            self.new_session(id, window, cx);
+        }
+    }
+
+    /// Asks for a new title for a session of a project, which shows it.
+    fn rename_session(
+        &mut self,
+        id: ProjectId,
+        session: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select(id, window, cx);
+
+        if let Some(workspace) = self.workspace_of(id) {
+            workspace.update(cx, |workspace, cx| workspace.rename(&session, window, cx));
+        }
+    }
+
+    /// Deletes a session of a project, once the person confirms it.
+    fn delete_session(
+        &mut self,
+        id: ProjectId,
+        session: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(workspace) = self.workspace_of(id) {
+            workspace.update(cx, |workspace, cx| workspace.delete(&session, window, cx));
+        }
+    }
+
+    /// Opens a project's folder in the editor the person chose, or in one
+    /// found on the PATH the hosts get.
+    fn open_in_editor(&mut self, id: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(project) = self.project(id) else {
+            return;
+        };
+
+        let dir = match self.workspace_of(id) {
+            Some(workspace) => PathBuf::from(workspace.read(cx).dir()),
+            None => project.dir.clone(),
+        };
+
+        open_with_editor(
+            &self.preferred.preferences.editor,
+            &self.environment,
+            &dir,
+            window,
+            cx,
+        );
+    }
+
+    /// Puts the sidebar away, or brings it back.
+    fn toggle_sidebar(&mut self, _: &ToggleSidebar, window: &mut Window, cx: &mut Context<Self>) {
+        self.preferred.preferences.sidebar_hidden = !self.preferred.preferences.sidebar_hidden;
+        self.save_preferences(window, cx);
+    }
+
+    /// Keeps the preferences for the next start, saying when they could not
+    /// be kept.
+    fn save_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.resized = false;
+
+        if let Some(path) = &self.preferred.path {
+            self.preferred.problem = preferences::save(&self.preferred.preferences, path).err();
+        }
+
+        if let Some(problem) = &self.preferred.problem {
+            window.push_notification(Notification::error(problem.clone()), cx);
+        }
+
+        cx.notify();
     }
 
     /// Closes a project, which ends its host. Runs working in it are
@@ -632,16 +842,19 @@ impl Shell {
         }
 
         let workspace = self.selected_workspace();
-        let theme = self.preferred.preferences.theme;
+        let preferences = self.preferred.preferences.clone();
         let path = self.preferred.path.clone();
         let problem = self.preferred.problem.clone();
 
-        let settings = cx.new(|cx| SettingsView::new(workspace, theme, path, problem, cx));
+        let settings =
+            cx.new(|cx| SettingsView::new(workspace, preferences, path, problem, window, cx));
         let subscription = cx.subscribe_in(
             &settings,
             window,
             |this, _, event: &SettingsEvent, window, cx| match event {
-                SettingsEvent::Theme(theme) => this.set_theme(*theme, window, cx),
+                SettingsEvent::Preferences(preferences) => {
+                    this.set_preferences(preferences.clone(), window, cx)
+                }
             },
         );
 
@@ -666,20 +879,69 @@ impl Shell {
         cx.notify();
     }
 
-    /// Changes the theme, and keeps it for the next start.
-    fn set_theme(&mut self, theme: Colors, window: &mut Window, cx: &mut Context<Self>) {
-        self.preferred.preferences.theme = theme;
-        apply_theme(theme, window, cx);
-
-        if let Some(path) = &self.preferred.path {
-            self.preferred.problem = preferences::save(&self.preferred.preferences, path).err();
+    /// Takes in what the person changed in the settings, puts it in force,
+    /// and keeps it for the next start.
+    fn set_preferences(
+        &mut self,
+        preferences: Preferences,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if preferences.theme != self.preferred.preferences.theme {
+            apply_theme(preferences.theme, window, cx);
         }
 
-        if let Some(problem) = &self.preferred.problem {
-            window.push_notification(Notification::error(problem.clone()), cx);
+        let width = preferences.width.pixels();
+
+        for project in &self.projects {
+            if let State::Working { workspace, .. } = &project.state {
+                workspace.update(cx, |workspace, cx| workspace.set_width(width, cx));
+            }
         }
 
-        cx.notify();
+        self.preferred.preferences = preferences;
+        self.save_preferences(window, cx);
+    }
+
+    /// Opens the project shown in the editor.
+    fn open_shown_in_editor(
+        &mut self,
+        _: &OpenInEditor,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(id) = self.selected {
+            self.open_in_editor(id, window, cx);
+        }
+    }
+
+    /// Gives the keyboard to the sidebar's search, showing the sidebar.
+    fn focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
+        if self.preferred.preferences.sidebar_hidden {
+            self.preferred.preferences.sidebar_hidden = false;
+            self.save_preferences(window, cx);
+        }
+
+        self.close_settings(&CloseSettings, window, cx);
+        self.search
+            .update(cx, |search, cx| search.focus(window, cx));
+    }
+
+    /// Shows the project's session at `position`, counted from 1, in the
+    /// order the host lists them: most recently used first.
+    fn jump(&mut self, position: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.selected else {
+            return;
+        };
+
+        let Some(session) = self
+            .workspace_of(id)
+            .and_then(|workspace| workspace.read(cx).sessions().get(position - 1).cloned())
+        else {
+            return;
+        };
+
+        self.open_session(id, session.value, window, cx);
     }
 
     /// The window's title, which is how a person tells windows apart: the
@@ -849,7 +1111,7 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let settings_shown = self.settings.is_some();
+        let sidebar_shown = self.settings.is_none() && !self.preferred.preferences.sidebar_hidden;
 
         v_flex()
             .key_context(KEY_CONTEXT)
@@ -858,6 +1120,28 @@ impl Render for Shell {
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::open_project_action))
             .on_action(cx.listener(Self::close_settings))
+            .on_action(cx.listener(Self::new_session_shown))
+            .on_action(cx.listener(Self::toggle_sidebar))
+            .on_action(cx.listener(Self::open_shown_in_editor))
+            .on_action(cx.listener(Self::focus_search))
+            .on_action(cx.listener(|this, _: &Jump1, window, cx| this.jump(1, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump2, window, cx| this.jump(2, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump3, window, cx| this.jump(3, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump4, window, cx| this.jump(4, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump5, window, cx| this.jump(5, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump6, window, cx| this.jump(6, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump7, window, cx| this.jump(7, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump8, window, cx| this.jump(8, window, cx)))
+            .on_action(cx.listener(|this, _: &Jump9, window, cx| this.jump(9, window, cx)))
+            // A drag of the sidebar's edge ends wherever the pointer is.
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    if this.resized {
+                        this.save_preferences(window, cx);
+                    }
+                }),
+            )
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -867,7 +1151,7 @@ impl Render for Shell {
                     .flex_1()
                     .min_h_0()
                     .items_stretch()
-                    .when(!settings_shown, |body| body.child(self.render_sidebar(cx)))
+                    .when(sidebar_shown, |body| body.child(self.render_sidebar(cx)))
                     .child(
                         div()
                             .flex_1()
@@ -886,6 +1170,61 @@ fn apply_theme(theme: Colors, window: &mut Window, cx: &mut App) {
         Colors::System => Theme::sync_system_appearance(Some(window), cx),
         Colors::Light => Theme::change(ThemeMode::Light, Some(window), cx),
         Colors::Dark => Theme::change(ThemeMode::Dark, Some(window), cx),
+    }
+}
+
+/// Opens a folder or a file in the editor chosen, or in one found on the
+/// PATH of `environment`, saying why when there is none or it fails.
+pub fn open_with_editor(
+    chosen: &str,
+    environment: &Environment,
+    target: &Path,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let path = environment
+        .variables()
+        .iter()
+        .find(|(name, _)| name == "PATH")
+        .map(|(_, value)| value.clone())
+        .or_else(|| std::env::var_os("PATH"));
+
+    let Some((program, args)) = editor::command(chosen, path.as_deref(), target) else {
+        window.push_notification(
+            Notification::error(
+                "No editor was found. Choose the command that opens one in Settings, General.",
+            ),
+            cx,
+        );
+        return;
+    };
+
+    let started = std::process::Command::new(&program)
+        .args(&args)
+        .envs(
+            environment
+                .variables()
+                .iter()
+                .map(|(name, value)| (name, value)),
+        )
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    match started {
+        // Waited for apart, so the editor leaves nothing behind once it
+        // exits.
+        Ok(mut child) => {
+            std::thread::spawn(move || child.wait());
+        }
+
+        Err(error) => {
+            window.push_notification(
+                Notification::error(format!("{program} could not be started: {error}")),
+                cx,
+            );
+        }
     }
 }
 

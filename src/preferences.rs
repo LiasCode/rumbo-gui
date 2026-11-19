@@ -1,5 +1,6 @@
 //! What the person prefers of this window, kept from one start to the next
-//! in a file of its own, since rumbo keeps everything else: the theme.
+//! in a file of its own, since rumbo keeps everything else: the theme, how
+//! the window is laid out, and the editor projects open in.
 //!
 //! The file is `rumbo-gui/preferences.json` under `$XDG_CONFIG_HOME`, or
 //! under `~/.config` without it. It is read once at startup, and written
@@ -34,10 +35,53 @@ impl Theme {
     }
 }
 
+/// How wide the conversation grows on a large window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Width {
+    Narrow,
+    #[default]
+    Comfortable,
+    Wide,
+}
+
+impl Width {
+    pub const ALL: [Width; 3] = [Width::Narrow, Width::Comfortable, Width::Wide];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Width::Narrow => "Narrow",
+            Width::Comfortable => "Comfortable",
+            Width::Wide => "Wide",
+        }
+    }
+
+    /// The widest the conversation and the composer grow, in pixels.
+    pub fn pixels(self) -> f32 {
+        match self {
+            Width::Narrow => 640.,
+            Width::Comfortable => 800.,
+            Width::Wide => 1080.,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     pub theme: Theme,
+    /// The sidebar is put away, for more room for the work.
+    pub sidebar_hidden: bool,
+    /// The sidebar's width in pixels; none keeps the window's own.
+    pub sidebar_width: Option<u32>,
+    /// How wide the conversation grows.
+    pub width: Width,
+    /// The command a project's folder is opened with in an editor, such as
+    /// `zed` or `code`; empty finds one of those known on the PATH.
+    pub editor: String,
+    /// Keeps quiet when a run ends in a session that is not shown, which the
+    /// window otherwise says in a notification.
+    pub quiet: bool,
 }
 
 /// Where the preferences are kept, given `$XDG_CONFIG_HOME` and `$HOME`.
@@ -138,7 +182,12 @@ mod tests {
         assert_eq!(load(&file), (Preferences::default(), None));
         assert_eq!(Preferences::default().theme, Theme::Light);
 
-        let dark = Preferences { theme: Theme::Dark };
+        let dark = Preferences {
+            theme: Theme::Dark,
+            sidebar_width: Some(300),
+            editor: "zed".into(),
+            ..Preferences::default()
+        };
 
         save(&dark, &file).unwrap();
 

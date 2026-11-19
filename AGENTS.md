@@ -23,9 +23,12 @@ must not do. Both live in the rumbo repository.
 - **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
   Whatever opens first can get those numbers.
 - **Known by name only where the window gives it a place.** The sidebar
-  calls the host's `projects`, `sessions`, `open`, and `new`, the picker
-  `use` and `session-options`, and the settings the functions of the
-  system and the providers; their names are in `protocol.rs`. Each is
+  calls the host's `projects`, `sessions`, `open`, `new`, `rename`, and
+  `delete`; the session's menu and the person's messages `rename`,
+  `branch`, `compact`, and `delete`; the details panel `status` and
+  `skills`; the picker `use` and `session-options`; and the settings the
+  functions of the system and the providers; their names are in
+  `protocol.rs`. Each is
   offered only when `initialize` lists it, and called with the parameters
   it describes there. What it answers is shown as the host says it, never
   read for meaning. Every command comes from the descriptions the host and
@@ -35,6 +38,9 @@ must not do. Both live in the rumbo repository.
   and closes it with the project; and one more in the person's home, the
   catalog's, which only lists every project and its sessions. Nothing reads
   rumbo's database.
+- **The project's files are only read, through Git.** The changes panel
+  runs `git` in the project's folder on a background thread and never
+  writes there; the window edits no file of the person's.
 - **The window keeps only its preferences**, in `preferences.rs`'s file,
   read once at startup. Anything rumbo can keep, rumbo keeps.
 - **GPUI Kit from its source.** Check every API in the crate sources under
@@ -52,6 +58,10 @@ cargo test
 cargo build --release
 ```
 
+`environment`'s test starts an interactive login shell, which stops a test
+run that shares a terminal's process group without owning the terminal, as
+an agent's harness does: run the tests there with `setsid cargo test`.
+
 ## Looking at it
 
 The window has no automated test. After changing a view, run it and look at
@@ -66,8 +76,14 @@ up with Escape, a second project opened beside the first with each one's
 sessions under it, the projects rumbo holds listed with their sessions and
 one opened from that list, a new session started from the sidebar, a
 project closed and listed again, the window with a rumbo that has no
-`projects`, the settings with the theme changed and kept for the next start, a
-system setting changed and a provider's details, the window started with
+`projects`, the settings with the theme and the conversation width changed
+and kept for the next start, the sidebar searched, dragged wider, and put
+away with Ctrl-B, a session renamed and one deleted from its menu, a
+message changed and one asked again in a branch, the changes panel on a
+folder with edits and on one outside Git, the details panel, a session
+exported, the project opened in the editor, the notification of a run that
+ends in a session not shown and the mark it leaves, a system setting
+changed and a provider's details, the window started with
 no project, the window started by `rumbo -f gui`, and closing the window,
 which must leave no `rumbo serve` behind.
 

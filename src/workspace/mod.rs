@@ -7,8 +7,11 @@
 //! they work in, so each session's conversation is whole when it is shown
 //! again.
 
+mod composer;
 mod form;
+mod header;
 mod palette;
+mod panel;
 mod picker;
 mod rows;
 mod talk;
@@ -16,11 +19,10 @@ mod talk;
 use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::{
-    ActiveTheme as _, IconName, Sizable as _, WindowExt as _,
-    button::{Button, ButtonVariants as _},
+    ActiveTheme as _, Sizable as _, WindowExt as _,
     command::CommandState,
     h_flex,
-    input::{InputEvent, MoveDown, MoveUp, Position, Textarea, TextareaState},
+    input::{InputEvent, Position, TextareaState},
     message_scroller::{MessageScroller, MessageScrollerState},
     notification::Notification,
     spinner::Spinner,
@@ -30,7 +32,7 @@ use gpui_kit::component::{
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, StyleRefinement,
-    Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _,
+    Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
 };
 use serde_json::{Value as Json, json};
 
@@ -47,7 +49,7 @@ use crate::usage::Spent;
 
 use form::{Changed, Field, Form};
 
-actions!(workspace, [CancelRun]);
+actions!(workspace, [CancelRun, ToggleChanges, ToggleDetails]);
 
 const KEY_CONTEXT: &str = "Workspace";
 
@@ -58,7 +60,20 @@ const STEER_HINT: &str = "Tell the run something; it reads it before its next re
 /// The keys of the workspace. Escape reaches it after the composer, which
 /// lets it through when it has nothing of its own to dismiss.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("escape", CancelRun, Some(KEY_CONTEXT))]);
+    cx.bind_keys([
+        KeyBinding::new("escape", CancelRun, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-shift-g", ToggleChanges, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-alt-b", ToggleDetails, Some(KEY_CONTEXT)),
+    ]);
+}
+
+/// What shows beside the conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    /// What changed in the project's folder, as Git sees it.
+    Changes,
+    /// How the session stands, as the host says, and the skills it has.
+    Details,
 }
 
 /// What the workspace asks of the window around it.
@@ -74,11 +89,25 @@ pub enum WorkspaceEvent {
     /// A function of the host answered, so what the settings show may have
     /// changed.
     Answered,
+    /// Open a folder or a file in the person's editor.
+    OpenInEditor {
+        path: String,
+    },
+    /// A run of this window ended in a session that is not shown.
+    EndedElsewhere {
+        session: String,
+        title: String,
+        status: String,
+    },
 }
 
 /// What is done with the answer of a function of the host asked for by the
 /// window, such as what the settings show.
 pub type Reply = Box<dyn FnOnce(Result<HostResult, String>, &mut Window, &mut App)>;
+
+/// What the workspace does once a function of the host it asked for itself
+/// has answered, and the window took in where it is attached now.
+type Then = Box<dyn FnOnce(&mut Workspace, HostResult, &mut Window, &mut Context<Workspace>)>;
 
 /// A request whose answer the workspace waits for.
 enum Pending {
@@ -113,6 +142,9 @@ enum Pending {
     },
     /// A function of the host the window asked, whose answer it reads.
     Reply(Reply),
+    /// A function of the host the workspace asked for itself, to go on
+    /// once it has answered.
+    Then(Then),
 }
 
 /// Where the answer of a function called for the person shows.
@@ -180,6 +212,8 @@ pub struct Workspace {
     /// The session each run of this window works in, by the id of its run
     /// request.
     runs: HashMap<i64, String>,
+    /// When each run of this window started.
+    started: HashMap<i64, std::time::Instant>,
     pending: HashMap<i64, Pending>,
     /// The project's sessions, most recently used first.
     listed: Vec<Value>,
@@ -201,6 +235,13 @@ pub struct Workspace {
     notice: Option<String>,
     /// Why the host is gone, once it is.
     ended: Option<String>,
+    /// Sessions whose run ended while another was shown, until they are.
+    unseen: HashSet<String>,
+    /// What shows beside the conversation, if anything.
+    panel: Option<Panel>,
+    panels: panel::Panels,
+    /// The widest the conversation and the composer grow, in pixels.
+    width: f32,
     focus_handle: FocusHandle,
     /// Where focus goes once the host ended, so Enter starts it again.
     start_again_focus: FocusHandle,
@@ -252,6 +293,7 @@ impl Workspace {
             current: String::new(),
             views: HashMap::new(),
             runs: HashMap::new(),
+            started: HashMap::new(),
             pending: HashMap::new(),
             listed: Vec::new(),
             host_functions: initialize.functions,
@@ -265,6 +307,10 @@ impl Workspace {
             history: History::default(),
             notice: None,
             ended: None,
+            unseen: HashSet::new(),
+            panel: None,
+            panels: panel::Panels::new(cx),
+            width: crate::preferences::Width::default().pixels(),
             focus_handle: cx.focus_handle(),
             start_again_focus: cx.focus_handle(),
             _reading: reading,
@@ -283,15 +329,7 @@ impl Workspace {
 
         // What the command line already asked for runs without asking again.
         if initialize.resume {
-            workspace.start(
-                RunParams {
-                    resume: true,
-                    ..RunParams::default()
-                },
-                "Continue the unfinished run".into(),
-                window,
-                cx,
-            );
+            workspace.resume(window, cx);
         } else if !initialize.objective.is_empty() {
             let objective = initialize.objective;
 
@@ -347,8 +385,10 @@ impl Workspace {
         }
 
         self.view(&session, cx);
+        self.unseen.remove(&session);
         self.current = session;
         self.set_hint(window, cx);
+        self.refresh_panel(cx);
         cx.notify();
     }
 
@@ -402,6 +442,23 @@ impl Workspace {
         self.ended.is_some()
     }
 
+    /// Whether a run ended in the session while another was shown, and the
+    /// session has not been shown since.
+    pub fn has_unseen(&self, session: &str) -> bool {
+        self.unseen.contains(session)
+    }
+
+    /// The folder the host works in, as it said last.
+    pub fn dir(&self) -> &str {
+        &self.dir
+    }
+
+    /// How wide the conversation and the composer grow.
+    pub fn set_width(&mut self, width: f32, cx: &mut Context<Self>) {
+        self.width = width;
+        cx.notify();
+    }
+
     /// Whether the host offers a function of its own, by name.
     pub fn offers(&self, name: &str) -> bool {
         self.host_function(name).is_some()
@@ -444,6 +501,183 @@ impl Workspace {
         }
 
         self.call_host(protocol::FUNCTION_NEW, None, Feedback::Quiet, cx);
+    }
+
+    /// Asks a function of the host for the workspace itself, and goes on
+    /// once it has answered, attached to what it left current. A failure
+    /// shows in the status bar.
+    fn then_host(
+        &mut self,
+        name: &str,
+        params: Option<Json>,
+        then: Then,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.ended.is_some() || self.host_function(name).is_none() {
+            self.notice = Some(format!("This host does not offer {name}"));
+            cx.notify();
+            return false;
+        }
+
+        self.request(
+            protocol::METHOD_INVOKE,
+            InvokeParams {
+                name: name.into(),
+                params,
+                target: protocol::TARGET_HOST,
+            },
+            Pending::Then(then),
+        )
+        .is_some()
+    }
+
+    /// Runs `action` in a session: at once in the one shown, or once the
+    /// host has made it current, since the host's functions act on the
+    /// current session.
+    fn in_session(
+        &mut self,
+        session: &str,
+        action: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if session == self.current {
+            action(self, window, cx);
+            return;
+        }
+
+        self.then_host(
+            protocol::FUNCTION_OPEN,
+            Some(json!({ "session": session })),
+            Box::new(move |this, _, window, cx| action(this, window, cx)),
+            cx,
+        );
+    }
+
+    /// Asks for a new title for a session, which is shown for it.
+    pub fn rename(&mut self, session: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let title = self
+            .listed
+            .iter()
+            .find(|listed| listed.value == session)
+            .map(|listed| listed.label.clone())
+            .unwrap_or_default();
+
+        self.in_session(
+            session,
+            move |this, window, cx| {
+                this.offer(
+                    protocol::FUNCTION_RENAME,
+                    &[("title", title)],
+                    true,
+                    window,
+                    cx,
+                )
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// Deletes a session for good, once the person confirms it as the host
+    /// asks.
+    pub fn delete(&mut self, session: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.offer(
+            protocol::FUNCTION_DELETE,
+            &[("session", session.to_string())],
+            false,
+            window,
+            cx,
+        );
+    }
+
+    /// Writes the conversation of the session shown as Markdown, in a file
+    /// the person chooses.
+    pub fn export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self.views.get(&self.current) else {
+            return;
+        };
+
+        let title = self
+            .session_title()
+            .unwrap_or_else(|| "rumbo session".to_string());
+        let text = crate::export::markdown(&title, view.conversation.items());
+        let chosen = cx.prompt_for_new_path(
+            std::path::Path::new(&self.dir),
+            Some(&crate::export::file_name(&title)),
+        );
+
+        cx.spawn_in(window, async move |_, cx| {
+            let Ok(Ok(Some(path))) = chosen.await else {
+                return;
+            };
+
+            let written = std::fs::write(&path, text);
+
+            let _ = cx.update(|window, cx| match written {
+                Ok(()) => window.push_notification(
+                    format!("The session was written to {}", path.display()),
+                    cx,
+                ),
+
+                Err(error) => window.push_notification(
+                    Notification::error(format!(
+                        "{} could not be written: {error}",
+                        path.display()
+                    )),
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    /// Replaces the conversation of the session shown with a summary now.
+    pub fn compact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.offer(protocol::FUNCTION_COMPACT, &[], false, window, cx);
+    }
+
+    /// Goes on in a branch of the session shown: a copy of it as it is, or
+    /// as it was before the person's message numbered `point`. With `then`,
+    /// what that message said is written again in the branch, to change
+    /// and send, or, with `send`, sent as it is.
+    pub fn branch(
+        &mut self,
+        point: Option<usize>,
+        again: Option<(String, bool)>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let params = point.map(|point| json!({ "point": point.to_string() }));
+
+        self.then_host(
+            protocol::FUNCTION_BRANCH,
+            params,
+            Box::new(move |this, answer, window, cx| {
+                window
+                    .push_notification(commands::capitalized(&commands::host_answer(&answer)), cx);
+
+                match again {
+                    Some((text, true)) => this.start(
+                        RunParams {
+                            objective: text.clone(),
+                            ..RunParams::default()
+                        },
+                        text,
+                        window,
+                        cx,
+                    ),
+
+                    Some((text, false)) => {
+                        this.fill(text, window, cx);
+                        this.focus(window, cx);
+                    }
+
+                    None => {}
+                }
+            }),
+            cx,
+        );
     }
 
     /// Asks a function of the host for the window, which reads its answer,
@@ -577,12 +811,42 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Continues the unfinished run of the session shown. It is not a
+    /// message of the person's, so it shows as a note.
+    fn resume(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let params = RunParams {
+            resume: true,
+            ..RunParams::default()
+        };
+
+        self.start_as(
+            params,
+            Kind::Log {
+                source: Source::Host,
+                text: "Continuing the unfinished run".into(),
+            },
+            window,
+            cx,
+        );
+    }
+
     /// Starts a run in the current session, with the model and the options
     /// the session keeps.
     fn start(
         &mut self,
         params: RunParams,
         label: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_as(params, Kind::Task(label), window, cx);
+    }
+
+    /// Starts a run, showing `shown` for what started it.
+    fn start_as(
+        &mut self,
+        params: RunParams,
+        shown: Kind,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -595,9 +859,10 @@ impl Workspace {
 
         view.run = Some(id);
 
-        let change = view.conversation.push(Kind::Task(label));
+        let change = view.conversation.push(shown);
 
         self.runs.insert(id, current.clone());
+        self.started.insert(id, std::time::Instant::now());
         self.notice = None;
         self.show(&current, change, cx);
         self.set_hint(window, cx);
@@ -918,6 +1183,18 @@ impl Workspace {
 
                 reply(answer, window, cx);
             }
+
+            Pending::Then(then) => match answer {
+                Ok(result) => {
+                    let result: HostResult = serde_json::from_value(result).unwrap_or_default();
+
+                    self.attached(result.state.clone(), window, cx);
+                    self.refresh_sessions();
+                    then(self, result, window, cx);
+                }
+
+                Err(error) => self.notice = Some(error.message),
+            },
         }
     }
 
@@ -954,20 +1231,40 @@ impl Workspace {
             key
         };
 
+        let seconds = self
+            .started
+            .remove(&id)
+            .map(|started| started.elapsed().as_secs());
         let view = self.view(&key, cx);
 
         view.run = None;
 
-        let change = view.conversation.end(&status, &error);
+        let change = view.conversation.end_after(&status, &error, seconds);
 
         self.show(&key, change, cx);
 
         if key == self.current {
             self.notice = None;
             self.set_hint(window, cx);
+        } else {
+            let title = self
+                .listed
+                .iter()
+                .find(|listed| listed.value == key)
+                .map(|listed| listed.label.clone())
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| key.clone());
+
+            self.unseen.insert(key.clone());
+            cx.emit(WorkspaceEvent::EndedElsewhere {
+                session: key.clone(),
+                title,
+                status,
+            });
         }
 
         self.refresh_sessions();
+        self.refresh_panel(cx);
     }
 
     fn steered(
@@ -1239,6 +1536,8 @@ impl Workspace {
 
         let runs: Vec<String> = self.runs.drain().map(|(_, key)| key).collect();
 
+        self.started.clear();
+
         for key in runs {
             let view = self.view(&key, cx);
 
@@ -1314,26 +1613,12 @@ impl Workspace {
         };
 
         if view.conversation.items().is_empty() {
-            return v_flex()
-                .flex_1()
-                .min_h_0()
-                .px_8()
-                .items_center()
-                .justify_center()
-                .text_center()
-                .gap_1()
-                .child(div().text_lg().child("What should rumbo do?"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!("It works in {}", self.dir)),
-                )
-                .into_any_element();
+            return self.render_start(cx);
         }
 
         let workspace = cx.weak_entity();
         let key = self.current.clone();
+        let width = self.width;
 
         div()
             .flex_1()
@@ -1343,88 +1628,83 @@ impl Workspace {
                     // One scroller per session, so each keeps its place.
                     ElementId::Name(format!("conversation-{}", self.current).into()),
                     view.scroller.clone(),
-                    move |index, _, cx| rows::render_row(&workspace, &key, index, cx),
+                    move |index, _, cx| {
+                        div()
+                            .w_full()
+                            .max_w(px(width))
+                            .mx_auto()
+                            .px_4()
+                            .child(rows::render_row(&workspace, &key, index, cx))
+                            .into_any_element()
+                    },
                 )
-                .with_list_style(StyleRefinement::default().px_4().py_3())
-                .with_row_style(StyleRefinement::default().pb_3())
+                .with_list_style(StyleRefinement::default().py_4())
+                .with_row_style(StyleRefinement::default().pb_4())
                 .with_bottom_fade(cx.theme().background),
             )
             .into_any_element()
     }
 
-    fn render_composer(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.ended.is_some() {
-            let session = self.current.clone();
+    /// A session with nothing in it yet: what it works in, and what was
+    /// asked lately in the project, to ask again or start from.
+    fn render_start(&self, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let latest = self.history.latest(3);
 
-            return h_flex()
-                .justify_center()
-                .px_4()
-                .py_3()
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .child(
-                    Button::new("start-again")
-                        .track_focus(&self.start_again_focus)
-                        .primary()
-                        .icon(IconName::RotateCw)
-                        .label("Start Again")
-                        .tooltip("Start rumbo again in this session")
-                        .on_click(cx.listener(move |_, _, _, cx| {
-                            cx.emit(WorkspaceEvent::StartAgain {
-                                session: session.clone(),
-                            })
-                        })),
-                )
-                .into_any_element();
-        }
+        let suggestions = latest.into_iter().enumerate().map(|(index, text)| {
+            let shown = crate::conversation::first_line(&text);
 
-        let working = self
-            .views
-            .get(&self.current)
-            .is_some_and(|view| view.run.is_some());
+            gpui_kit::component::button::Button::new(("suggestion", index))
+                .outline()
+                .small()
+                .w_full()
+                .icon(gpui_kit::assets::IconName::Clock)
+                .label(shown)
+                .tooltip("Write it in the composer again")
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.fill(text.clone(), window, cx);
+                    this.focus(window, cx);
+                }))
+        });
 
-        let send = Button::new("send")
-            .primary()
-            .icon(IconName::ArrowUp)
-            .tooltip(if working {
-                "Tell the run (Enter)"
-            } else {
-                "Send the task (Enter)"
-            })
-            .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx)));
-
-        let cancel = Button::new("cancel")
-            .outline()
-            .icon(IconName::Square)
-            .tooltip("Cancel the run (Escape)")
-            .on_click(cx.listener(|this, _, window, cx| this.cancel(&CancelRun, window, cx)));
-
-        h_flex()
-            .items_end()
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .px_8()
+            .items_center()
+            .justify_center()
             .gap_2()
-            .px_4()
-            .py_3()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
-                if this.recall(-1, window, cx) {
-                    cx.stop_propagation();
-                }
-            }))
-            .capture_action(cx.listener(|this, _: &MoveDown, window, cx| {
-                if this.recall(1, window, cx) {
-                    cx.stop_propagation();
-                }
-            }))
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(Textarea::new(&self.composer)),
+                gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Sparkles)
+                    .large()
+                    .text_color(cx.theme().primary),
             )
-            .when(working, |row| row.child(cancel))
-            .child(send)
+            .child(div().text_2xl().child("What should rumbo do?"))
+            .child(div().text_sm().text_color(muted).child(format!(
+                "It works in {}, with {}",
+                self.dir,
+                self.model_name()
+            )))
+            .child(
+                v_flex()
+                    .w(px(self.width.min(520.)))
+                    .pt_4()
+                    .gap_2()
+                    .when(self.history.latest(1).len() == 1, |column| {
+                        column.child(div().text_xs().text_color(muted).child("Asked lately"))
+                    })
+                    .children(suggestions),
+            )
             .into_any_element()
+    }
+
+    /// The provider and the model of the session shown, as the host said.
+    fn model_name(&self) -> String {
+        if self.model.is_empty() {
+            self.provider.clone()
+        } else {
+            format!("{} · {}", self.provider, self.model)
+        }
     }
 
     fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1447,24 +1727,15 @@ impl Workspace {
             _ => "Ready".into(),
         };
 
-        let mut bar = StatusBar::new()
-            .left(
-                h_flex()
-                    .gap_1()
-                    .when(working, |row| row.child(Spinner::new().xsmall()))
-                    .child(state),
-            )
-            .child(
-                Button::new("model")
-                    .ghost()
-                    .xsmall()
-                    .label(format!("{} · {}", self.provider, self.model))
-                    .tooltip("The model and the options of this session")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx))),
-            );
+        let mut bar = StatusBar::new().left(
+            h_flex()
+                .gap_1()
+                .when(working, |row| row.child(Spinner::new().xsmall()))
+                .child(state),
+        );
 
         if elsewhere > 0 {
-            bar = bar.right(format!("{elsewhere} in the background"));
+            bar = bar.right(format!("{elsewhere} working in other sessions"));
         }
 
         if let Some(view) = view {
@@ -1481,16 +1752,38 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let work = v_flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .child(self.render_conversation(cx))
+            .child(self.render_composer(cx));
+
         v_flex()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(|this, _: &ToggleChanges, window, cx| {
+                this.toggle_panel(Panel::Changes, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleDetails, window, cx| {
+                this.toggle_panel(Panel::Details, window, cx)
+            }))
             .size_full()
             .min_w_0()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.render_conversation(cx))
-            .child(self.render_composer(cx))
+            .child(self.render_header(cx))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .items_stretch()
+                    .child(work)
+                    .when_some(self.panel, |row, panel| {
+                        row.child(self.render_panel(panel, cx))
+                    }),
+            )
             .child(self.render_status(cx))
     }
 }

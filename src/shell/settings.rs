@@ -1,7 +1,7 @@
-//! The settings, shown in place of the work: the window's theme, which it
-//! keeps itself, and rumbo's system settings and providers, which are asked
-//! of the host of the project shown. rumbo keeps them the same for every
-//! project, so any host answers for all.
+//! The settings, shown in place of the work: the window's preferences,
+//! which it keeps itself, and its keys; and rumbo's system settings and
+//! providers, which are asked of the host of the project shown. rumbo keeps
+//! them the same for every project, so any host answers for all.
 //!
 //! What the host says is shown as it says it, and every change goes through
 //! the host's functions, with the form their descriptions make.
@@ -13,26 +13,29 @@ use gpui_kit::component::{
     ActiveTheme as _, Selectable as _, Sizable as _,
     button::{Button, ButtonGroup, ButtonVariants as _},
     h_flex,
+    input::{Input, InputEvent, InputState},
     setting::{SettingGroup, SettingItem, SettingPage, Settings},
     spinner::Spinner,
+    switch::Switch,
     v_flex,
 };
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, WeakEntity,
-    Window, div, prelude::FluentBuilder as _,
+    AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
+    WeakEntity, Window, div, prelude::FluentBuilder as _, px,
 };
 use serde_json::Value as Json;
 
-use crate::preferences::Theme as Colors;
+use super::SHORTCUTS;
+use crate::preferences::{Preferences, Theme as Colors, Width};
 use crate::protocol::{self, HostResult, Value};
 use crate::workspace::Workspace;
 
 pub(super) const KEY_CONTEXT: &str = "Settings";
 
 pub(super) enum SettingsEvent {
-    /// The person chose a theme.
-    Theme(Colors),
+    /// The person changed a preference of the window.
+    Preferences(Preferences),
 }
 
 /// What the host answered for a part of the settings.
@@ -46,7 +49,9 @@ enum Asked<T> {
 pub(super) struct SettingsView {
     /// The workspace whose host is asked; none with no project open.
     workspace: Option<WeakEntity<Workspace>>,
-    theme: Colors,
+    preferences: Preferences,
+    /// The command that opens a project in an editor, as it is typed.
+    editor: Entity<InputState>,
     /// Where the preferences are kept, and why they could not be.
     path: Option<PathBuf>,
     problem: Option<String>,
@@ -57,6 +62,7 @@ pub(super) struct SettingsView {
     /// What each provider shown says it offers.
     details: HashMap<String, Asked<String>>,
     focus_handle: FocusHandle,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<SettingsEvent> for SettingsView {}
@@ -64,14 +70,34 @@ impl EventEmitter<SettingsEvent> for SettingsView {}
 impl SettingsView {
     pub(super) fn new(
         workspace: Option<Entity<Workspace>>,
-        theme: Colors,
+        preferences: Preferences,
         path: Option<PathBuf>,
         problem: Option<String>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Found on the PATH: zed, cursor, code, …")
+                .default_value(preferences.editor.clone())
+        });
+
+        // Kept when the person is done typing, not at every key.
+        let editing = cx.subscribe(&editor, |view, editor, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                let typed = editor.read(cx).value().trim().to_string();
+
+                if typed != view.preferences.editor {
+                    view.preferences.editor = typed;
+                    cx.emit(SettingsEvent::Preferences(view.preferences.clone()));
+                }
+            }
+        });
+
         let mut view = SettingsView {
             workspace: workspace.map(|workspace| workspace.downgrade()),
-            theme,
+            preferences,
+            editor,
             path,
             problem,
             system: None,
@@ -79,6 +105,7 @@ impl SettingsView {
             providers: None,
             details: HashMap::new(),
             focus_handle: cx.focus_handle(),
+            _subscriptions: vec![editing],
         };
 
         view.refresh(cx);
@@ -182,16 +209,27 @@ impl SettingsView {
             .is_some_and(|workspace| workspace.read(cx).offers(name))
     }
 
+    /// Changes a preference of the window, which the shell keeps.
+    fn prefer(view: &WeakEntity<Self>, change: impl FnOnce(&mut Preferences), cx: &mut App) {
+        let _ = view.update(cx, |view, cx| {
+            change(&mut view.preferences);
+            cx.emit(SettingsEvent::Preferences(view.preferences.clone()));
+            cx.notify();
+        });
+    }
+
     fn appearance_page(&self, cx: &mut Context<Self>) -> SettingPage {
         let view = cx.weak_entity();
-        let theme = self.theme;
+        let theme = self.preferences.theme;
+        let width = self.preferences.width;
         let kept = match &self.path {
-            Some(path) => format!("The window keeps it in {}.", path.display()),
-            None => "Without $HOME, it is kept for this start only.".into(),
+            Some(path) => format!("The window keeps its preferences in {}.", path.display()),
+            None => "Without $HOME, they are kept for this start only.".into(),
         };
         let problem = self.problem.clone();
 
-        let item = SettingItem::render(move |_, _, cx| {
+        let theming = view.clone();
+        let theme_item = SettingItem::render(move |_, _, cx| {
             // Each button chooses by itself: the group's own handler hears
             // only the mouse, and the keyboard should choose too.
             let choices =
@@ -199,42 +237,150 @@ impl SettingsView {
                     .outline()
                     .small()
                     .children(Colors::ALL.iter().map(|choice| {
-                        let view = view.clone();
+                        let view = theming.clone();
                         let chosen = *choice;
 
                         Button::new(choice.label())
                             .label(choice.label())
                             .selected(chosen == theme)
                             .on_click(move |_, _, cx| {
-                                let _ = view.update(cx, |view, cx| {
-                                    view.theme = chosen;
-                                    cx.emit(SettingsEvent::Theme(chosen));
-                                    cx.notify();
-                                });
+                                Self::prefer(&view, |preferences| preferences.theme = chosen, cx)
                             })
                     }));
 
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Theme",
+                    "System follows the desktop, and changes when it does.",
+                    cx,
+                ))
+                .child(choices)
+        })
+        .keywords(["theme", "dark", "light", "appearance", "color"]);
+
+        let widening = view.clone();
+        let width_item = SettingItem::render(move |_, _, cx| {
+            let choices =
+                ButtonGroup::new("width")
+                    .outline()
+                    .small()
+                    .children(Width::ALL.iter().map(|choice| {
+                        let view = widening.clone();
+                        let chosen = *choice;
+
+                        Button::new(choice.label())
+                            .label(choice.label())
+                            .selected(chosen == width)
+                            .on_click(move |_, _, cx| {
+                                Self::prefer(&view, |preferences| preferences.width = chosen, cx)
+                            })
+                    }));
+
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Conversation width",
+                    "How wide the conversation and the composer grow in a large window.",
+                    cx,
+                ))
+                .child(choices)
+        })
+        .keywords(["width", "wide", "narrow", "chat", "conversation"]);
+
+        let kept_item = SettingItem::render(move |_, _, cx| {
             v_flex()
-                .gap_2()
-                .child(
-                    h_flex()
-                        .gap_4()
-                        .justify_between()
-                        .child(described(
-                            "Theme",
-                            "System follows the desktop, and changes when it does.",
-                            cx,
-                        ))
-                        .child(choices),
-                )
+                .gap_1()
                 .child(note(&kept, cx))
                 .when_some(problem.clone(), |column, problem| {
                     column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
                 })
-        })
-        .keywords(["theme", "dark", "light", "appearance"]);
+        });
 
-        SettingPage::new("Appearance").group(SettingGroup::new().title("Window").item(item))
+        let quiet = self.preferences.quiet;
+        let quieting = view.clone();
+        let notify_item = SettingItem::render(move |_, _, cx| {
+            let view = quieting.clone();
+
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Say when a run ends elsewhere",
+                    "A notification when a run ends in a session that is not shown. The sidebar marks the session either way.",
+                    cx,
+                ))
+                .child(Switch::new("notify").checked(!quiet).on_click(
+                    move |checked, _, cx| {
+                        let quiet = !*checked;
+
+                        Self::prefer(&view, |preferences| preferences.quiet = quiet, cx)
+                    },
+                ))
+        })
+        .keywords(["notification", "notify", "background", "quiet"]);
+
+        let editor = self.editor.clone();
+        let editor_item = SettingItem::render(move |_, _, cx| {
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Editor",
+                    "The command that opens a project's folder, such as zed or code --new-window. Empty uses the first editor found on the PATH.",
+                    cx,
+                ))
+                .child(div().w(px(240.)).flex_shrink_0().child(Input::new(&editor).small()))
+        })
+        .keywords(["editor", "open", "zed", "code", "cursor"]);
+
+        SettingPage::new("Window")
+            .group(
+                SettingGroup::new()
+                    .title("Appearance")
+                    .item(theme_item)
+                    .item(width_item),
+            )
+            .group(
+                SettingGroup::new()
+                    .title("Behavior")
+                    .item(notify_item)
+                    .item(editor_item),
+            )
+            .group(SettingGroup::new().item(kept_item))
+    }
+
+    fn keys_page(&self) -> SettingPage {
+        let items = SHORTCUTS.iter().map(|(keys, does)| {
+            SettingItem::render(move |_, _, cx| {
+                h_flex()
+                    .gap_4()
+                    .justify_between()
+                    .child(div().text_sm().child(does.to_string()))
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_xs()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .px_2()
+                            .py_0p5()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .child(keys.to_string()),
+                    )
+            })
+            .keywords([keys.to_string(), does.to_string()])
+        });
+
+        SettingPage::new("Keyboard").group(
+            SettingGroup::new()
+                .title("Shortcuts")
+                .description("Every key works wherever the keyboard is in the window, unless a field needs it.")
+                .items(items),
+        )
     }
 
     fn system_page(&self, cx: &mut Context<Self>) -> SettingPage {
@@ -457,6 +603,7 @@ impl Render for SettingsView {
             self.appearance_page(cx),
             self.system_page(cx),
             self.providers_page(cx),
+            self.keys_page(),
         ];
 
         div()

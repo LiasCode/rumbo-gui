@@ -14,10 +14,28 @@ conversation, and rumbo's settings, without a terminal.
   you look at another project or session.
 - **Everything is rumbo's.** Sessions, settings, and providers live in
   rumbo, and the settings change them through rumbo. The window keeps only
-  its theme, in `rumbo-gui/preferences.json` under `~/.config` (or
-  `$XDG_CONFIG_HOME`).
+  its preferences (theme, conversation width, the sidebar, the editor, and
+  whether to say when a run ends elsewhere), in
+  `rumbo-gui/preferences.json` under `~/.config` (or `$XDG_CONFIG_HOME`).
+- **The files are yours.** rumbo keeps the conversation, not the files, so
+  the Changes panel shows what Git sees changed in the project's folder,
+  and Open in Editor hands it to your editor. The window only reads them.
 - **Nothing is hard-coded.** Commands, forms, and pickers come from what
   rumbo and the provider describe, so a new function shows up by itself.
+
+## What you can do
+
+- **Work in sessions.** Search them, open one with Ctrl-K or Ctrl-1 … 9,
+  rename, branch, compact, export as Markdown, or delete it from its menu.
+- **Follow a run.** The model's answer as Markdown, each tool call with
+  what it changed in a file, and how long the run took; tell it something
+  while it works, or cancel it.
+- **Change your mind.** Edit a message, or ask it again, in a branch that
+  starts before it; the session you were in stays as it was.
+- **Review the work.** The Changes panel shows the diff of the project's
+  folder; the Details panel, the session's status and skills.
+- **Leave runs working.** Runs go on in other sessions and projects; the
+  window tells you when one ends, and marks its session.
 
 ## Install
 
@@ -48,9 +66,18 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Enter / Shift-Enter | Send the task, or tell the run in progress something / new line |
 | Up, Down | What was asked before, in any session of the project |
 | Escape | Give up a provider's function in progress, else cancel the run; leave the settings |
-| Ctrl-P, Ctrl-K | Commands |
+| Ctrl-K, Ctrl-P | Commands, and the project's sessions to show one |
+| Ctrl-N | New session |
+| Ctrl-1 … Ctrl-9 | The project's sessions, most recently used first |
+| Ctrl-B | Show or put away the sidebar |
+| Ctrl-F | Search the sessions |
+| Ctrl-Shift-G | What changed in the project's folder, as Git sees it |
+| Ctrl-Alt-B | The session's details: its status and skills |
+| Ctrl-Shift-E | Open the project in your editor |
 | Ctrl-O | Open a project |
 | Ctrl-, | Settings |
+
+The settings' Keyboard page lists them too.
 
 Closing the window ends every `rumbo serve` it started; a run in progress
 is cancelled and recorded.

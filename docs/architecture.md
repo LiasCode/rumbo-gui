@@ -5,8 +5,10 @@ sessions, the tools, the loop, and everything that is recorded. The window
 starts a host for each project it opens, and one more that only lists what
 rumbo holds; it sends them what the person asks, and draws what they
 report. The only thing it keeps itself is the person's
-preferences for the window, such as the theme; it keeps no state it would
-need to restore, since the host records everything as it happens.
+preferences for the window, such as the theme, the sidebar, and the
+editor; it keeps no state it would need to restore, since the host records
+everything as it happens. Besides the hosts, it reads one thing itself:
+what Git says changed in a project's folder.
 
 The contract between them is rumbo's Agent Frontend Protocol
 (`docs/frontend-protocol.md` in rumbo), and what a front end must, can, and
@@ -46,8 +48,12 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   host the window starts in the person's home only to list them. It runs
   nothing, follows no function, and is asked again when the window comes
   to the front or a project is closed.
-- **settings** (`src/shell/settings.rs`) show the window's theme, and
-  rumbo's system settings and providers. rumbo keeps those the same for
+- **sidebar** (`src/shell/sidebar.rs`) lists the projects and their
+  sessions, narrowed by a search, with what the host offers to do with
+  each session in its menu. It can be dragged wider and put away; the
+  window keeps both.
+- **settings** (`src/shell/settings.rs`) show the window's preferences and
+  keys, and rumbo's system settings and providers. rumbo keeps those the same for
   every project, so they are asked of the host of the project shown, with
   its functions of the system and the providers; what the host says is
   shown as it says it, and a change goes through the function's form.
@@ -61,8 +67,9 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   everything the host sends on one channel, in order. One order matters: a
   run's last events arrive before the answer that ends it.
 - **workspace** (`src/workspace/`) is one project attached to its host:
-  the sessions the host lists, the conversation of the one shown, the
-  composer, the status bar, and the command palette. The shell lists the
+  the sessions the host lists, the conversation of the one shown with a
+  header and the session's menu, the composer, a panel beside them, the
+  status bar, and the command palette. The shell lists the
   sessions and opens them through it. It keeps a view of each session it
   has shown, and sends each event to the view of the session it belongs
   to: the session of the run it names, by the id of the run request, or the
@@ -76,6 +83,22 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   it called, answering the questions asked for it and refusing any other.
   What the window asks of the host for itself, as the settings do, goes
   through the workspace too, with what to do with the answer.
+- **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
+  what changed in the project's folder, read with **git** (`src/git.rs`)
+  on a background thread, or the session's details, which are the host's
+  `status` and `skills` as it says them. rumbo keeps the conversation and
+  not the files, so Git is how a person reviews what a run did to them;
+  the window only reads.
+- **The session's actions** rename, delete, branch, and compact through
+  the host's functions. They act on the current session, so one asked for
+  another session first makes it current with `open`, and goes on once the
+  host has answered. Changing or asking again something the person wrote
+  is a `branch` before that message, numbered as the host numbers branch
+  points: the person's tasks, in order.
+- **export** (`src/export.rs`) writes a session's conversation as Markdown
+  from what the window shows, and **editor** (`src/editor.rs`) says which
+  editor opens a project's folder: the person's choice, or one found on
+  the PATH the hosts get.
 - **form** (`src/workspace/form.rs`) is a form built from the parameters a
   function describes, or from what the picker changes. A parameter whose
   values a function lists shows them in a list, asked for with what was

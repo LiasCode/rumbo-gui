@@ -2,14 +2,17 @@
 //! what is shown, and the commands and the settings, which act on the
 //! project shown.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, IconName, Sizable as _, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex,
 };
-use gpui_kit::{Context, IntoElement, ParentElement as _, Styled as _, div};
+use gpui_kit::{
+    Context, IntoElement, ParentElement as _, Styled as _, div, prelude::FluentBuilder as _,
+};
 
-use super::{CloseSettings, OpenPalette, OpenSettings, Shell};
+use super::{CloseSettings, OpenPalette, OpenSettings, Shell, ToggleSidebar};
 
 impl Shell {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -60,12 +63,33 @@ impl Shell {
                 .gap_2()
                 .justify_between()
                 .child(
-                    div()
+                    h_flex()
                         .min_w_0()
-                        .truncate()
-                        .text_sm()
-                        .text_color(cx.theme().foreground)
-                        .child(self.title(cx)),
+                        .gap_1()
+                        .when(!settings_shown, |row| {
+                            row.child(
+                                Button::new("toggle-sidebar")
+                                    .ghost()
+                                    .small()
+                                    .icon(if self.preferred.preferences.sidebar_hidden {
+                                        Lucide::PanelLeftOpen
+                                    } else {
+                                        Lucide::PanelLeftClose
+                                    })
+                                    .tooltip("Show or put away the sidebar (Ctrl-B)")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.toggle_sidebar(&ToggleSidebar, window, cx)
+                                    })),
+                            )
+                        })
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_sm()
+                                .text_color(cx.theme().foreground)
+                                .child(self.title(cx)),
+                        ),
                 )
                 .child(h_flex().gap_1().child(commands).child(settings)),
         )
