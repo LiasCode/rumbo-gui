@@ -25,6 +25,7 @@ use gpui_kit::{
 };
 
 use crate::config::{self, Config};
+use crate::environment::Environment;
 use crate::host::{Descriptors, Host};
 use crate::preferences::{self, Preferences, Theme as Colors};
 use crate::workspace::{Workspace, WorkspaceEvent};
@@ -55,8 +56,9 @@ pub fn bind_keys(cx: &mut App) {
 
 /// How the window reaches its first host.
 pub enum Start {
-    /// It starts `rumbo serve` itself, as the command line asks.
-    Desktop(Config),
+    /// It starts `rumbo serve` itself, as the command line asks, in this
+    /// environment.
+    Desktop(Config, Environment),
     /// rumbo started it, and gives it the protocol.
     Attached(Descriptors),
 }
@@ -104,6 +106,9 @@ pub struct Shell {
     /// What the command line asked for; none when rumbo started the window,
     /// which then works only in the project rumbo gave it.
     config: Option<Config>,
+    /// What the hosts the window starts run in; the window's own when rumbo
+    /// started it, as it then starts none.
+    environment: Environment,
     projects: Vec<Project>,
     next_id: ProjectId,
     selected: Option<ProjectId>,
@@ -144,6 +149,7 @@ impl Shell {
 
         let mut shell = Shell {
             config: None,
+            environment: Environment::inherited(),
             projects: Vec::new(),
             next_id: 1,
             selected: None,
@@ -158,13 +164,14 @@ impl Shell {
         match start {
             Start::Attached(descriptors) => shell.connect(descriptors, window, cx),
 
-            Start::Desktop(config) => {
+            Start::Desktop(config, environment) => {
                 let named = config.dir.clone();
                 let flags = config.serve_flags.clone();
                 let rumbo = config.rumbo.clone();
+                let listing = environment.clone();
 
                 let catalog = cx.new(|cx| {
-                    Catalog::start(rumbo, catalog::home(), cx);
+                    Catalog::start(rumbo, listing, catalog::home(), cx);
                     Catalog::new()
                 });
 
@@ -173,6 +180,7 @@ impl Shell {
                     .push(cx.observe(&catalog, |_, _, cx| cx.notify()));
                 shell.catalog = Some(catalog);
                 shell.config = Some(config);
+                shell.environment = environment;
 
                 match named {
                     Some(dir) => shell.open_project(dir, flags, window, cx),
@@ -316,6 +324,7 @@ impl Shell {
         let rumbo = config.rumbo.clone();
         let dir = project.dir.clone();
         let flags = project.flags.clone();
+        let environment = self.environment.clone();
 
         if let Some(project) = self.project_mut(id) {
             project.state = State::Starting;
@@ -323,7 +332,7 @@ impl Shell {
 
         cx.spawn_in(window, async move |this, cx| {
             let started = cx
-                .background_spawn(async move { Host::start(&rumbo, &dir, &flags) })
+                .background_spawn(async move { Host::start(&rumbo, &dir, &flags, &environment) })
                 .await;
 
             let _ = this.update_in(cx, |this, window, cx| {

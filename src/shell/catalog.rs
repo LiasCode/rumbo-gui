@@ -12,6 +12,7 @@ use serde_json::{Value as Json, json};
 use crate::commands;
 use crate::connection::Incoming;
 use crate::conversation::Source;
+use crate::environment::Environment;
 use crate::host::Host;
 use crate::protocol::{self, CODE_INVALID_PARAMS, InvokeParams, Value};
 
@@ -47,10 +48,15 @@ impl Catalog {
 
     /// Starts the host that lists, in the background. It works in `dir`,
     /// where it makes nothing until a run, and runs none.
-    pub(super) fn start(rumbo: PathBuf, dir: PathBuf, cx: &mut Context<Self>) {
+    pub(super) fn start(
+        rumbo: PathBuf,
+        environment: Environment,
+        dir: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |this, cx| {
             let started = cx
-                .background_spawn(async move { Host::start(&rumbo, &dir, &[]) })
+                .background_spawn(async move { Host::start(&rumbo, &dir, &[], &environment) })
                 .await;
 
             let _ = this.update(cx, |this, cx| match started {

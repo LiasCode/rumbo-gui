@@ -15,6 +15,7 @@ use std::thread::{self, JoinHandle};
 use async_channel::Receiver;
 
 use crate::connection::{Connection, Incoming};
+use crate::environment::Environment;
 use crate::protocol::InitializeParams;
 
 /// How much of what the host writes to stderr is kept. The host writes there
@@ -66,14 +67,26 @@ pub struct Host {
 }
 
 impl Host {
-    /// Starts `rumbo serve` with `flags` in `dir` and answers its
-    /// initialize. It blocks until the host has spoken, so it belongs on a
-    /// background thread.
-    pub fn start(rumbo: &Path, dir: &Path, flags: &[String]) -> Result<Host, String> {
+    /// Starts `rumbo serve` with `flags` in `dir`, in `environment`, and
+    /// answers its initialize. It blocks until the host has spoken, so it
+    /// belongs on a background thread.
+    pub fn start(
+        rumbo: &Path,
+        dir: &Path,
+        flags: &[String],
+        environment: &Environment,
+    ) -> Result<Host, String> {
+        // The PATH set here is also where `rumbo` is looked for.
         let mut process = Command::new(rumbo)
             .arg("serve")
             .args(flags)
             .current_dir(dir)
+            .envs(
+                environment
+                    .variables()
+                    .iter()
+                    .map(|(name, value)| (name, value)),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -217,9 +230,14 @@ mod tests {
 
     #[test]
     fn says_how_to_fix_a_missing_rumbo() {
-        let error = Host::start(Path::new("/no/such/rumbo"), Path::new("."), &[])
-            .err()
-            .expect("a missing rumbo started");
+        let error = Host::start(
+            Path::new("/no/such/rumbo"),
+            Path::new("."),
+            &[],
+            &Environment::inherited(),
+        )
+        .err()
+        .expect("a missing rumbo started");
 
         assert!(error.contains("was not found"), "{error}");
         assert!(error.contains("--rumbo"), "{error}");
@@ -228,9 +246,14 @@ mod tests {
     #[test]
     fn passes_on_what_a_host_said_before_it_stopped() {
         // `sh serve` fails the way rumbo does: a line on stderr, and exit.
-        let error = Host::start(Path::new("sh"), Path::new("."), &[])
-            .err()
-            .expect("sh served");
+        let error = Host::start(
+            Path::new("sh"),
+            Path::new("."),
+            &[],
+            &Environment::inherited(),
+        )
+        .err()
+        .expect("sh served");
 
         assert!(error.contains("serve"), "{error}");
     }

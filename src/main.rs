@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod connection;
 mod conversation;
+mod environment;
 mod history;
 mod host;
 mod preferences;
@@ -21,12 +22,13 @@ use gpui_kit::component::TitleBar;
 use gpui_kit::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 
 use crate::config::Parsed;
+use crate::environment::Environment;
 use crate::host::Descriptors;
 use crate::shell::{Preferred, Shell, Start};
 
 fn main() {
     let start = match config::parse(std::env::args().skip(1)) {
-        Ok(Parsed::Open(config)) => Start::Desktop(config),
+        Ok(Parsed::Open(config)) => Start::Desktop(config, Environment::new()),
 
         // Taken before the window opens anything that could get their
         // numbers.
