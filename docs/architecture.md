@@ -118,6 +118,24 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   they act on, with their parameters, the values those take, and their
   answers, and the changes the picker asks of the host.
 
+## Components
+
+The window is moving from GPUI Kit to components of its own, in
+`crates/ui`. They are built on GPUI alone and know nothing of rumbo: a view
+gives them what to show and hears what the person did through events and
+callbacks. A theme in GPUI's globals gives them their colors, light or
+dark, and their typeface: Montserrat or Shantell Sans, which `crates/ui`
+bundles and gives GPUI at startup, or the desktop's. Every field's edits
+go through one buffer
+(`crates/ui/src/text/edit.rs`), which a state entity wraps for the keys,
+the pointer, and the platform's input methods; the surfaces that float
+over the rest (a floating window, a popover, a select's list) are drawn in
+GPUI's deferred layers, in that order from below, so each opens over the
+one it is in. `crates/overview` shows
+each component on a page of its own, which is where one is looked at
+before a view uses it. Until the move is done the views use GPUI Kit, and
+both pin the same GPUI.
+
 ## Projects
 
 A host works in the sessions of one project, but lists those of any: its

@@ -4450,6 +4450,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "overview"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "gpui-pre-platform",
+ "ui",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6594,6 +6603,14 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ui"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "unicode-segmentation",
 ]
 
 [[package]]

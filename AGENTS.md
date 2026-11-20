@@ -46,24 +46,36 @@ must not do. Both live in the rumbo repository.
   writes there; the window edits no file of the person's.
 - **The window keeps only its preferences**, in `preferences.rs`'s file,
   read once at startup. Anything rumbo can keep, rumbo keeps.
-- **GPUI Kit from its source.** Check every API in the crate sources under
-  `~/.cargo/registry/src/*/` (`gpui-component-*`, `gpui-base-*`,
-  `gpui-pre-*`) or at <https://gpui-kit.com/component/NAME.md> before using
-  it. Do not translate from another framework or an older version.
+- **GPUI Kit from its source, in the window only.** The window still draws
+  with GPUI Kit while its views move to `crates/ui`. Check every API in the
+  crate sources under `~/.cargo/registry/src/*/` (`gpui-component-*`,
+  `gpui-base-*`, `gpui-pre-*`) or at
+  <https://gpui-kit.com/component/NAME.md> before using it. Do not
+  translate from another framework or an older version.
+- **`crates/ui` is GPUI alone.** Its components use no GPUI Kit and know
+  nothing of rumbo; check every GPUI API in the `gpui-pre-*` sources under
+  `~/.cargo/registry/src/*/`, examples included. It pins the `gpui-pre`
+  GPUI Kit pins, so the window builds one GPUI; they change together. What
+  a component does without being drawn is a plain module tested without
+  GPUI, as `text/edit.rs` is for every field. Each component has a page in
+  `crates/overview`, and a new one gets its own.
 - **UI copy is English.**
 
 ## Commands
 
+The checks cover the whole workspace: the window, `ui`, and `overview`.
+
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --release --workspace
 ```
 
 `environment`'s test starts an interactive login shell, which stops a test
 run that shares a terminal's process group without owning the terminal, as
-an agent's harness does: run the tests there with `setsid cargo test`.
+an agent's harness does: run the tests there with
+`setsid cargo test --workspace`.
 
 ## Looking at it
 
@@ -139,3 +151,32 @@ the person's recent files.
 Launch only a binary built from the code being checked: `cargo clippy` and
 `cargo test` do not rebuild it, and a build that fails leaves the old one.
 Put a time limit on anything that can open a window and wait.
+
+## Looking at the components
+
+After changing a component of `crates/ui`, look at its page of the
+overview, in both themes and in each typeface, and use it with the
+keyboard: Tab to it, what its keys do, Escape where it closes.
+
+```sh
+cargo build --release -p overview
+target/release/overview [PAGE] [--dark] [--font TYPEFACE]   # such as select --font shantell-sans
+```
+
+The same rules hold as for the window: a workspace of its own, found by the
+process started, keys and closing by its address, and never the pointer.
+When every monitor shows a workspace of the person's, a headless output
+gives the overview one that is shown without moving them. Put it far from
+their monitors so the pointer cannot reach it, tall enough that a page
+needs no scrolling (Tab does not scroll a page to the control it reaches),
+and remove it when done:
+
+```sh
+hyprctl output create headless RUMBOUI
+hyprctl eval 'hl.monitor({output = "RUMBOUI", mode = "1600x2400@60", position = "20000x0", scale = 1})'
+grim -o RUMBOUI shot.png
+hyprctl output remove RUMBOUI
+```
+
+Keys sent to a window that does not have the desktop's keyboard make GPUI
+take the window as left after them, so a field tells `Blur` once they stop.

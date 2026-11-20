@@ -1,0 +1,11 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The version GPUI Kit 0.9.1 pins, so the window builds one GPUI while it
+# still uses GPUI Kit.
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+unicode-segmentation = "1.13.3"
