@@ -6,28 +6,35 @@
 
 mod assets;
 mod button;
+mod check_row;
 mod checkbox;
+mod drag;
 mod floating_window;
+mod focus;
 mod fonts;
 mod icon;
 mod input;
 mod label;
 mod overlay;
 mod popover;
+mod resizable;
 mod root;
 mod scroll;
 mod select;
 mod size;
+mod slider;
 mod switch;
+mod table;
 mod text;
 mod textarea;
 mod theme;
 mod toggle;
 mod tooltip;
 
+use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui::{App, ElementId, SharedString};
+use gpui::{App, ElementId, SharedString, Window};
 
 pub use assets::Assets;
 pub use button::{Button, ButtonVariant};
@@ -39,14 +46,18 @@ pub use input::Input;
 pub use label::Label;
 pub use overlay::{Dismiss, surface};
 pub use popover::{Placement, Popover, PopoverControl, PopoverTrigger};
+pub use resizable::{PanelSize, Resizable, ResizablePanel};
 pub use root::{FocusNext, FocusPrevious, h_flex, root, v_flex};
 pub use scroll::{Measure, ScrollSource, Scrollbar};
 pub use select::{Select, SelectEvent, SelectItem, SelectState};
 pub use size::{Sizable, Size};
+pub use slider::Slider;
 pub use switch::Switch;
+pub use table::{SortDirection, Table, TableColumn, TableEvent, TableRow, TableState};
 pub use text::{InputEvent, InputState};
 pub use textarea::Textarea;
 pub use theme::{ActiveTheme, Theme, ThemeColors, ThemeMode};
+pub use toggle::{Toggle, ToggleGroup, ToggleVariant};
 pub use tooltip::Tooltip;
 
 /// The actions of a field, which a view can bind other keys to, or catch
@@ -71,10 +82,17 @@ pub fn init(cx: &mut App) -> gpui::Result<()> {
     root::bind_keys(cx);
     text::bind_keys(cx);
     overlay::bind_keys(cx);
+    resizable::bind_keys(cx);
     select::bind_keys(cx);
+    slider::bind_keys(cx);
+    table::bind_keys(cx);
 
     fonts::load(cx)
 }
+
+/// What is called with the value a control changes to. The caller keeps the
+/// value and gives it back to the control on the next frame.
+pub(crate) type ChangeHandler<T> = Rc<dyn Fn(&T, &mut Window, &mut App)>;
 
 /// An id for a part of the element `id`, unique where `id` is.
 pub(crate) fn child_id(id: &ElementId, part: impl Into<SharedString>) -> ElementId {

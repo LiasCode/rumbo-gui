@@ -6,10 +6,12 @@ use gpui::{
     StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _,
 };
 
+use crate::ChangeHandler;
+use crate::check_row::{self, Words};
+use crate::focus;
 use crate::icon::{Icon, IconName};
 use crate::size::{Sizable, Size};
 use crate::theme::ActiveTheme as _;
-use crate::toggle::{self, ToggleHandler, Words};
 
 #[derive(IntoElement)]
 pub struct Checkbox {
@@ -18,7 +20,7 @@ pub struct Checkbox {
     words: Words,
     disabled: bool,
     size: Size,
-    on_change: Option<ToggleHandler>,
+    on_change: Option<ChangeHandler<bool>>,
     style: StyleRefinement,
 }
 
@@ -79,8 +81,8 @@ impl Styled for Checkbox {
 
 impl RenderOnce for Checkbox {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let focus = toggle::focus_of(&self.id, window, cx);
-        let ringed = toggle::ringed(&focus, window);
+        let focus = focus::focus_of(&self.id, window, cx);
+        let ringed = focus::ringed(&focus, window);
         let theme = cx.theme();
         let colors = theme.colors;
 
@@ -115,7 +117,7 @@ impl RenderOnce for Checkbox {
             .when(self.disabled, |control| control.opacity(0.5))
             .when(ringed, |control| control.shadow(theme.focus_ring()));
 
-        let mut row = toggle::row(
+        let mut row = check_row::row(
             self.id,
             &focus,
             control.into_any_element(),

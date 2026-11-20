@@ -6,7 +6,11 @@ use std::borrow::Cow;
 use gpui::{AssetSource, Result, SharedString};
 
 /// Every file, by the path an element asks for.
-const FILES: [(&str, &[u8]); 12] = [
+const FILES: [(&str, &[u8]); 17] = [
+    (
+        "icons/arrow-down.svg",
+        include_bytes!("../assets/icons/arrow-down.svg"),
+    ),
     (
         "icons/arrow-up.svg",
         include_bytes!("../assets/icons/arrow-up.svg"),
@@ -23,11 +27,27 @@ const FILES: [(&str, &[u8]); 12] = [
         "icons/chevron-up.svg",
         include_bytes!("../assets/icons/chevron-up.svg"),
     ),
+    (
+        "icons/chevrons-up-down.svg",
+        include_bytes!("../assets/icons/chevrons-up-down.svg"),
+    ),
     ("icons/copy.svg", include_bytes!("../assets/icons/copy.svg")),
+    (
+        "icons/git-compare.svg",
+        include_bytes!("../assets/icons/git-compare.svg"),
+    ),
     ("icons/info.svg", include_bytes!("../assets/icons/info.svg")),
     (
         "icons/minus.svg",
         include_bytes!("../assets/icons/minus.svg"),
+    ),
+    (
+        "icons/panel-left.svg",
+        include_bytes!("../assets/icons/panel-left.svg"),
+    ),
+    (
+        "icons/panel-right.svg",
+        include_bytes!("../assets/icons/panel-right.svg"),
     ),
     ("icons/plus.svg", include_bytes!("../assets/icons/plus.svg")),
     (

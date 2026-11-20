@@ -12,10 +12,12 @@ use std::rc::Rc;
 use gpui::{
     Along as _, App, Axis, Bounds, CursorStyle, DispatchPhase, Element, ElementId, Entity,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderOnce,
-    ScrollHandle, Size, Style, Window, fill, point, px, size,
+    MouseMoveEvent, Pixels, Point, RenderOnce, ScrollHandle, Size, Style, UniformListScrollHandle,
+    Window, fill, point, px, size,
 };
 
+use crate::child_id;
+use crate::drag::{self, Hold};
 use crate::text::InputState;
 use crate::theme::ActiveTheme as _;
 
@@ -72,6 +74,20 @@ impl ScrollSource for ScrollHandle {
     }
 }
 
+/// What a `uniform_list` with `track_scroll` scrolls, which is a
+/// `ScrollHandle` it keeps.
+impl ScrollSource for UniformListScrollHandle {
+    fn measure(&self, axis: Axis, cx: &App) -> Option<Measure> {
+        self.0.borrow().base_handle.measure(axis, cx)
+    }
+
+    fn scroll_to(&self, axis: Axis, distance: Pixels, window: &mut Window, cx: &mut App) {
+        let handle = self.0.borrow().base_handle.clone();
+
+        handle.scroll_to(axis, distance, window, cx);
+    }
+}
+
 /// A field of several lines, which scrolls down.
 impl ScrollSource for Entity<InputState> {
     fn measure(&self, axis: Axis, cx: &App) -> Option<Measure> {
@@ -115,12 +131,11 @@ fn distance_at(start: Pixels, length: Pixels, long: Pixels, most: Pixels) -> Pix
     most * (start / travel).clamp(0., 1.)
 }
 
-/// What a scrollbar remembers between frames.
+/// Whether the pointer is on a scrollbar, which it remembers between
+/// frames.
 #[derive(Default)]
 struct Bar {
     hovered: bool,
-    /// Where the pointer took the thumb, from its start, while it drags it.
-    grab: Option<Pixels>,
 }
 
 #[derive(IntoElement)]
@@ -152,12 +167,16 @@ impl Scrollbar {
 
 impl RenderOnce for Scrollbar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let bar = window.use_keyed_state(self.id, cx, |_, _| Bar::default());
+        let bar = window.use_keyed_state(self.id.clone(), cx, |_, _| Bar::default());
+
+        // Where the pointer took the thumb, from its start, while it drags it.
+        let grab = window.use_keyed_state(child_id(&self.id, "grab"), cx, |_, _| None);
 
         ScrollbarElement {
             axis: self.axis,
             source: self.source,
             bar,
+            grab,
         }
     }
 }
@@ -166,6 +185,7 @@ struct ScrollbarElement {
     axis: Axis,
     source: Rc<dyn ScrollSource>,
     bar: Entity<Bar>,
+    grab: Hold<Pixels>,
 }
 
 /// Where the parts of a scrollbar are this frame.
@@ -286,8 +306,7 @@ impl Element for ScrollbarElement {
 
         let axis = self.axis;
         let colors = cx.theme().colors;
-        let bar = self.bar.read(cx);
-        let dragging = bar.grab.is_some();
+        let dragging = self.grab.read(cx).is_some();
         let hovered = placed.hitbox.is_hovered(window);
         let active = dragging || hovered;
 
@@ -318,83 +337,51 @@ impl Element for ScrollbarElement {
         window.paint_quad(fill(thumb, color).corner_radii(thickness / 2.));
         window.set_cursor_style(CursorStyle::Arrow, &placed.hitbox);
 
-        let hitbox = placed.hitbox.clone();
         let measure = placed.measure;
         let (thumb_start, thumb_long) = (placed.thumb_start, placed.thumb_long);
-        let source = self.source.clone();
-        let state = self.bar.clone();
+        let pressed = self.source.clone();
+        let dragged = self.source.clone();
 
         // A press on the thumb takes it where the pointer is; one on the
-        // track brings the thumb's middle there, and takes it.
-        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-            if phase != DispatchPhase::Bubble
-                || event.button != MouseButton::Left
-                || !hitbox.is_hovered(window)
-            {
-                return;
-            }
+        // track brings the thumb's middle there, and takes it. Then the
+        // pointer moves it wherever it goes.
+        drag::listen(
+            &placed.hitbox,
+            &self.grab,
+            move |position, window, cx| {
+                let at = position.along(axis) - track_start;
+                let on_thumb = at >= thumb_start && at <= thumb_start + thumb_long;
+                let grab = match on_thumb {
+                    true => at - thumb_start,
+                    false => thumb_long / 2.,
+                };
 
-            let at = event.position.along(axis) - track_start;
-            let on_thumb = at >= thumb_start && at <= thumb_start + thumb_long;
-            let grab = match on_thumb {
-                true => at - thumb_start,
-                false => thumb_long / 2.,
-            };
+                if !on_thumb {
+                    let distance = distance_at(at - grab, length, thumb_long, measure.most);
 
-            if !on_thumb {
-                let distance = distance_at(at - grab, length, thumb_long, measure.most);
+                    pressed.scroll_to(axis, distance, window, cx);
+                }
 
-                source.scroll_to(axis, distance, window, cx);
-            }
+                Some(grab)
+            },
+            move |grab, position, window, cx| {
+                let start = position.along(axis) - track_start - *grab;
+                let distance = distance_at(start, length, thumb_long, measure.most);
 
-            state.update(cx, |bar, _| bar.grab = Some(grab));
-            cx.stop_propagation();
-            window.refresh();
-        });
+                dragged.scroll_to(axis, distance, window, cx);
+            },
+            window,
+        );
 
-        let source = self.source.clone();
         let state = self.bar.clone();
         let hitbox = placed.hitbox.clone();
 
-        // While the thumb is taken, the pointer moves it wherever it goes,
-        // and nothing under the pointer hears it.
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-            let grab = state.read(cx).grab;
-
-            if let Some(grab) = grab
-                && phase == DispatchPhase::Capture
-            {
-                if event.pressed_button != Some(MouseButton::Left) {
-                    state.update(cx, |bar, _| bar.grab = None);
-                    window.refresh();
-                    return;
-                }
-
-                let start = event.position.along(axis) - track_start - grab;
-                let distance = distance_at(start, length, thumb_long, measure.most);
-
-                source.scroll_to(axis, distance, window, cx);
-                cx.stop_propagation();
-                return;
-            }
-
-            // It widens and darkens under the pointer.
+        // It widens and darkens under the pointer.
+        window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
             let hovered = hitbox.is_hovered(window);
 
             if phase == DispatchPhase::Bubble && hovered != state.read(cx).hovered {
                 state.update(cx, |bar, _| bar.hovered = hovered);
-                window.refresh();
-            }
-        });
-
-        let state = self.bar.clone();
-
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-            if phase == DispatchPhase::Bubble
-                && event.button == MouseButton::Left
-                && state.read(cx).grab.is_some()
-            {
-                state.update(cx, |bar, _| bar.grab = None);
                 window.refresh();
             }
         });

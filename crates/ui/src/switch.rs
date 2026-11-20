@@ -9,10 +9,11 @@ use gpui::{
     prelude::FluentBuilder as _, px,
 };
 
-use crate::child_id;
+use crate::check_row::{self, Words};
+use crate::focus;
 use crate::size::{Sizable, Size};
 use crate::theme::{ActiveTheme as _, ThemeMode};
-use crate::toggle::{self, ToggleHandler, Words};
+use crate::{ChangeHandler, child_id};
 
 /// How long the knob takes to slide.
 const SLIDE: Duration = Duration::from_millis(160);
@@ -24,7 +25,7 @@ pub struct Switch {
     words: Words,
     disabled: bool,
     size: Size,
-    on_change: Option<ToggleHandler>,
+    on_change: Option<ChangeHandler<bool>>,
     style: StyleRefinement,
 }
 
@@ -92,8 +93,8 @@ impl Styled for Switch {
 
 impl RenderOnce for Switch {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let focus = toggle::focus_of(&self.id, window, cx);
-        let ringed = toggle::ringed(&focus, window);
+        let focus = focus::focus_of(&self.id, window, cx);
+        let ringed = focus::ringed(&focus, window);
 
         // A switch shown for the first time does not slide; one that changed
         // since the frame before does, once.
@@ -175,7 +176,7 @@ impl RenderOnce for Switch {
             .when(self.disabled, |control| control.opacity(0.5))
             .when(ringed, |control| control.shadow(theme.focus_ring()));
 
-        let mut row = toggle::row(
+        let mut row = check_row::row(
             self.id,
             &focus,
             control.into_any_element(),

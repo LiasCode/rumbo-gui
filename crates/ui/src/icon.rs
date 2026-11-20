@@ -9,14 +9,19 @@ use crate::size::{Sizable, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconName {
+    ArrowDown,
     ArrowUp,
     Check,
     ChevronDown,
     ChevronUp,
+    ChevronsUpDown,
     Close,
     Copy,
+    GitCompare,
     Info,
     Minus,
+    PanelLeft,
+    PanelRight,
     Plus,
     Search,
     Settings,
@@ -24,15 +29,20 @@ pub enum IconName {
 }
 
 impl IconName {
-    pub const ALL: [IconName; 12] = [
+    pub const ALL: [IconName; 17] = [
+        IconName::ArrowDown,
         IconName::ArrowUp,
         IconName::Check,
         IconName::ChevronDown,
         IconName::ChevronUp,
+        IconName::ChevronsUpDown,
         IconName::Close,
         IconName::Copy,
+        IconName::GitCompare,
         IconName::Info,
         IconName::Minus,
+        IconName::PanelLeft,
+        IconName::PanelRight,
         IconName::Plus,
         IconName::Search,
         IconName::Settings,
@@ -42,14 +52,19 @@ impl IconName {
     /// Where `Assets` keeps it.
     pub fn path(self) -> &'static str {
         match self {
+            IconName::ArrowDown => "icons/arrow-down.svg",
             IconName::ArrowUp => "icons/arrow-up.svg",
             IconName::Check => "icons/check.svg",
             IconName::ChevronDown => "icons/chevron-down.svg",
             IconName::ChevronUp => "icons/chevron-up.svg",
+            IconName::ChevronsUpDown => "icons/chevrons-up-down.svg",
             IconName::Close => "icons/x.svg",
             IconName::Copy => "icons/copy.svg",
+            IconName::GitCompare => "icons/git-compare.svg",
             IconName::Info => "icons/info.svg",
             IconName::Minus => "icons/minus.svg",
+            IconName::PanelLeft => "icons/panel-left.svg",
+            IconName::PanelRight => "icons/panel-right.svg",
             IconName::Plus => "icons/plus.svg",
             IconName::Search => "icons/search.svg",
             IconName::Settings => "icons/settings.svg",

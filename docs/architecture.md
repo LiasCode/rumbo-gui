@@ -131,7 +131,10 @@ go through one buffer
 the pointer, and the platform's input methods; the surfaces that float
 over the rest (a floating window, a popover, a select's list) are drawn in
 GPUI's deferred layers, in that order from below, so each opens over the
-one it is in. `crates/overview` shows
+one it is in. Whatever the pointer drags (a scrollbar's thumb, a slider's,
+the divider between panels, the edge of a table's column) goes through
+one press that follows the pointer until the button comes up
+(`crates/ui/src/drag.rs`). `crates/overview` shows
 each component on a page of its own, which is where one is looked at
 before a view uses it. Until the move is done the views use GPUI Kit, and
 both pin the same GPUI.

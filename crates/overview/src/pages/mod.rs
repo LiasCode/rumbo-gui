@@ -7,10 +7,14 @@ mod floating_window;
 mod input;
 mod label;
 mod popover;
+mod resizable;
 mod scrollbar;
 mod select;
+mod slider;
 mod switch;
+mod table;
 mod textarea;
+mod toggle;
 mod tooltip;
 mod typography;
 
@@ -27,30 +31,38 @@ pub enum Page {
     Typography,
     Label,
     Button,
+    Toggle,
     Checkbox,
     Switch,
+    Slider,
     Tooltip,
     Scrollbar,
     Input,
     Textarea,
     Select,
     Popover,
+    Resizable,
+    Table,
     FloatingWindow,
 }
 
 impl Page {
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 16] = [
         Page::Typography,
         Page::Label,
         Page::Button,
+        Page::Toggle,
         Page::Checkbox,
         Page::Switch,
+        Page::Slider,
         Page::Tooltip,
         Page::Scrollbar,
         Page::Input,
         Page::Textarea,
         Page::Select,
         Page::Popover,
+        Page::Resizable,
+        Page::Table,
         Page::FloatingWindow,
     ];
 
@@ -59,14 +71,18 @@ impl Page {
             Page::Typography => "Typography",
             Page::Label => "Label",
             Page::Button => "Button",
+            Page::Toggle => "Toggle",
             Page::Checkbox => "Checkbox",
             Page::Switch => "Switch",
+            Page::Slider => "Slider",
             Page::Tooltip => "Tooltip",
             Page::Scrollbar => "Scrollbar",
             Page::Input => "Input",
             Page::Textarea => "Textarea",
             Page::Select => "Select",
             Page::Popover => "Popover",
+            Page::Resizable => "Resizable",
+            Page::Table => "Table",
             Page::FloatingWindow => "Floating window",
         }
     }
@@ -76,14 +92,18 @@ impl Page {
             Page::Typography => "typography",
             Page::Label => "label",
             Page::Button => "button",
+            Page::Toggle => "toggle",
             Page::Checkbox => "checkbox",
             Page::Switch => "switch",
+            Page::Slider => "slider",
             Page::Tooltip => "tooltip",
             Page::Scrollbar => "scrollbar",
             Page::Input => "input",
             Page::Textarea => "textarea",
             Page::Select => "select",
             Page::Popover => "popover",
+            Page::Resizable => "resizable",
+            Page::Table => "table",
             Page::FloatingWindow => "floating-window",
         }
     }
@@ -103,8 +123,12 @@ impl Page {
             Page::Button => {
                 "Words, an icon, or both, in a look by how much the action matters. Tab reaches it, and Enter or Space presses it."
             }
+            Page::Toggle => {
+                "A button that stays pressed or not, for a mode that is on or off, such as a panel shown; alone or in a group."
+            }
             Page::Checkbox => "A choice that is on or off and takes effect when a form is sent.",
             Page::Switch => "A setting that is on or off and takes effect at once.",
+            Page::Slider => "A value between two ends, in steps, chosen along a track.",
             Page::Tooltip => "A word about a control, shown when the pointer rests on it.",
             Page::Scrollbar => {
                 "Along the edge of what scrolls: where the view is in it, and how much of it shows. It shows only while something is out of view."
@@ -121,6 +145,12 @@ impl Page {
             Page::Popover => {
                 "A surface that opens beside its trigger and holds anything. Escape or a press outside closes it."
             }
+            Page::Resizable => {
+                "Panels side by side or one above another, with dividers dragged to share the room between them."
+            }
+            Page::Table => {
+                "Rows of cells under titled columns, which sort and widen; a row is chosen and opened."
+            }
             Page::FloatingWindow => {
                 "A window inside the window, dragged by its title. A modal one dims the work behind it."
             }
@@ -131,14 +161,18 @@ impl Page {
 /// What the examples hold between frames: each page's, in its module.
 pub struct Demos {
     button: button::Demo,
+    toggle: toggle::Demo,
     checkbox: checkbox::Demo,
     switch: switch::Demo,
+    slider: slider::Demo,
     tooltip: tooltip::Demo,
     scrollbar: scrollbar::Demo,
     input: input::Demo,
     textarea: textarea::Demo,
     select: select::Demo,
     popover: popover::Demo,
+    resizable: resizable::Demo,
+    table: table::Demo,
     floating_window: floating_window::Demo,
 }
 
@@ -146,14 +180,18 @@ impl Demos {
     pub fn new(window: &mut Window, cx: &mut Context<Overview>) -> Self {
         Demos {
             button: button::Demo::default(),
+            toggle: toggle::Demo::default(),
             checkbox: checkbox::Demo::default(),
             switch: switch::Demo::default(),
+            slider: slider::Demo::default(),
             tooltip: tooltip::Demo::new(cx),
             scrollbar: scrollbar::Demo::default(),
             input: input::Demo::new(window, cx),
             textarea: textarea::Demo::new(window, cx),
             select: select::Demo::new(window, cx),
             popover: popover::Demo::new(window, cx),
+            resizable: resizable::Demo::default(),
+            table: table::Demo::new(cx),
             floating_window: floating_window::Demo::new(window, cx),
         }
     }
@@ -169,14 +207,18 @@ impl Demos {
             Page::Typography => typography::render(self, window, cx),
             Page::Label => label::render(self, window, cx),
             Page::Button => button::render(self, window, cx),
+            Page::Toggle => toggle::render(self, window, cx),
             Page::Checkbox => checkbox::render(self, window, cx),
             Page::Switch => switch::render(self, window, cx),
+            Page::Slider => slider::render(self, window, cx),
             Page::Tooltip => tooltip::render(self, window, cx),
             Page::Scrollbar => scrollbar::render(self, window, cx),
             Page::Input => input::render(self, window, cx),
             Page::Textarea => textarea::render(self, window, cx),
             Page::Select => select::render(self, window, cx),
             Page::Popover => popover::render(self, window, cx),
+            Page::Resizable => resizable::render(self, window, cx),
+            Page::Table => table::render(self, window, cx),
             Page::FloatingWindow => floating_window::render(self, window, cx),
         }
     }
