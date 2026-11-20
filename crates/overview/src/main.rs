@@ -21,16 +21,19 @@ use gpui::{
 };
 use ui::{
     ActiveTheme as _, Button, Label, Scrollbar, Select, SelectEvent, SelectItem, SelectState,
-    Sizable as _, Switch, Theme, ThemeMode, Typeface, h_flex, v_flex,
+    Sizable as _, Switch, Theme, ThemeMode, Toaster, Toasts, Typeface, h_flex, v_flex,
 };
 
 use pages::{Demos, Page};
 
 struct Overview {
     page: Page,
-    /// Where the page shown is scrolled.
+    /// Where the page shown is scrolled, and the list of pages.
     scroll: ScrollHandle,
+    pages: ScrollHandle,
     demos: Demos,
+    /// The window's toasts, which any page can push to.
+    toasts: Entity<Toasts>,
     /// The typeface in force, chosen under the navigation.
     typeface: Entity<SelectState>,
     focus_handle: FocusHandle,
@@ -80,7 +83,9 @@ impl Overview {
         Overview {
             page,
             scroll: ScrollHandle::new(),
+            pages: ScrollHandle::new(),
             demos: Demos::new(window, cx),
+            toasts: cx.new(|_| Toasts::new()),
             typeface,
             focus_handle,
         }
@@ -132,7 +137,24 @@ impl Overview {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child("rumbo · components"),
             )
-            .child(v_flex().flex_1().px_2().gap_0p5().children(pages))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(
+                        v_flex()
+                            .id("pages")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.pages)
+                            .px_2()
+                            .pb_2()
+                            .gap_0p5()
+                            .children(pages),
+                    )
+                    .child(Scrollbar::vertical("pages-scrollbar", self.pages.clone())),
+            )
             .child(
                 v_flex()
                     .p_4()
@@ -168,21 +190,24 @@ impl Render for Overview {
         let sections = self.demos.render(self.page, window, cx);
         let page_content = self.render_page(sections, cx);
 
-        ui::root(cx).track_focus(&self.focus_handle).child(
-            h_flex()
-                .size_full()
-                .items_start()
-                .child(self.render_navigation(cx))
-                .child(
-                    div()
-                        .relative()
-                        .flex_1()
-                        .h_full()
-                        .min_w_0()
-                        .child(page_content)
-                        .child(Scrollbar::vertical("page-scrollbar", self.scroll.clone())),
-                ),
-        )
+        ui::root(cx)
+            .track_focus(&self.focus_handle)
+            .child(
+                h_flex()
+                    .size_full()
+                    .items_start()
+                    .child(self.render_navigation(cx))
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .h_full()
+                            .min_w_0()
+                            .child(page_content)
+                            .child(Scrollbar::vertical("page-scrollbar", self.scroll.clone())),
+                    ),
+            )
+            .child(Toaster::new(&self.toasts))
     }
 }
 

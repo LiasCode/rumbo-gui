@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use gpui::{AssetSource, Result, SharedString};
 
 /// Every file, by the path an element asks for.
-const FILES: [(&str, &[u8]); 17] = [
+const FILES: [(&str, &[u8]); 24] = [
     (
         "icons/arrow-down.svg",
         include_bytes!("../assets/icons/arrow-down.svg"),
@@ -24,6 +24,14 @@ const FILES: [(&str, &[u8]); 17] = [
         include_bytes!("../assets/icons/chevron-down.svg"),
     ),
     (
+        "icons/chevron-left.svg",
+        include_bytes!("../assets/icons/chevron-left.svg"),
+    ),
+    (
+        "icons/chevron-right.svg",
+        include_bytes!("../assets/icons/chevron-right.svg"),
+    ),
+    (
         "icons/chevron-up.svg",
         include_bytes!("../assets/icons/chevron-up.svg"),
     ),
@@ -31,12 +39,28 @@ const FILES: [(&str, &[u8]); 17] = [
         "icons/chevrons-up-down.svg",
         include_bytes!("../assets/icons/chevrons-up-down.svg"),
     ),
+    (
+        "icons/circle-alert.svg",
+        include_bytes!("../assets/icons/circle-alert.svg"),
+    ),
+    (
+        "icons/circle-check.svg",
+        include_bytes!("../assets/icons/circle-check.svg"),
+    ),
     ("icons/copy.svg", include_bytes!("../assets/icons/copy.svg")),
+    (
+        "icons/ellipsis.svg",
+        include_bytes!("../assets/icons/ellipsis.svg"),
+    ),
     (
         "icons/git-compare.svg",
         include_bytes!("../assets/icons/git-compare.svg"),
     ),
     ("icons/info.svg", include_bytes!("../assets/icons/info.svg")),
+    (
+        "icons/loader-circle.svg",
+        include_bytes!("../assets/icons/loader-circle.svg"),
+    ),
     (
         "icons/minus.svg",
         include_bytes!("../assets/icons/minus.svg"),
@@ -61,6 +85,10 @@ const FILES: [(&str, &[u8]); 17] = [
     (
         "icons/trash.svg",
         include_bytes!("../assets/icons/trash.svg"),
+    ),
+    (
+        "icons/triangle-alert.svg",
+        include_bytes!("../assets/icons/triangle-alert.svg"),
     ),
     ("icons/x.svg", include_bytes!("../assets/icons/x.svg")),
 ];

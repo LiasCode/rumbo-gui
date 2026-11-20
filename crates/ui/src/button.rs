@@ -108,6 +108,7 @@ pub struct Button {
     id: ElementId,
     label: Option<SharedString>,
     icon: Option<IconName>,
+    icon_end: bool,
     variant: ButtonVariant,
     size: Size,
     disabled: bool,
@@ -124,6 +125,7 @@ impl Button {
             id: id.into(),
             label: None,
             icon: None,
+            icon_end: false,
             variant: ButtonVariant::default(),
             size: Size::Medium,
             disabled: false,
@@ -144,6 +146,13 @@ impl Button {
     /// label is square.
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// The icon after the label rather than before it, as a button that goes
+    /// forward has it.
+    pub fn icon_end(mut self) -> Self {
+        self.icon_end = true;
         self
     }
 
@@ -257,10 +266,13 @@ impl RenderOnce for Button {
             .when_some(paint.border, |button, border| {
                 button.border_1().border_color(border)
             })
-            .when_some(self.icon, |button, icon| {
+            .when_some(self.icon.filter(|_| !self.icon_end), |button, icon| {
                 button.child(Icon::new(icon).with_size(size).color(paint.text))
             })
-            .when_some(self.label, |button, label| button.child(label));
+            .when_some(self.label, |button, label| button.child(label))
+            .when_some(self.icon.filter(|_| self.icon_end), |button, icon| {
+                button.child(Icon::new(icon).with_size(size).color(paint.text))
+            });
 
         if self.disabled {
             button = button.opacity(0.5).cursor_default();

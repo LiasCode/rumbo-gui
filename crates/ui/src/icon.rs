@@ -13,12 +13,18 @@ pub enum IconName {
     ArrowUp,
     Check,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     ChevronUp,
     ChevronsUpDown,
+    CircleAlert,
+    CircleCheck,
     Close,
     Copy,
+    Ellipsis,
     GitCompare,
     Info,
+    LoaderCircle,
     Minus,
     PanelLeft,
     PanelRight,
@@ -26,20 +32,27 @@ pub enum IconName {
     Search,
     Settings,
     Trash,
+    TriangleAlert,
 }
 
 impl IconName {
-    pub const ALL: [IconName; 17] = [
+    pub const ALL: [IconName; 24] = [
         IconName::ArrowDown,
         IconName::ArrowUp,
         IconName::Check,
         IconName::ChevronDown,
+        IconName::ChevronLeft,
+        IconName::ChevronRight,
         IconName::ChevronUp,
         IconName::ChevronsUpDown,
+        IconName::CircleAlert,
+        IconName::CircleCheck,
         IconName::Close,
         IconName::Copy,
+        IconName::Ellipsis,
         IconName::GitCompare,
         IconName::Info,
+        IconName::LoaderCircle,
         IconName::Minus,
         IconName::PanelLeft,
         IconName::PanelRight,
@@ -47,6 +60,7 @@ impl IconName {
         IconName::Search,
         IconName::Settings,
         IconName::Trash,
+        IconName::TriangleAlert,
     ];
 
     /// Where `Assets` keeps it.
@@ -56,12 +70,18 @@ impl IconName {
             IconName::ArrowUp => "icons/arrow-up.svg",
             IconName::Check => "icons/check.svg",
             IconName::ChevronDown => "icons/chevron-down.svg",
+            IconName::ChevronLeft => "icons/chevron-left.svg",
+            IconName::ChevronRight => "icons/chevron-right.svg",
             IconName::ChevronUp => "icons/chevron-up.svg",
             IconName::ChevronsUpDown => "icons/chevrons-up-down.svg",
+            IconName::CircleAlert => "icons/circle-alert.svg",
+            IconName::CircleCheck => "icons/circle-check.svg",
             IconName::Close => "icons/x.svg",
             IconName::Copy => "icons/copy.svg",
+            IconName::Ellipsis => "icons/ellipsis.svg",
             IconName::GitCompare => "icons/git-compare.svg",
             IconName::Info => "icons/info.svg",
+            IconName::LoaderCircle => "icons/loader-circle.svg",
             IconName::Minus => "icons/minus.svg",
             IconName::PanelLeft => "icons/panel-left.svg",
             IconName::PanelRight => "icons/panel-right.svg",
@@ -69,6 +89,7 @@ impl IconName {
             IconName::Search => "icons/search.svg",
             IconName::Settings => "icons/settings.svg",
             IconName::Trash => "icons/trash.svg",
+            IconName::TriangleAlert => "icons/triangle-alert.svg",
         }
     }
 }

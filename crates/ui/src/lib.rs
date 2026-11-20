@@ -4,7 +4,9 @@
 //! An application calls `init` once, gives GPUI `Assets`, and puts its
 //! views in `root`.
 
+mod alert;
 mod assets;
+mod breadcrumb;
 mod button;
 mod check_row;
 mod checkbox;
@@ -15,20 +17,29 @@ mod fonts;
 mod icon;
 mod input;
 mod label;
+mod list;
 mod overlay;
+mod pagination;
 mod popover;
+mod radio;
 mod resizable;
 mod root;
+mod roving;
 mod scroll;
 mod select;
 mod size;
+mod skeleton;
 mod slider;
+mod spinner;
 mod switch;
 mod table;
+mod tabs;
 mod text;
 mod textarea;
 mod theme;
+mod toast;
 mod toggle;
+mod tone;
 mod tooltip;
 
 use std::rc::Rc;
@@ -36,7 +47,9 @@ use std::sync::Arc;
 
 use gpui::{App, ElementId, SharedString, Window};
 
+pub use alert::Alert;
 pub use assets::Assets;
+pub use breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use button::{Button, ButtonVariant};
 pub use checkbox::Checkbox;
 pub use floating_window::FloatingWindow;
@@ -44,20 +57,28 @@ pub use fonts::Typeface;
 pub use icon::{Icon, IconName};
 pub use input::Input;
 pub use label::Label;
+pub use list::{List, ListItem, ListMarker};
 pub use overlay::{Dismiss, surface};
+pub use pagination::Pagination;
 pub use popover::{Placement, Popover, PopoverControl, PopoverTrigger};
+pub use radio::{Radio, RadioGroup};
 pub use resizable::{PanelSize, Resizable, ResizablePanel};
 pub use root::{FocusNext, FocusPrevious, h_flex, root, v_flex};
 pub use scroll::{Measure, ScrollSource, Scrollbar};
 pub use select::{Select, SelectEvent, SelectItem, SelectState};
 pub use size::{Sizable, Size};
+pub use skeleton::Skeleton;
 pub use slider::Slider;
+pub use spinner::Spinner;
 pub use switch::Switch;
 pub use table::{SortDirection, Table, TableColumn, TableEvent, TableRow, TableState};
+pub use tabs::{Tab, Tabs, TabsVariant};
 pub use text::{InputEvent, InputState};
 pub use textarea::Textarea;
 pub use theme::{ActiveTheme, Theme, ThemeColors, ThemeMode};
+pub use toast::{Toast, ToastId, Toaster, Toasts};
 pub use toggle::{Toggle, ToggleGroup, ToggleVariant};
+pub use tone::Tone;
 pub use tooltip::Tooltip;
 
 /// The actions of a field, which a view can bind other keys to, or catch
@@ -82,10 +103,12 @@ pub fn init(cx: &mut App) -> gpui::Result<()> {
     root::bind_keys(cx);
     text::bind_keys(cx);
     overlay::bind_keys(cx);
+    radio::bind_keys(cx);
     resizable::bind_keys(cx);
     select::bind_keys(cx);
     slider::bind_keys(cx);
     table::bind_keys(cx);
+    tabs::bind_keys(cx);
 
     fonts::load(cx)
 }

@@ -1,6 +1,7 @@
 //! What a checkbox and a switch share: the control, its label and
 //! description beside it, the whole row pressed to change it, and the
-//! keyboard's ring drawn on the control rather than on the row.
+//! keyboard's ring drawn on the control rather than on the row. A radio
+//! says its words the same way.
 
 use gpui::{
     AnyElement, App, Div, ElementId, FocusHandle, InteractiveElement as _, ParentElement as _,
@@ -21,6 +22,32 @@ pub(crate) struct Words {
     pub(crate) description: Option<SharedString>,
 }
 
+/// The label and the description beside a control, if it has either.
+pub(crate) fn words(words: Words, disabled: bool, size: Size, cx: &App) -> Option<Div> {
+    if words.label.is_none() && words.description.is_none() {
+        return None;
+    }
+
+    let muted = cx.theme().colors.muted_foreground;
+
+    Some(
+        v_flex()
+            .gap_0p5()
+            .when_some(words.label, |column, label| {
+                column.child(Label::new(label).with_size(size).disabled(disabled))
+            })
+            .when_some(words.description, |column, description| {
+                column.child(
+                    div()
+                        .text_size(size.text())
+                        .text_color(muted)
+                        .when(disabled, |text| text.opacity(0.5))
+                        .child(description),
+                )
+            }),
+    )
+}
+
 /// The row: the control and its words, which a press anywhere on changes to
 /// `!checked`.
 #[allow(clippy::too_many_arguments)]
@@ -35,32 +62,12 @@ pub(crate) fn row(
     on_change: Option<ChangeHandler<bool>>,
     cx: &App,
 ) -> Stateful<Div> {
-    let muted = cx.theme().colors.muted_foreground;
-    let has_words = words.label.is_some() || words.description.is_some();
-
     h_flex()
         .id(id)
         .items_start()
         .gap_2()
         .child(control)
-        .when(has_words, |row| {
-            row.child(
-                v_flex()
-                    .gap_0p5()
-                    .when_some(words.label, |column, label| {
-                        column.child(Label::new(label).with_size(size).disabled(disabled))
-                    })
-                    .when_some(words.description, |column, description| {
-                        column.child(
-                            div()
-                                .text_size(size.text())
-                                .text_color(muted)
-                                .when(disabled, |text| text.opacity(0.5))
-                                .child(description),
-                        )
-                    }),
-            )
-        })
+        .children(self::words(words, disabled, size, cx))
         .map(|row| match disabled {
             true => row.cursor_default(),
             false => {

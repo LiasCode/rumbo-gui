@@ -55,6 +55,10 @@ pub struct ThemeColors {
     pub danger_hover: Hsla,
     pub danger_active: Hsla,
     pub danger_foreground: Hsla,
+    /// What went well, and what to be careful of, as an alert or a toast
+    /// tells them.
+    pub success: Hsla,
+    pub warning: Hsla,
     /// Surfaces that float over the rest: popovers, lists, tooltips, windows.
     pub popover: Hsla,
     pub popover_foreground: Hsla,
@@ -125,6 +129,8 @@ impl Theme {
                 danger_hover: hex(RED_600),
                 danger_active: hex(RED_700),
                 danger_foreground: hex(NEUTRAL_50),
+                success: hex(GREEN_600),
+                warning: hex(AMBER_600),
                 popover: hex(0xffffff),
                 popover_foreground: hex(NEUTRAL_950),
                 overlay: rgba(0x00000033).into(),
@@ -169,6 +175,8 @@ impl Theme {
                 danger_hover: hex(RED_500),
                 danger_active: hex(RED_700),
                 danger_foreground: hex(NEUTRAL_50),
+                success: hex(GREEN_500),
+                warning: hex(AMBER_500),
                 popover: hex(NEUTRAL_900),
                 popover_foreground: hex(NEUTRAL_50),
                 overlay: rgba(0x00000066).into(),
@@ -275,7 +283,8 @@ fn hex(color: u32) -> Hsla {
     rgb(color).into()
 }
 
-// Tailwind's neutral and red scales, which shadcn's palette is made of.
+// Tailwind's neutral, red, green, and amber scales, which shadcn's palette
+// is made of.
 const NEUTRAL_50: u32 = 0xfafafa;
 const NEUTRAL_100: u32 = 0xf5f5f5;
 const NEUTRAL_200: u32 = 0xe5e5e5;
@@ -290,3 +299,7 @@ const NEUTRAL_950: u32 = 0x0a0a0a;
 const RED_500: u32 = 0xef4444;
 const RED_600: u32 = 0xdc2626;
 const RED_700: u32 = 0xb91c1c;
+const GREEN_500: u32 = 0x22c55e;
+const GREEN_600: u32 = 0x16a34a;
+const AMBER_500: u32 = 0xf59e0b;
+const AMBER_600: u32 = 0xd97706;

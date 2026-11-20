@@ -131,7 +131,8 @@ go through one buffer
 the pointer, and the platform's input methods; the surfaces that float
 over the rest (a floating window, a popover, a select's list) are drawn in
 GPUI's deferred layers, in that order from below, so each opens over the
-one it is in. Whatever the pointer drags (a scrollbar's thumb, a slider's,
+one it is in, and a window's toasts over all of them, from the one
+`Toasts` its view keeps. Whatever the pointer drags (a scrollbar's thumb, a slider's,
 the divider between panels, the edge of a table's column) goes through
 one press that follows the pointer until the button comes up
 (`crates/ui/src/drag.rs`). `crates/overview` shows

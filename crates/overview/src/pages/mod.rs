@@ -1,19 +1,28 @@
 //! The pages of the overview, one per component, simplest first, and what
 //! their examples hold between frames.
 
+mod alert;
+mod breadcrumb;
 mod button;
 mod checkbox;
 mod floating_window;
 mod input;
 mod label;
+mod list;
+mod pagination;
 mod popover;
+mod radio;
 mod resizable;
 mod scrollbar;
 mod select;
+mod skeleton;
 mod slider;
+mod spinner;
 mod switch;
 mod table;
+mod tabs;
 mod textarea;
+mod toast;
 mod toggle;
 mod tooltip;
 mod typography;
@@ -30,37 +39,55 @@ use crate::Overview;
 pub enum Page {
     Typography,
     Label,
+    List,
     Button,
     Toggle,
     Checkbox,
+    Radio,
     Switch,
     Slider,
+    Spinner,
+    Skeleton,
     Tooltip,
     Scrollbar,
+    Alert,
+    Breadcrumb,
+    Tabs,
+    Pagination,
     Input,
     Textarea,
     Select,
     Popover,
+    Toast,
     Resizable,
     Table,
     FloatingWindow,
 }
 
 impl Page {
-    pub const ALL: [Page; 16] = [
+    pub const ALL: [Page; 25] = [
         Page::Typography,
         Page::Label,
+        Page::List,
         Page::Button,
         Page::Toggle,
         Page::Checkbox,
+        Page::Radio,
         Page::Switch,
         Page::Slider,
+        Page::Spinner,
+        Page::Skeleton,
         Page::Tooltip,
         Page::Scrollbar,
+        Page::Alert,
+        Page::Breadcrumb,
+        Page::Tabs,
+        Page::Pagination,
         Page::Input,
         Page::Textarea,
         Page::Select,
         Page::Popover,
+        Page::Toast,
         Page::Resizable,
         Page::Table,
         Page::FloatingWindow,
@@ -70,17 +97,26 @@ impl Page {
         match self {
             Page::Typography => "Typography",
             Page::Label => "Label",
+            Page::List => "List",
             Page::Button => "Button",
             Page::Toggle => "Toggle",
             Page::Checkbox => "Checkbox",
+            Page::Radio => "Radio",
             Page::Switch => "Switch",
             Page::Slider => "Slider",
+            Page::Spinner => "Spinner",
+            Page::Skeleton => "Skeleton",
             Page::Tooltip => "Tooltip",
             Page::Scrollbar => "Scrollbar",
+            Page::Alert => "Alert",
+            Page::Breadcrumb => "Breadcrumb",
+            Page::Tabs => "Tabs",
+            Page::Pagination => "Pagination",
             Page::Input => "Input",
             Page::Textarea => "Textarea",
             Page::Select => "Select",
             Page::Popover => "Popover",
+            Page::Toast => "Toast",
             Page::Resizable => "Resizable",
             Page::Table => "Table",
             Page::FloatingWindow => "Floating window",
@@ -91,17 +127,26 @@ impl Page {
         match self {
             Page::Typography => "typography",
             Page::Label => "label",
+            Page::List => "list",
             Page::Button => "button",
             Page::Toggle => "toggle",
             Page::Checkbox => "checkbox",
+            Page::Radio => "radio",
             Page::Switch => "switch",
             Page::Slider => "slider",
+            Page::Spinner => "spinner",
+            Page::Skeleton => "skeleton",
             Page::Tooltip => "tooltip",
             Page::Scrollbar => "scrollbar",
+            Page::Alert => "alert",
+            Page::Breadcrumb => "breadcrumb",
+            Page::Tabs => "tabs",
+            Page::Pagination => "pagination",
             Page::Input => "input",
             Page::Textarea => "textarea",
             Page::Select => "select",
             Page::Popover => "popover",
+            Page::Toast => "toast",
             Page::Resizable => "resizable",
             Page::Table => "table",
             Page::FloatingWindow => "floating-window",
@@ -126,13 +171,27 @@ impl Page {
             Page::Toggle => {
                 "A button that stays pressed or not, for a mode that is on or off, such as a panel shown; alone or in a group."
             }
+            Page::List => {
+                "Items one under another after a mark: a number, a letter, a numeral, a bullet, a dash, or a box."
+            }
             Page::Checkbox => "A choice that is on or off and takes effect when a form is sent.",
+            Page::Radio => "A choice of one option among a few, all in sight.",
             Page::Switch => "A setting that is on or off and takes effect at once.",
             Page::Slider => "A value between two ends, in steps, chosen along a track.",
+            Page::Spinner => "A ring that turns while something is done whose end is not known.",
+            Page::Skeleton => "A shape that breathes where something will show once it is read.",
             Page::Tooltip => "A word about a control, shown when the pointer rests on it.",
             Page::Scrollbar => {
                 "Along the edge of what scrolls: where the view is in it, and how much of it shows. It shows only while something is out of view."
             }
+            Page::Alert => {
+                "A message that stays in the page beside what it is about: news, a success, a warning, or a problem."
+            }
+            Page::Breadcrumb => {
+                "Where something is, as the places that lead to it, each but the last a way back."
+            }
+            Page::Tabs => "A row of names of which one is shown, for the parts of one view.",
+            Page::Pagination => "Pages of something long, one shown at a time.",
             Page::Input => {
                 "A field of one line: typed, selected, copied, undone, and composed with an input method."
             }
@@ -144,6 +203,9 @@ impl Page {
             }
             Page::Popover => {
                 "A surface that opens beside its trigger and holds anything. Escape or a press outside closes it."
+            }
+            Page::Toast => {
+                "A short message in a corner of the window that says what happened, and goes after a while."
             }
             Page::Resizable => {
                 "Panels side by side or one above another, with dividers dragged to share the room between them."
@@ -161,6 +223,12 @@ impl Page {
 /// What the examples hold between frames: each page's, in its module.
 pub struct Demos {
     button: button::Demo,
+    alert: alert::Demo,
+    radio: radio::Demo,
+    breadcrumb: breadcrumb::Demo,
+    pagination: pagination::Demo,
+    tabs: tabs::Demo,
+    toast: toast::Demo,
     toggle: toggle::Demo,
     checkbox: checkbox::Demo,
     switch: switch::Demo,
@@ -180,6 +248,12 @@ impl Demos {
     pub fn new(window: &mut Window, cx: &mut Context<Overview>) -> Self {
         Demos {
             button: button::Demo::default(),
+            alert: alert::Demo::default(),
+            radio: radio::Demo::default(),
+            breadcrumb: breadcrumb::Demo::default(),
+            pagination: pagination::Demo::default(),
+            tabs: tabs::Demo::default(),
+            toast: toast::Demo::default(),
             toggle: toggle::Demo::default(),
             checkbox: checkbox::Demo::default(),
             switch: switch::Demo::default(),
@@ -206,17 +280,26 @@ impl Demos {
         match page {
             Page::Typography => typography::render(self, window, cx),
             Page::Label => label::render(self, window, cx),
+            Page::List => list::render(self, window, cx),
             Page::Button => button::render(self, window, cx),
             Page::Toggle => toggle::render(self, window, cx),
             Page::Checkbox => checkbox::render(self, window, cx),
+            Page::Radio => radio::render(self, window, cx),
             Page::Switch => switch::render(self, window, cx),
             Page::Slider => slider::render(self, window, cx),
+            Page::Spinner => spinner::render(self, window, cx),
+            Page::Skeleton => skeleton::render(self, window, cx),
             Page::Tooltip => tooltip::render(self, window, cx),
             Page::Scrollbar => scrollbar::render(self, window, cx),
+            Page::Alert => alert::render(self, window, cx),
+            Page::Breadcrumb => breadcrumb::render(self, window, cx),
+            Page::Tabs => tabs::render(self, window, cx),
+            Page::Pagination => pagination::render(self, window, cx),
             Page::Input => input::render(self, window, cx),
             Page::Textarea => textarea::render(self, window, cx),
             Page::Select => select::render(self, window, cx),
             Page::Popover => popover::render(self, window, cx),
+            Page::Toast => toast::render(self, window, cx),
             Page::Resizable => resizable::render(self, window, cx),
             Page::Table => table::render(self, window, cx),
             Page::FloatingWindow => floating_window::render(self, window, cx),
