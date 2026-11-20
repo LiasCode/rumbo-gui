@@ -122,9 +122,14 @@ impl RenderOnce for MessageList {
             (state.list.clone(), state.is_scrolled_up())
         };
 
+        // Each row is laid out on its own, where auto margins have nothing to
+        // center in; as wide as the list, a row can keep to its middle.
         let row = self.row.clone();
         let rows = list(list_state.clone(), move |index, window, cx| {
-            row(index, window, cx)
+            div()
+                .w_full()
+                .child(row(index, window, cx))
+                .into_any_element()
         })
         .size_full();
 
@@ -173,5 +178,56 @@ impl RenderOnce for MessageList {
                         ),
                 )
             })
+    }
+}
+
+/// Where a conversation's rows stand, in a window GPUI keeps in the test's
+/// own process.
+#[cfg(test)]
+mod tests {
+    use gpui::{
+        AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+        Render, Styled as _, TestAppContext, Window, div, px,
+    };
+
+    use super::{MessageList, MessageListState};
+
+    /// A conversation 400 wide whose rows keep to the middle, at most 200
+    /// wide.
+    struct Conversation {
+        state: Entity<MessageListState>,
+    }
+
+    impl Render for Conversation {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(400.)).h(px(300.)).child(MessageList::new(
+                "conversation",
+                &self.state,
+                |_, _, _| {
+                    div()
+                        .debug_selector(|| "row".into())
+                        .max_w(px(200.))
+                        .mx_auto()
+                        .h(px(40.))
+                        .into_any_element()
+                },
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn lets_a_row_keep_to_the_middle(cx: &mut TestAppContext) {
+        cx.update(crate::theme::init);
+
+        let state = cx.new(|cx| MessageListState::new(1, cx));
+        let shown = state.clone();
+        let (_, cx) = cx.add_window_view(move |_, _| Conversation { state: shown });
+
+        cx.run_until_parked();
+
+        let row = cx.debug_bounds("row").expect("the row is drawn");
+
+        assert_eq!(row.origin.x, px(100.));
+        assert_eq!(row.size.width, px(200.));
     }
 }
