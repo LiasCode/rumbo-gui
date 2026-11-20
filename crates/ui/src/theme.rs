@@ -1,6 +1,6 @@
 //! The colors, corners, and type every component draws with, light or dark.
-//! The palette is shadcn's neutral one, which is what the window looked like
-//! with GPUI Kit, so moving a view to these components keeps its look.
+//! The palette is shadcn's neutral one, which the window had before it drew
+//! with these components, so its look stayed when it moved to them.
 
 use gpui::{
     App, BoxShadow, Global, Hsla, Pixels, SharedString, WindowAppearance, point, px, rgb, rgba,

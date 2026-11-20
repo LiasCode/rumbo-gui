@@ -10,19 +10,17 @@ mod toolbar;
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::{
-    ActiveTheme as _, IconName, Sizable as _, Theme, ThemeMode, WindowExt as _,
-    button::{Button, ButtonVariant, ButtonVariants as _},
-    h_flex,
-    input::{InputEvent, InputState},
-    notification::Notification,
-    spinner::Spinner,
-    v_flex,
+use std::time::Duration;
+
+use gpui::{
+    AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, FocusHandle,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
+    Render, Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
 };
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseButton, ParentElement as _, PathPromptOptions, Render,
-    Styled as _, Subscription, Window, actions, div, prelude::FluentBuilder as _,
+use ui::{
+    ActiveTheme as _, Button, DialogLayer, Dialogs, IconName, InputEvent, InputState, PanelSize,
+    Resizable, ResizablePanel, Sizable as _, Spinner, Theme, ThemeMode, Toast, Toaster, Toasts,
+    WindowFrame, h_flex, v_flex,
 };
 
 use crate::config::{self, Config};
@@ -62,6 +60,13 @@ const KEY_CONTEXT: &str = "Shell";
 
 /// How many of the projects rumbo holds the window with none open offers.
 const RECENT_SHOWN: usize = 8;
+
+/// How long the sidebar's width waits after it last changed to be kept,
+/// so a drag writes the preferences once.
+const KEEP_WIDTH_AFTER: Duration = Duration::from_millis(400);
+
+/// The least the work beside the sidebar is given.
+const MAIN_MIN_WIDTH: f32 = 320.;
 
 /// The keys of the window, which work wherever the keyboard is in it.
 pub fn bind_keys(cx: &mut App) {
@@ -179,8 +184,12 @@ pub struct Shell {
     action_focus: FocusHandle,
     /// What the sidebar is narrowed to.
     search: Entity<InputState>,
-    /// The sidebar was dragged to another width, kept once the drag ends.
-    resized: bool,
+    /// The window's dialogs and notifications, which its workspaces show
+    /// theirs in too.
+    dialogs: Entity<Dialogs>,
+    toasts: Entity<Toasts>,
+    /// Keeps the sidebar's width once it stops changing.
+    keeping_width: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -214,6 +223,10 @@ impl Shell {
             }
         });
 
+        // When what had the keyboard is gone, as a session deleted from the
+        // sidebar, the work takes it, so the window's keys still work.
+        let focus_lost = cx.on_focus_lost(window, |this, window, cx| this.focus_work(window, cx));
+
         let mut shell = Shell {
             config: None,
             environment: Environment::inherited(),
@@ -226,8 +239,10 @@ impl Shell {
             focus_handle: cx.focus_handle(),
             action_focus: cx.focus_handle(),
             search,
-            resized: false,
-            _subscriptions: vec![appearance, activation, searching],
+            dialogs: cx.new(|_| Dialogs::new()),
+            toasts: cx.new(|_| Toasts::new()),
+            keeping_width: None,
+            _subscriptions: vec![appearance, activation, searching, focus_lost],
         };
 
         match start {
@@ -458,8 +473,10 @@ impl Shell {
 
     fn attach(&mut self, id: ProjectId, host: Host, window: &mut Window, cx: &mut Context<Self>) {
         let width = self.preferred.preferences.width.pixels();
+        let dialogs = self.dialogs.clone();
+        let toasts = self.toasts.clone();
         let workspace = cx.new(|cx| {
-            let mut workspace = Workspace::new(host, window, cx);
+            let mut workspace = Workspace::new(host, dialogs, toasts, window, cx);
 
             workspace.set_width(width, cx);
             workspace
@@ -536,7 +553,7 @@ impl Shell {
                 &self.preferred.preferences.editor,
                 &self.environment,
                 Path::new(path),
-                window,
+                &self.toasts,
                 cx,
             ),
 
@@ -547,7 +564,7 @@ impl Shell {
             } => {
                 let _ = session;
 
-                self.ended_elsewhere(id, title, status, window, cx)
+                self.ended_elsewhere(id, title, status, cx)
             }
         }
     }
@@ -560,7 +577,6 @@ impl Shell {
         id: ProjectId,
         title: &str,
         status: &str,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.preferred.preferences.quiet {
@@ -576,19 +592,17 @@ impl Shell {
             crate::protocol::RUN_CANCELLED => "was cancelled",
             _ => "failed",
         };
-        let note = Notification::new()
-            .title(format!("A run {said} in {project}"))
-            .message(title.to_string());
+        let note = Toast::new(format!("A run {said} in {project}")).description(title.to_string());
 
         let note = match status {
-            crate::protocol::RUN_DONE => {
-                note.with_type(gpui_kit::component::notification::NotificationType::Success)
-            }
+            crate::protocol::RUN_DONE => note.success(),
             crate::protocol::RUN_CANCELLED => note,
-            _ => note.with_type(gpui_kit::component::notification::NotificationType::Error),
+            _ => note.danger(),
         };
 
-        window.push_notification(note, cx);
+        self.toasts.update(cx, |toasts, cx| {
+            toasts.push(note, cx);
+        });
     }
 
     /// Shows a project: the session its host has current, or why it has
@@ -667,7 +681,7 @@ impl Shell {
 
     /// Opens a project's folder in the editor the person chose, or in one
     /// found on the PATH the hosts get.
-    fn open_in_editor(&mut self, id: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_in_editor(&mut self, id: ProjectId, cx: &mut Context<Self>) {
         let Some(project) = self.project(id) else {
             return;
         };
@@ -681,30 +695,59 @@ impl Shell {
             &self.preferred.preferences.editor,
             &self.environment,
             &dir,
-            window,
+            &self.toasts,
             cx,
         );
     }
 
     /// Puts the sidebar away, or brings it back.
     fn toggle_sidebar(&mut self, _: &ToggleSidebar, window: &mut Window, cx: &mut Context<Self>) {
-        self.preferred.preferences.sidebar_hidden = !self.preferred.preferences.sidebar_hidden;
-        self.save_preferences(window, cx);
+        let hidden = !self.preferred.preferences.sidebar_hidden;
+
+        self.preferred.preferences.sidebar_hidden = hidden;
+
+        // What had the keyboard in the sidebar goes with it: the work takes
+        // it.
+        if hidden && self.settings.is_none() {
+            self.focus_work(window, cx);
+        }
+
+        self.save_preferences(cx);
     }
 
     /// Keeps the preferences for the next start, saying when they could not
     /// be kept.
-    fn save_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.resized = false;
+    fn save_preferences(&mut self, cx: &mut Context<Self>) {
+        self.keeping_width = None;
 
         if let Some(path) = &self.preferred.path {
             self.preferred.problem = preferences::save(&self.preferred.preferences, path).err();
         }
 
-        if let Some(problem) = &self.preferred.problem {
-            window.push_notification(Notification::error(problem.clone()), cx);
+        if let Some(problem) = self.preferred.problem.clone() {
+            self.toasts.update(cx, |toasts, cx| {
+                toasts.push(Toast::new(problem).danger(), cx);
+            });
         }
 
+        cx.notify();
+    }
+
+    /// Takes the width a drag or the keys gave the sidebar, and keeps it
+    /// once it stops changing.
+    fn resize_sidebar(&mut self, size: &PanelSize, cx: &mut Context<Self>) {
+        if size.key != "sidebar" {
+            return;
+        }
+
+        let width = f32::from(size.size).clamp(sidebar::MIN_WIDTH, sidebar::MAX_WIDTH);
+
+        self.preferred.preferences.sidebar_width = Some(width.round() as u32);
+        self.keeping_width = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(KEEP_WIDTH_AFTER).await;
+
+            let _ = this.update(cx, |this, cx| this.save_preferences(cx));
+        }));
         cx.notify();
     }
 
@@ -726,23 +769,29 @@ impl Shell {
             .map(|project| folder_name(&project.dir))
             .unwrap_or_default();
         let shell = cx.weak_entity();
+        let said = match working {
+            1 => "A run works in it. Closing the project cancels it.".to_string(),
+            _ => format!("{working} runs work in it. Closing the project cancels them."),
+        };
 
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let shell = shell.clone();
+        self.dialogs.update(cx, |dialogs, cx| {
+            dialogs.open(
+                move |dialog, _, _| {
+                    let shell = shell.clone();
 
-            alert
-                .title(format!("Close {name}?"))
-                .description(match working {
-                    1 => "A run works in it. Closing the project cancels it.".to_string(),
-                    _ => format!("{working} runs work in it. Closing the project cancels them."),
-                })
-                .confirm()
-                .ok_text("Close Project")
-                .ok_variant(ButtonVariant::Danger)
-                .on_ok(move |_, window, cx| {
-                    let _ = shell.update(cx, |this, cx| this.remove_project(id, window, cx));
-                    true
-                })
+                    dialog
+                        .title(format!("Close {name}?"))
+                        .child(said.clone())
+                        .danger()
+                        .on_ok("Close Project", move |window, cx| {
+                            let _ =
+                                shell.update(cx, |this, cx| this.remove_project(id, window, cx));
+                            true
+                        })
+                },
+                window,
+                cx,
+            )
         });
     }
 
@@ -803,10 +852,11 @@ impl Shell {
                 }
 
                 Ok(Err(error)) => {
-                    window.push_notification(
-                        Notification::error(format!("The folder could not be chosen: {error}")),
-                        cx,
-                    );
+                    let said = format!("The folder could not be chosen: {error}");
+
+                    this.toasts.update(cx, |toasts, cx| {
+                        toasts.push(Toast::new(said).danger(), cx);
+                    });
                 }
 
                 // The person closed the dialog.
@@ -870,13 +920,23 @@ impl Shell {
             return;
         }
 
+        self.focus_work(window, cx);
+        self.set_title(window, cx);
+        cx.notify();
+    }
+
+    /// Gives the keyboard to what is shown: the settings, the composer of
+    /// the project shown, or the main action of a screen without one.
+    fn focus_work(&self, window: &mut Window, cx: &mut App) {
+        if let Some((settings, _)) = &self.settings {
+            settings.update(cx, |settings, cx| settings.focus(window, cx));
+            return;
+        }
+
         match self.selected_workspace() {
             Some(workspace) => workspace.update(cx, |workspace, cx| workspace.focus(window, cx)),
             None => self.action_focus.focus(window, cx),
         }
-
-        self.set_title(window, cx);
-        cx.notify();
     }
 
     /// Takes in what the person changed in the settings, puts it in force,
@@ -900,18 +960,13 @@ impl Shell {
         }
 
         self.preferred.preferences = preferences;
-        self.save_preferences(window, cx);
+        self.save_preferences(cx);
     }
 
     /// Opens the project shown in the editor.
-    fn open_shown_in_editor(
-        &mut self,
-        _: &OpenInEditor,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_shown_in_editor(&mut self, _: &OpenInEditor, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.selected {
-            self.open_in_editor(id, window, cx);
+            self.open_in_editor(id, cx);
         }
     }
 
@@ -919,7 +974,7 @@ impl Shell {
     fn focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
         if self.preferred.preferences.sidebar_hidden {
             self.preferred.preferences.sidebar_hidden = false;
-            self.save_preferences(window, cx);
+            self.save_preferences(cx);
         }
 
         self.close_settings(&CloseSettings, window, cx);
@@ -1004,7 +1059,7 @@ impl Shell {
     /// projects rumbo holds, most recently used first, which open in the
     /// session used last.
     fn render_empty(&self, cx: &mut Context<Self>) -> AnyElement {
-        let listed: Vec<gpui_kit::component::button::Button> = self
+        let listed: Vec<Button> = self
             .catalog
             .as_ref()
             .map(|catalog| catalog.read(cx).projects().to_vec())
@@ -1019,7 +1074,7 @@ impl Shell {
                     project.label.clone()
                 };
 
-                Button::new(gpui_kit::ElementId::Name(format!("recent-{root}").into()))
+                Button::new(ElementId::Name(format!("recent-{root}").into()))
                     .ghost()
                     .w_full()
                     .icon(IconName::FolderClosed)
@@ -1045,7 +1100,7 @@ impl Shell {
             .when(!listed.is_empty(), |screen| {
                 screen.child(
                     v_flex()
-                        .w(gpui_kit::px(440.))
+                        .w(px(440.))
                         .pt_4()
                         .gap_1()
                         .child(muted("Recent", cx))
@@ -1077,8 +1132,8 @@ impl Shell {
                     .max_w_full()
                     .p_3()
                     .rounded_md()
-                    .bg(cx.theme().muted)
-                    .font_family(cx.theme().mono_font_family.clone())
+                    .bg(cx.theme().colors.muted)
+                    .font_family(cx.theme().mono_family.clone())
                     .text_sm()
                     .child(message.to_string()),
             )
@@ -1113,64 +1168,67 @@ impl Render for Shell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sidebar_shown = self.settings.is_none() && !self.preferred.preferences.sidebar_hidden;
 
-        v_flex()
-            .key_context(KEY_CONTEXT)
-            .track_focus(&self.focus_handle)
-            .on_action(cx.listener(Self::open_palette))
-            .on_action(cx.listener(Self::open_settings))
-            .on_action(cx.listener(Self::open_project_action))
-            .on_action(cx.listener(Self::close_settings))
-            .on_action(cx.listener(Self::new_session_shown))
-            .on_action(cx.listener(Self::toggle_sidebar))
-            .on_action(cx.listener(Self::open_shown_in_editor))
-            .on_action(cx.listener(Self::focus_search))
-            .on_action(cx.listener(|this, _: &Jump1, window, cx| this.jump(1, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump2, window, cx| this.jump(2, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump3, window, cx| this.jump(3, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump4, window, cx| this.jump(4, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump5, window, cx| this.jump(5, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump6, window, cx| this.jump(6, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump7, window, cx| this.jump(7, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump8, window, cx| this.jump(8, window, cx)))
-            .on_action(cx.listener(|this, _: &Jump9, window, cx| this.jump(9, window, cx)))
-            // A drag of the sidebar's edge ends wherever the pointer is.
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
-                    if this.resized {
-                        this.save_preferences(window, cx);
-                    }
-                }),
-            )
-            .size_full()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .child(self.render_toolbar(cx))
+        let mut body = Resizable::horizontal("body");
+
+        if sidebar_shown {
+            body = body.child(
+                ResizablePanel::new("sidebar")
+                    .size(px(self.sidebar_width()))
+                    .min(px(sidebar::MIN_WIDTH))
+                    .max(px(sidebar::MAX_WIDTH))
+                    .child(self.render_sidebar(cx)),
+            );
+        }
+
+        let body = body
             .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_stretch()
-                    .when(sidebar_shown, |body| body.child(self.render_sidebar(cx)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .child(self.render_main(cx)),
-                    ),
+                ResizablePanel::new("main")
+                    .min(px(MAIN_MIN_WIDTH))
+                    .child(self.render_main(cx)),
             )
+            .on_resize(cx.listener(|this, size: &PanelSize, _, cx| this.resize_sidebar(size, cx)));
+
+        WindowFrame::new().child(
+            ui::root(cx)
+                .key_context(KEY_CONTEXT)
+                .track_focus(&self.focus_handle)
+                .on_action(cx.listener(Self::open_palette))
+                .on_action(cx.listener(Self::open_settings))
+                .on_action(cx.listener(Self::open_project_action))
+                .on_action(cx.listener(Self::close_settings))
+                .on_action(cx.listener(Self::new_session_shown))
+                .on_action(cx.listener(Self::toggle_sidebar))
+                .on_action(cx.listener(Self::open_shown_in_editor))
+                .on_action(cx.listener(Self::focus_search))
+                .on_action(cx.listener(|this, _: &Jump1, window, cx| this.jump(1, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump2, window, cx| this.jump(2, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump3, window, cx| this.jump(3, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump4, window, cx| this.jump(4, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump5, window, cx| this.jump(5, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump6, window, cx| this.jump(6, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump7, window, cx| this.jump(7, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump8, window, cx| this.jump(8, window, cx)))
+                .on_action(cx.listener(|this, _: &Jump9, window, cx| this.jump(9, window, cx)))
+                .flex()
+                .flex_col()
+                .child(self.render_toolbar(cx))
+                .child(div().flex_1().min_h_0().w_full().child(body))
+                .child(DialogLayer::new(&self.dialogs))
+                .child(Toaster::new(&self.toasts)),
+        )
     }
 }
 
 /// Puts a theme in force. One that follows the desktop asks the window,
 /// which knows its appearance better than the app on Linux.
 fn apply_theme(theme: Colors, window: &mut Window, cx: &mut App) {
-    match theme {
-        Colors::System => Theme::sync_system_appearance(Some(window), cx),
-        Colors::Light => Theme::change(ThemeMode::Light, Some(window), cx),
-        Colors::Dark => Theme::change(ThemeMode::Dark, Some(window), cx),
-    }
+    let mode = match theme {
+        Colors::System => ThemeMode::of_appearance(window.appearance()),
+        Colors::Light => ThemeMode::Light,
+        Colors::Dark => ThemeMode::Dark,
+    };
+
+    Theme::change(mode, cx);
 }
 
 /// Opens a folder or a file in the editor chosen, or in one found on the
@@ -1179,9 +1237,15 @@ pub fn open_with_editor(
     chosen: &str,
     environment: &Environment,
     target: &Path,
-    window: &mut Window,
+    toasts: &Entity<Toasts>,
     cx: &mut App,
 ) {
+    let say = |problem: String, cx: &mut App| {
+        toasts.update(cx, |toasts, cx| {
+            toasts.push(Toast::new(problem).danger(), cx);
+        });
+    };
+
     let path = environment
         .variables()
         .iter()
@@ -1190,10 +1254,8 @@ pub fn open_with_editor(
         .or_else(|| std::env::var_os("PATH"));
 
     let Some((program, args)) = editor::command(chosen, path.as_deref(), target) else {
-        window.push_notification(
-            Notification::error(
-                "No editor was found. Choose the command that opens one in Settings, General.",
-            ),
+        say(
+            "No editor was found. Choose the command that opens one in Settings, General.".into(),
             cx,
         );
         return;
@@ -1219,16 +1281,11 @@ pub fn open_with_editor(
             std::thread::spawn(move || child.wait());
         }
 
-        Err(error) => {
-            window.push_notification(
-                Notification::error(format!("{program} could not be started: {error}")),
-                cx,
-            );
-        }
+        Err(error) => say(format!("{program} could not be started: {error}"), cx),
     }
 }
 
-fn centered() -> gpui_kit::Div {
+fn centered() -> Div {
     v_flex()
         .size_full()
         .p_8()
@@ -1237,10 +1294,10 @@ fn centered() -> gpui_kit::Div {
         .justify_center()
 }
 
-fn muted(text: &str, cx: &App) -> gpui_kit::Div {
+fn muted(text: &str, cx: &App) -> Div {
     div()
         .text_sm()
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().colors.muted_foreground)
         .child(text.to_string())
 }
 

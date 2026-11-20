@@ -120,33 +120,33 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 
 ## Components
 
-The window is moving from GPUI Kit to components of its own, in
-`crates/ui`. They are built on GPUI alone and know nothing of rumbo: a view
-gives them what to show and hears what the person did through events and
-callbacks. A theme in GPUI's globals gives them their colors, light or
-dark, and their typeface: Montserrat or Shantell Sans, which `crates/ui`
-bundles and gives GPUI at startup, or the desktop's. Every field's edits go
-through one buffer (`crates/ui/src/text/edit.rs`), which a state entity
-wraps for the keys, the pointer, and the platform's input methods. Enter in
-a field of one line goes on to what holds it, so that a select's list
-chooses and a dialog answers. The surfaces that float over the rest (a
-floating window or a dialog, a popover or a menu, a select's list) are
-drawn in GPUI's deferred layers, in that order from below, so each opens
-over the one it is in, and a window's toasts over all of them. A window's
-dialogs and toasts come from the one `Dialogs` and `Toasts` its view keeps
-and hands to what opens them. A reply's Markdown is read into blocks apart
-from drawing them (`crates/ui/src/markdown/blocks.rs`), and the words of
-each block can be selected and copied on their own; a selection does not
-run from one block into the next. A diff is read from Git's patch apart
-from drawing it too (`crates/ui/src/diff/patch.rs`), and draws only the
-rows in view, as a conversation does. Whatever the pointer drags (a
-scrollbar's thumb, a slider's, the divider between panels, the edge of a
-table's column) goes through one press that follows the pointer until the
-button comes up (`crates/ui/src/drag.rs`). A window that draws its own
-title bar draws its frame too, in a `WindowFrame`, where the desktop leaves
-the frame to it. `crates/overview` shows each component on a page of its
-own, which is where one is looked at before a view uses it. Until the move
-is done the views use GPUI Kit, and both pin the same GPUI.
+The window draws with components of its own, in `crates/ui`. They are built
+on GPUI alone and know nothing of rumbo: a view gives them what to show and
+hears what the person did through events and callbacks. A theme in GPUI's
+globals gives them their colors, light or dark, and their typeface:
+Montserrat or Shantell Sans, which `crates/ui` bundles and gives GPUI at
+startup, or the desktop's. Every field's edits go through one buffer
+(`crates/ui/src/text/edit.rs`), which a state entity wraps for the keys,
+the pointer, and the platform's input methods. Enter in a field of one line
+goes on to what holds it, so that a select's list chooses and a dialog
+answers. The surfaces that float over the rest (a floating window or a
+dialog, a popover or a menu, a select's list) are drawn in GPUI's deferred
+layers, in that order from below, so each opens over the one it is in, and
+a window's toasts over all of them. A window's dialogs and toasts come from
+the one `Dialogs` and `Toasts` its view keeps and hands to what opens them:
+the shell keeps the window's, and gives them to each workspace. A reply's
+Markdown is read into blocks apart from drawing them
+(`crates/ui/src/markdown/blocks.rs`), and the words of each block can be
+selected and copied on their own; a selection does not run from one block
+into the next. A diff is read from Git's patch apart from drawing it too
+(`crates/ui/src/diff/patch.rs`), and draws only the rows in view, as a
+conversation does. Whatever the pointer drags (a scrollbar's thumb, a
+slider's, the divider between panels, the edge of a table's column) goes
+through one press that follows the pointer until the button comes up
+(`crates/ui/src/drag.rs`). A window that draws its own title bar draws its
+frame too, in a `WindowFrame`, where the desktop leaves the frame to it.
+`crates/overview` shows each component on a page of its own, which is where
+one is looked at before a view uses it.
 
 ## Projects
 

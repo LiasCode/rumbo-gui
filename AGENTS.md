@@ -46,19 +46,17 @@ must not do. Both live in the rumbo repository.
   writes there; the window edits no file of the person's.
 - **The window keeps only its preferences**, in `preferences.rs`'s file,
   read once at startup. Anything rumbo can keep, rumbo keeps.
-- **GPUI Kit from its source, in the window only.** The window still draws
-  with GPUI Kit while its views move to `crates/ui`. Check every API in the
-  crate sources under `~/.cargo/registry/src/*/` (`gpui-component-*`,
-  `gpui-base-*`, `gpui-pre-*`) or at
-  <https://gpui-kit.com/component/NAME.md> before using it. Do not
-  translate from another framework or an older version.
-- **`crates/ui` is GPUI alone.** Its components use no GPUI Kit and know
-  nothing of rumbo; check every GPUI API in the `gpui-pre-*` sources under
-  `~/.cargo/registry/src/*/`, examples included. It pins the `gpui-pre`
-  GPUI Kit pins, so the window builds one GPUI; they change together. What
-  a component does without being drawn is a plain module tested without
-  GPUI, as `text/edit.rs` is for every field. Each component has a page in
-  `crates/overview`, and a new one gets its own.
+- **The window draws with `crates/ui`.** Its views use GPUI and the
+  components of `crates/ui`, and nothing else draws; what a view needs
+  that no component has becomes one there.
+- **`crates/ui` is GPUI alone.** Its components know nothing of rumbo;
+  check every GPUI API in the `gpui-pre-*` sources under
+  `~/.cargo/registry/src/*/`, examples included, before using it, and do
+  not translate from another framework or an older version. The window,
+  `ui`, and `overview` pin the same `gpui-pre`, so one GPUI is built; they
+  change together. What a component does without being drawn is a plain
+  module tested without GPUI, as `text/edit.rs` is for every field. Each
+  component has a page in `crates/overview`, and a new one gets its own.
 - **UI copy is English.**
 
 ## Commands
@@ -146,7 +144,10 @@ Open Project… asks the desktop's folder dialog, which takes `/` and a path
 typed, and Return; it completes a folder that holds a single folder into
 that one, so a scratch project with no subfolder, not even `.git`, is the
 one to open that way. Never take a screenshot of that dialog: it opens on
-the person's recent files.
+the person's recent files. Export as Markdown… asks the desktop's save
+dialog, which opens on the person's workspace, not the window's, and takes
+their keyboard: answer it at once by its address, with Return to keep the
+name it offers in the scratch project, and say so.
 
 Launch only a binary built from the code being checked: `cargo clippy` and
 `cargo test` do not rebuild it, and a build that fails leaves the old one.

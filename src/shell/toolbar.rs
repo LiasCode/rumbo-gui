@@ -2,15 +2,10 @@
 //! what is shown, and the commands and the settings, which act on the
 //! project shown.
 
-use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, Sizable as _, TitleBar,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-};
-use gpui_kit::{
+use gpui::{
     Context, IntoElement, ParentElement as _, Styled as _, div, prelude::FluentBuilder as _,
 };
+use ui::{ActiveTheme as _, Button, IconName, Sizable as _, TitleBar, h_flex};
 
 use super::{CloseSettings, OpenPalette, OpenSettings, Shell, ToggleSidebar};
 
@@ -72,9 +67,9 @@ impl Shell {
                                     .ghost()
                                     .small()
                                     .icon(if self.preferred.preferences.sidebar_hidden {
-                                        Lucide::PanelLeftOpen
+                                        IconName::PanelLeftOpen
                                     } else {
-                                        Lucide::PanelLeftClose
+                                        IconName::PanelLeftClose
                                     })
                                     .tooltip("Show or put away the sidebar (Ctrl-B)")
                                     .on_click(cx.listener(|this, _, window, cx| {
@@ -87,7 +82,7 @@ impl Shell {
                                 .min_w_0()
                                 .truncate()
                                 .text_sm()
-                                .text_color(cx.theme().foreground)
+                                .text_color(cx.theme().colors.foreground)
                                 .child(self.title(cx)),
                         ),
                 )

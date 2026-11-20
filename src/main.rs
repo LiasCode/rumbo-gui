@@ -21,8 +21,8 @@ mod workspace;
 
 use std::path::PathBuf;
 
-use gpui_kit::component::TitleBar;
-use gpui_kit::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use gpui::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use ui::TitleBar;
 
 use crate::config::Parsed;
 use crate::environment::Environment;
@@ -70,10 +70,15 @@ fn main() {
         problem,
     };
 
-    gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+    gpui_platform::application()
+        .with_assets(ui::Assets)
         .run(move |cx| {
-            gpui_kit::init(cx);
+            // Without the bundled typefaces the window draws in the
+            // desktop's font, and works the same.
+            if let Err(error) = ui::init(cx) {
+                eprintln!("rumbo-gui: the bundled typefaces did not load: {error}");
+            }
+
             shell::bind_keys(cx);
             workspace::bind_keys(cx);
 
@@ -90,7 +95,7 @@ fn main() {
                 app_id: Some(protocol::NAME.into()),
                 titlebar: Some(TitlebarOptions {
                     title: Some("rumbo".into()),
-                    ..TitleBar::title_bar_options()
+                    ..TitleBar::window_options().titlebar.unwrap_or_default()
                 }),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
@@ -101,7 +106,7 @@ fn main() {
                 ..TitleBar::window_options()
             };
 
-            gpui_kit::open_window(options, cx, |window, cx| {
+            cx.open_window(options, |window, cx| {
                 cx.new(|cx| Shell::new(start, preferred, window, cx))
             })
             .expect("the window did not open");

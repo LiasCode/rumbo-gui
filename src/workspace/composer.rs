@@ -3,18 +3,12 @@
 //! model the session uses, which opens the picker, and the buttons that
 //! send and cancel.
 
-use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::{
-    ActiveTheme as _, IconName, Sizable as _,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    input::{MoveDown, MoveUp, Textarea},
-    v_flex,
-};
-use gpui_kit::{
+use gpui::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _,
     div, prelude::FluentBuilder as _, px,
 };
+use ui::input_actions::{MoveDown, MoveUp};
+use ui::{ActiveTheme as _, Button, IconName, Sizable as _, Textarea, h_flex, v_flex};
 
 use super::{CancelRun, Workspace, WorkspaceEvent};
 
@@ -54,7 +48,7 @@ impl Workspace {
             .views
             .get(&self.current)
             .is_some_and(|view| view.run.is_some());
-        let muted = cx.theme().muted_foreground;
+        let muted = cx.theme().colors.muted_foreground;
 
         let send = Button::new("send")
             .primary()
@@ -72,14 +66,14 @@ impl Workspace {
             .outline()
             .small()
             .rounded_full()
-            .icon(Lucide::Square)
+            .icon(IconName::Square)
             .tooltip("Cancel the run (Escape)")
             .on_click(cx.listener(|this, _, window, cx| this.cancel(&CancelRun, window, cx)));
 
         let model = Button::new("model")
             .ghost()
             .xsmall()
-            .icon(Lucide::Cpu)
+            .icon(IconName::Cpu)
             .label(self.model_name())
             .tooltip("The model and the options of this session")
             .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx)));
@@ -94,8 +88,8 @@ impl Workspace {
             .w_full()
             .rounded_xl()
             .border_1()
-            .border_color(cx.theme().input)
-            .bg(cx.theme().background)
+            .border_color(cx.theme().colors.input)
+            .bg(cx.theme().colors.background)
             .shadow_sm()
             .px_2()
             .pt_1()
@@ -111,7 +105,7 @@ impl Workspace {
                     cx.stop_propagation();
                 }
             }))
-            .child(Textarea::new(&self.composer).appearance(false))
+            .child(Textarea::new(&self.composer).bare(true))
             .child(
                 h_flex()
                     .gap_1()

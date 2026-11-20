@@ -18,7 +18,7 @@ pub enum Typeface {
     Montserrat,
     /// Hand-drawn and friendly.
     ShantellSans,
-    /// The desktop's interface font, as GPUI Kit draws.
+    /// The desktop's interface font.
     System,
 }
 

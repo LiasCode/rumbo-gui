@@ -3,21 +3,14 @@
 //! wrote; each tool call, which opens to show what it sent and got back,
 //! and what it changed in a file; and how runs ended.
 
-use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::{
-    ActiveTheme as _, Icon, IconName, Sizable as _,
-    bubble::{Bubble, BubbleVariant},
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    message::{Message, MessageAlignment, MessageContent, MessageHeader},
-    spinner::Spinner,
-    text::TextView,
-    v_flex,
-};
-use gpui_kit::{
-    AnyElement, App, ClipboardItem, InteractiveElement as _, IntoElement, ParentElement as _,
+use gpui::{
+    AnyElement, App, ClipboardItem, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity, div,
     prelude::FluentBuilder as _,
+};
+use ui::{
+    ActiveTheme as _, Button, Icon, IconName, Markdown, Message, Sizable as _, Spinner, h_flex,
+    v_flex,
 };
 
 use super::Workspace;
@@ -53,7 +46,8 @@ pub(super) fn render_row(
     };
 
     let row = div().id(("item", item.id)).w_full().min_w_0();
-    let muted = cx.theme().muted_foreground;
+    let colors = cx.theme().colors;
+    let muted = colors.muted_foreground;
 
     match &item.kind {
         Kind::Task(text) => {
@@ -80,7 +74,7 @@ pub(super) fn render_row(
             let group = SharedString::from(format!("reply-{}", item.id));
 
             row.group(group.clone())
-                .child(TextView::markdown(
+                .child(Markdown::new(
                     ("reply", item.id),
                     SharedString::from(text.clone()),
                 ))
@@ -103,7 +97,7 @@ pub(super) fn render_row(
 
         Kind::Context(sections) => row
             .child(note(
-                Lucide::BookOpen,
+                IconName::BookOpen,
                 format!("Context sent: {}", sections.join(", ")),
                 muted,
             ))
@@ -126,7 +120,7 @@ pub(super) fn render_row(
                             .flex_1()
                             .min_w_0()
                             .text_color(match source {
-                                Source::Provider => cx.theme().warning,
+                                Source::Provider => colors.warning,
                                 Source::Host => muted,
                             })
                             .child(text.clone()),
@@ -137,7 +131,7 @@ pub(super) fn render_row(
         Kind::Stopped {
             cancelled: true, ..
         } => row
-            .child(note(Lucide::CircleStop, "Cancelled".into(), muted))
+            .child(note(IconName::CircleStop, "Cancelled".into(), muted))
             .into_any_element(),
 
         Kind::Stopped { reason, .. } => row
@@ -148,14 +142,10 @@ pub(super) fn render_row(
                     .p_2()
                     .rounded_md()
                     .border_1()
-                    .border_color(cx.theme().danger.opacity(0.4))
-                    .bg(cx.theme().danger.opacity(0.06))
+                    .border_color(colors.danger.opacity(0.4))
+                    .bg(colors.danger.opacity(0.06))
                     .text_sm()
-                    .child(
-                        Icon::new(Lucide::CircleX)
-                            .small()
-                            .text_color(cx.theme().danger),
-                    )
+                    .child(Icon::new(IconName::CircleX).small().color(colors.danger))
                     .child(
                         v_flex()
                             .flex_1()
@@ -173,14 +163,14 @@ pub(super) fn render_row(
                     .gap_2()
                     .text_xs()
                     .text_color(muted)
-                    .child(div().h_px().flex_1().bg(cx.theme().border))
+                    .child(div().h_px().flex_1().bg(colors.border))
                     .child(
-                        Icon::new(Lucide::CircleCheck)
+                        Icon::new(IconName::CircleCheck)
                             .xsmall()
-                            .text_color(cx.theme().success),
+                            .color(colors.success),
                     )
                     .child(finished(*seconds, *tools))
-                    .child(div().h_px().flex_1().bg(cx.theme().border)),
+                    .child(div().h_px().flex_1().bg(colors.border)),
             )
             .into_any_element(),
 
@@ -203,10 +193,10 @@ pub(super) fn render_row(
                         div()
                             .p_2()
                             .rounded_md()
-                            .bg(cx.theme().muted)
-                            .font_family(cx.theme().mono_font_family.clone())
+                            .bg(colors.muted)
+                            .font_family(cx.theme().mono_family.clone())
                             .text_xs()
-                            .when(*failed, |block| block.text_color(cx.theme().danger))
+                            .when(*failed, |block| block.text_color(colors.danger))
                             .child(text.clone()),
                     ),
             )
@@ -239,7 +229,7 @@ pub(super) fn finished(seconds: u64, tools: usize) -> String {
     }
 }
 
-fn note(icon: Lucide, text: String, color: gpui_kit::Hsla) -> impl IntoElement {
+fn note(icon: IconName, text: String, color: Hsla) -> impl IntoElement {
     h_flex()
         .gap_2()
         .text_xs()
@@ -252,7 +242,7 @@ fn copy_button(id: (&'static str, u64), text: String) -> Button {
     Button::new(id)
         .ghost()
         .xsmall()
-        .icon(Lucide::Copy)
+        .icon(IconName::Copy)
         .tooltip("Copy")
         .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.clone())))
 }
@@ -287,7 +277,7 @@ fn task_actions(
                 Button::new(("edit-task", id))
                     .ghost()
                     .xsmall()
-                    .icon(Lucide::Pencil)
+                    .icon(IconName::Pencil)
                     .tooltip("Change it, in a branch that starts before it")
                     .on_click(move |_, window, cx| {
                         let text = edited.clone();
@@ -301,7 +291,7 @@ fn task_actions(
                 Button::new(("retry-task", id))
                     .ghost()
                     .xsmall()
-                    .icon(Lucide::RotateCcw)
+                    .icon(IconName::RotateCcw)
                     .tooltip("Ask it again, in a branch that starts before it")
                     .on_click(move |_, window, cx| {
                         let text = retried.clone();
@@ -315,29 +305,23 @@ fn task_actions(
 }
 
 fn said_by_person(text: &str, caption: Option<&'static str>) -> impl IntoElement {
-    let mut message = Message::new().alignment(MessageAlignment::End);
+    let message = Message::new();
 
-    if let Some(caption) = caption {
-        message = message.header(MessageHeader::new().child(caption));
+    match caption {
+        Some(caption) => message.caption(caption),
+        None => message,
     }
-
-    message.content(
-        MessageContent::new().bubble(
-            Bubble::new()
-                .with_variant(BubbleVariant::Muted)
-                .child(text.to_string()),
-        ),
-    )
+    .child(text.to_string())
 }
 
 /// The icon a tool is shown with, by what it does.
-fn tool_icon(name: &str) -> Lucide {
+fn tool_icon(name: &str) -> IconName {
     match name {
-        "bash" => Lucide::SquareTerminal,
-        "read" => Lucide::FileText,
-        "write" => Lucide::FilePlus,
-        "edit" => Lucide::FilePen,
-        _ => Lucide::Wrench,
+        "bash" => IconName::SquareTerminal,
+        "read" => IconName::FileText,
+        "write" => IconName::FilePlus,
+        "edit" => IconName::FilePen,
+        _ => IconName::Wrench,
     }
 }
 
@@ -353,22 +337,23 @@ fn render_tool(
 ) -> impl IntoElement {
     let id = item.id;
     let key = key.to_string();
-    let muted = cx.theme().muted_foreground;
-    let hovered = cx.theme().muted;
+    let colors = cx.theme().colors;
+    let muted = colors.muted_foreground;
+    let hovered = colors.muted;
 
     let status: AnyElement = match (&tool.result, tool.failed) {
         (None, false) => Spinner::new().xsmall().into_any_element(),
         (None, true) => Icon::new(IconName::CircleX)
             .xsmall()
-            .text_color(muted)
+            .color(muted)
             .into_any_element(),
         (Some(_), false) => Icon::new(IconName::Check)
             .xsmall()
-            .text_color(cx.theme().success)
+            .color(colors.success)
             .into_any_element(),
         (Some(_), true) => Icon::new(IconName::CircleX)
             .xsmall()
-            .text_color(cx.theme().danger)
+            .color(colors.danger)
             .into_any_element(),
     };
 
@@ -385,14 +370,14 @@ fn render_tool(
         .on_click(move |_, _, cx| {
             let _ = workspace.update(cx, |this, cx| this.toggle(&key, id, cx));
         })
-        .child(Icon::new(tool_icon(&tool.name)).small().text_color(muted))
+        .child(Icon::new(tool_icon(&tool.name)).small().color(muted))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
                 .text_sm()
-                .font_family(cx.theme().mono_font_family.clone())
+                .font_family(cx.theme().mono_family.clone())
                 .child(tool.summary.clone()),
         )
         .child(status)
@@ -403,7 +388,7 @@ fn render_tool(
                 IconName::ChevronRight
             })
             .xsmall()
-            .text_color(muted),
+            .color(muted),
         );
 
     let block = |label: &'static str, text: String, failed: bool| {
@@ -414,10 +399,10 @@ fn render_tool(
                 div()
                     .p_2()
                     .rounded_md()
-                    .bg(cx.theme().muted)
-                    .font_family(cx.theme().mono_font_family.clone())
+                    .bg(colors.muted)
+                    .font_family(cx.theme().mono_family.clone())
                     .text_xs()
-                    .when(failed, |block| block.text_color(cx.theme().danger))
+                    .when(failed, |block| block.text_color(colors.danger))
                     .child(text),
             )
     };
@@ -447,17 +432,18 @@ fn render_tool(
 
 /// What a call changes in a file, as lines taken out and put in.
 fn render_change(change: &[Line], cx: &App) -> impl IntoElement {
-    let removed = cx.theme().danger;
-    let added = cx.theme().success;
+    let colors = cx.theme().colors;
+    let removed = colors.danger;
+    let added = colors.success;
     let left = change.len().saturating_sub(CHANGE_LINES);
 
     v_flex()
         .ml_8()
         .rounded_md()
         .border_1()
-        .border_color(cx.theme().border)
+        .border_color(colors.border)
         .overflow_hidden()
-        .font_family(cx.theme().mono_font_family.clone())
+        .font_family(cx.theme().mono_family.clone())
         .text_xs()
         .children(change.iter().take(CHANGE_LINES).map(|line| {
             let (sign, text, color) = match line {
@@ -476,7 +462,7 @@ fn render_change(change: &[Line], cx: &App) -> impl IntoElement {
                 div()
                     .px_2()
                     .py_1()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(colors.muted_foreground)
                     .child(format!("{left} more lines")),
             )
         })

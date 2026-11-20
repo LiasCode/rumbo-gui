@@ -48,9 +48,7 @@ fn specimen(index: usize, typeface: Typeface, cx: &mut Context<Overview>) -> Any
         (false, _) => "It did not load: what shows here is the desktop's font.",
         (true, Typeface::Montserrat) => "Geometric and plain, for work. Bundled.",
         (true, Typeface::ShantellSans) => "Hand-drawn and friendly. Bundled.",
-        (true, Typeface::System) => {
-            "The desktop's interface font, which the window draws in with GPUI Kit."
-        }
+        (true, Typeface::System) => "The desktop's interface font.",
     };
 
     let using = Button::new(("use-typeface", index))

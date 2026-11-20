@@ -18,23 +18,16 @@ mod talk;
 
 use std::collections::{HashMap, HashSet};
 
-use gpui_kit::component::{
-    ActiveTheme as _, Sizable as _, WindowExt as _,
-    command::CommandState,
-    h_flex,
-    input::{InputEvent, Position, TextareaState},
-    message_scroller::{MessageScroller, MessageScrollerState},
-    notification::Notification,
-    spinner::Spinner,
-    status_bar::StatusBar,
-    v_flex,
-};
-use gpui_kit::{
+use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, StyleRefinement,
-    Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
+    Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
 };
 use serde_json::{Value as Json, json};
+use ui::{
+    ActiveTheme as _, Button, CommandPaletteState, Dialogs, Icon, IconName, InputEvent, InputState,
+    MessageList, MessageListState, Sizable as _, Spinner, StatusBar, Toast, Toasts, h_flex, v_flex,
+};
 
 use crate::commands::{self, Command};
 use crate::connection::Incoming;
@@ -173,7 +166,7 @@ struct OpenForm {
 /// What the window keeps of one session.
 struct SessionView {
     conversation: Conversation,
-    scroller: Entity<MessageScrollerState>,
+    scroller: Entity<MessageListState>,
     spent: Spent,
     /// The run of this window working in the session, by the id of its run
     /// request.
@@ -185,7 +178,7 @@ struct SessionView {
 
 impl SessionView {
     fn new(cx: &mut Context<Workspace>) -> Self {
-        let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
+        let scroller = cx.new(|cx| MessageListState::new(0, cx));
         let scrolling = cx.observe(&scroller, |_, _, cx| cx.notify());
 
         SessionView {
@@ -221,8 +214,8 @@ pub struct Workspace {
     host_functions: Vec<Function>,
     /// What the provider can be asked, or why that is not known.
     provider_functions: Result<Vec<Function>, String>,
-    composer: Entity<TextareaState>,
-    palette: Entity<CommandState>,
+    composer: Entity<InputState>,
+    palette: Entity<CommandPaletteState>,
     /// The picker waits for what the provider offers.
     picking: bool,
     /// The form of the dialog shown, and how many were opened.
@@ -245,26 +238,38 @@ pub struct Workspace {
     focus_handle: FocusHandle,
     /// Where focus goes once the host ended, so Enter starts it again.
     start_again_focus: FocusHandle,
+    /// The window's dialogs and notifications, which the workspace shows
+    /// its own in.
+    dialogs: Entity<Dialogs>,
+    toasts: Entity<Toasts>,
     _reading: Task<()>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Workspace {
-    pub fn new(host: Host, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        host: Host,
+        dialogs: Entity<Dialogs>,
+        toasts: Entity<Toasts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let composer = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .auto_grow(1, 8)
+            InputState::new(window, cx)
+                .multi_line(1, 8)
                 .submit_on_enter(true)
                 .placeholder(TASK_HINT)
         });
 
-        let palette = cx.new(|cx| CommandState::new(window, cx));
+        let palette = cx.new(|cx| {
+            CommandPaletteState::new(window, cx).placeholder("Type a command or a session", cx)
+        });
 
         let subscriptions = vec![cx.subscribe_in(
             &composer,
             window,
             |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { shift: false, .. } = event {
+                if *event == InputEvent::Submit {
                     this.submit(window, cx);
                 }
             },
@@ -313,6 +318,8 @@ impl Workspace {
             width: crate::preferences::Width::default().pixels(),
             focus_handle: cx.focus_handle(),
             start_again_focus: cx.focus_handle(),
+            dialogs,
+            toasts,
             _reading: reading,
             _subscriptions: subscriptions,
         };
@@ -363,7 +370,7 @@ impl Workspace {
 
     /// Shows a session, asking for its history the first time. A new
     /// session starts empty, unless a run is already making it.
-    fn show_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn show_session(&mut self, session: String, _: &mut Window, cx: &mut Context<Self>) {
         let known = self.views.contains_key(&session);
         let busy = self
             .views
@@ -387,7 +394,7 @@ impl Workspace {
         self.view(&session, cx);
         self.unseen.remove(&session);
         self.current = session;
-        self.set_hint(window, cx);
+        self.set_hint(cx);
         self.refresh_panel(cx);
         cx.notify();
     }
@@ -607,6 +614,8 @@ impl Workspace {
             Some(&crate::export::file_name(&title)),
         );
 
+        let toasts = self.toasts.clone();
+
         cx.spawn_in(window, async move |_, cx| {
             let Ok(Ok(Some(path))) = chosen.await else {
                 return;
@@ -614,19 +623,15 @@ impl Workspace {
 
             let written = std::fs::write(&path, text);
 
-            let _ = cx.update(|window, cx| match written {
-                Ok(()) => window.push_notification(
-                    format!("The session was written to {}", path.display()),
-                    cx,
-                ),
+            let toast = match written {
+                Ok(()) => Toast::new(format!("The session was written to {}", path.display())),
+                Err(error) => {
+                    Toast::new(format!("{} could not be written: {error}", path.display())).danger()
+                }
+            };
 
-                Err(error) => window.push_notification(
-                    Notification::error(format!(
-                        "{} could not be written: {error}",
-                        path.display()
-                    )),
-                    cx,
-                ),
+            toasts.update(cx, |toasts, cx| {
+                toasts.push(toast, cx);
             });
         })
         .detach();
@@ -654,8 +659,10 @@ impl Workspace {
             protocol::FUNCTION_BRANCH,
             params,
             Box::new(move |this, answer, window, cx| {
-                window
-                    .push_notification(commands::capitalized(&commands::host_answer(&answer)), cx);
+                this.toast(
+                    Toast::new(commands::capitalized(&commands::host_answer(&answer))),
+                    cx,
+                );
 
                 match again {
                     Some((text, true)) => this.start(
@@ -843,13 +850,7 @@ impl Workspace {
     }
 
     /// Starts a run, showing `shown` for what started it.
-    fn start_as(
-        &mut self,
-        params: RunParams,
-        shown: Kind,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn start_as(&mut self, params: RunParams, shown: Kind, _: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.request(protocol::METHOD_RUN, &params, Pending::Run) else {
             return;
         };
@@ -865,7 +866,7 @@ impl Workspace {
         self.started.insert(id, std::time::Instant::now());
         self.notice = None;
         self.show(&current, change, cx);
-        self.set_hint(window, cx);
+        self.set_hint(cx);
         cx.notify();
     }
 
@@ -1023,7 +1024,7 @@ impl Workspace {
 
     /// Records whether the shown session has a run in progress in the
     /// composer, which says what Enter does now.
-    fn set_hint(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_hint(&mut self, cx: &mut Context<Self>) {
         let working = self
             .views
             .get(&self.current)
@@ -1031,18 +1032,24 @@ impl Workspace {
         let hint = if working { STEER_HINT } else { TASK_HINT };
 
         self.composer
-            .update(cx, |state, cx| state.set_placeholder(hint, window, cx));
+            .update(cx, |state, cx| state.set_placeholder(hint, cx));
     }
 
     /// Puts text in the composer with the cursor at its end, where typing
     /// goes on.
     fn fill(&self, text: String, window: &mut Window, cx: &mut Context<Self>) {
-        // Columns past the end of a line are clamped to it.
-        let end = Position::new(text.matches('\n').count() as u32, u32::MAX);
+        let end = text.len();
 
         self.composer.update(cx, |state, cx| {
             state.set_value(text, window, cx);
-            state.set_cursor_position(end, window, cx);
+            state.set_cursor(end, window, cx);
+        });
+    }
+
+    /// Shows a notification in the window.
+    fn toast(&self, toast: Toast, cx: &mut App) {
+        self.toasts.update(cx, |toasts, cx| {
+            toasts.push(toast, cx);
         });
     }
 
@@ -1202,7 +1209,7 @@ impl Workspace {
         &mut self,
         id: i64,
         answer: Result<Json, RpcError>,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(key) = self.runs.remove(&id) else {
@@ -1245,7 +1252,7 @@ impl Workspace {
 
         if key == self.current {
             self.notice = None;
-            self.set_hint(window, cx);
+            self.set_hint(cx);
         } else {
             let title = self
                 .listed
@@ -1320,7 +1327,7 @@ impl Workspace {
             if before == 0 {
                 state.reset(total, cx);
             } else {
-                let _ = state.prepend(count, cx);
+                state.prepend(count, cx);
             }
         });
     }
@@ -1365,14 +1372,14 @@ impl Workspace {
 
         match feedback {
             Feedback::Toast if failed => {
-                window.push_notification(Notification::error(text), cx);
+                self.toast(Toast::new(text).danger(), cx);
                 return;
             }
 
             // The first line says what was done.
             Feedback::Toast => {
                 if let Some(line) = text.lines().next().filter(|line| !line.is_empty()) {
-                    window.push_notification(commands::capitalized(line), cx);
+                    self.toast(Toast::new(commands::capitalized(line)), cx);
                 }
 
                 return;
@@ -1468,7 +1475,7 @@ impl Workspace {
     fn session_of(
         &mut self,
         event: &Event,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
         if let Some(key) = self.runs.get(&event.run).cloned() {
@@ -1479,7 +1486,7 @@ impl Workspace {
                 self.name_session(&event.session);
 
                 if shown {
-                    self.set_hint(window, cx);
+                    self.set_hint(cx);
                 }
 
                 return Some(event.session.clone());
@@ -1550,7 +1557,7 @@ impl Workspace {
             self.show(&key, change, cx);
         }
 
-        self.set_hint(window, cx);
+        self.set_hint(cx);
     }
 
     fn toggle(&mut self, key: &str, id: ItemId, cx: &mut Context<Self>) {
@@ -1582,11 +1589,11 @@ impl Workspace {
             Change::Nothing => {}
 
             Change::Appended => view.scroller.update(cx, |state, cx| {
-                let _ = state.append(1, cx);
+                state.append(1, cx);
             }),
 
             Change::Updated(index) => view.scroller.update(cx, |state, cx| {
-                let _ = state.remeasure_items(index..index + 1, cx);
+                state.remeasure(index, cx);
             }),
         }
     }
@@ -1623,42 +1630,40 @@ impl Workspace {
         div()
             .flex_1()
             .min_h_0()
-            .child(
-                MessageScroller::new(
-                    // One scroller per session, so each keeps its place.
-                    ElementId::Name(format!("conversation-{}", self.current).into()),
-                    view.scroller.clone(),
-                    move |index, _, cx| {
-                        div()
-                            .w_full()
-                            .max_w(px(width))
-                            .mx_auto()
-                            .px_4()
-                            .child(rows::render_row(&workspace, &key, index, cx))
-                            .into_any_element()
-                    },
-                )
-                .with_list_style(StyleRefinement::default().py_4())
-                .with_row_style(StyleRefinement::default().pb_4())
-                .with_bottom_fade(cx.theme().background),
-            )
+            .child(MessageList::new(
+                // One list per session, so each keeps its place.
+                ElementId::Name(format!("conversation-{}", self.current).into()),
+                &view.scroller,
+                move |index, _, cx| {
+                    div()
+                        .w_full()
+                        .max_w(px(width))
+                        .mx_auto()
+                        .px_4()
+                        .when(index == 0, |row| row.pt_4())
+                        .pb_4()
+                        .child(rows::render_row(&workspace, &key, index, cx))
+                        .into_any_element()
+                },
+            ))
             .into_any_element()
     }
 
     /// A session with nothing in it yet: what it works in, and what was
     /// asked lately in the project, to ask again or start from.
     fn render_start(&self, cx: &mut Context<Self>) -> AnyElement {
-        let muted = cx.theme().muted_foreground;
+        let muted = cx.theme().colors.muted_foreground;
         let latest = self.history.latest(3);
 
         let suggestions = latest.into_iter().enumerate().map(|(index, text)| {
             let shown = crate::conversation::first_line(&text);
 
-            gpui_kit::component::button::Button::new(("suggestion", index))
+            Button::new(("suggestion", index))
                 .outline()
                 .small()
                 .w_full()
-                .icon(gpui_kit::assets::IconName::Clock)
+                .justify_start()
+                .icon(IconName::Clock)
                 .label(shown)
                 .tooltip("Write it in the composer again")
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -1675,9 +1680,9 @@ impl Workspace {
             .justify_center()
             .gap_2()
             .child(
-                gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Sparkles)
+                Icon::new(IconName::Sparkles)
                     .large()
-                    .text_color(cx.theme().primary),
+                    .color(cx.theme().colors.primary),
             )
             .child(div().text_2xl().child("What should rumbo do?"))
             .child(div().text_sm().text_color(muted).child(format!(
@@ -1709,7 +1714,7 @@ impl Workspace {
         }
     }
 
-    fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_status(&self) -> impl IntoElement {
         let view = self.views.get(&self.current);
         let working = view.is_some_and(|view| view.run.is_some());
         let waiting = self.steers_waiting();
@@ -1729,7 +1734,7 @@ impl Workspace {
             _ => "Ready".into(),
         };
 
-        let mut bar = StatusBar::new().left(
+        let mut bar = StatusBar::new().start(
             h_flex()
                 .gap_1()
                 .when(working, |row| row.child(Spinner::new().xsmall()))
@@ -1737,18 +1742,18 @@ impl Workspace {
         );
 
         if elsewhere > 0 {
-            bar = bar.right(format!("{elsewhere} working in other sessions"));
+            bar = bar.end(format!("{elsewhere} working in other sessions"));
         }
 
         if let Some(view) = view {
             if let Some(context) = view.spent.context() {
-                bar = bar.right(context);
+                bar = bar.end(context);
             }
 
-            bar = bar.right(view.spent.tokens());
+            bar = bar.end(view.spent.tokens());
         }
 
-        bar.border_t_1().border_color(cx.theme().border)
+        bar
     }
 }
 
@@ -1773,8 +1778,8 @@ impl Render for Workspace {
             }))
             .size_full()
             .min_w_0()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(cx.theme().colors.background)
+            .text_color(cx.theme().colors.foreground)
             .child(self.render_header(cx))
             .child(
                 h_flex()
@@ -1786,7 +1791,7 @@ impl Render for Workspace {
                         row.child(self.render_panel(panel, cx))
                     }),
             )
-            .child(self.render_status(cx))
+            .child(self.render_status())
     }
 }
 

@@ -100,6 +100,5 @@ rumbo -f gui "a task"      # or: rumbo system set frontend gui
 
 [AGENTS.md](AGENTS.md) has the checks every change runs, and
 [docs/architecture.md](docs/architecture.md) how the parts fit. Built with
-Rust, [GPUI](https://github.com/zed-industries/zed), and
-[GPUI Kit](https://gpui-kit.com), which the window is leaving for the
+Rust and [GPUI](https://github.com/zed-industries/zed), with the
 components in `crates/ui`; `cargo run --release -p overview` shows them.

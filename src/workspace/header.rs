@@ -2,17 +2,13 @@
 //! mark while a run works in it, the panels beside the conversation, and
 //! the session's menu, with what the host offers to do with it.
 
-use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    menu::{DropdownMenu as _, PopupMenuItem},
-    spinner::Spinner,
-};
-use gpui_kit::{
-    Anchor, ClipboardItem, Context, IntoElement, ParentElement as _, Styled as _, div,
+use gpui::{
+    App, ClipboardItem, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
     prelude::FluentBuilder as _, px,
+};
+use ui::{
+    ActiveTheme as _, Button, DropdownMenu, IconName, MenuItem, Placement, Sizable as _, Spinner,
+    h_flex,
 };
 
 use super::{Panel, Workspace};
@@ -20,7 +16,7 @@ use crate::protocol;
 
 impl Workspace {
     pub(super) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let muted = cx.theme().muted_foreground;
+        let muted = cx.theme().colors.muted_foreground;
         let project = folder_name(&self.dir);
         let title = self
             .session_title()
@@ -33,7 +29,7 @@ impl Workspace {
             .get(&self.current)
             .is_some_and(|view| view.run.is_some());
 
-        let panel = |id: &'static str, icon: Lucide, which: Panel, tooltip: &'static str| {
+        let panel = |id: &'static str, icon: IconName, which: Panel, tooltip: &'static str| {
             Button::new(id)
                 .ghost()
                 .small()
@@ -52,7 +48,7 @@ impl Workspace {
             .gap_2()
             .justify_between()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().colors.border)
             .child(
                 h_flex()
                     .min_w_0()
@@ -69,13 +65,13 @@ impl Workspace {
                     .gap_1()
                     .child(panel(
                         "panel-changes",
-                        Lucide::GitCompare,
+                        IconName::GitCompare,
                         Panel::Changes,
                         "Changes in the project's folder (Ctrl-Shift-G)",
                     ))
                     .child(panel(
                         "panel-details",
-                        Lucide::PanelRight,
+                        IconName::PanelRight,
                         Panel::Details,
                         "The session's details (Ctrl-Alt-B)",
                     ))
@@ -101,71 +97,61 @@ impl Workspace {
             .get(&self.current)
             .is_some_and(|view| !view.conversation.items().is_empty());
 
-        Button::new("session-menu")
+        let button = Button::new("session-menu")
             .ghost()
             .small()
-            .icon(Lucide::Ellipsis)
+            .icon(IconName::Ellipsis)
             .tooltip("Session")
-            .disabled(self.ended.is_some())
-            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
-                let act =
-                    |action: fn(&mut Workspace, &mut gpui_kit::Window, &mut Context<Workspace>)| {
-                        let workspace = workspace.clone();
+            .disabled(self.ended.is_some());
 
-                        move |_: &gpui_kit::ClickEvent,
-                              window: &mut gpui_kit::Window,
-                              cx: &mut gpui_kit::App| {
-                            let _ = workspace.update(cx, |this, cx| action(this, window, cx));
-                        }
-                    };
+        DropdownMenu::new("session-menu-items", button)
+            .placement(Placement::BottomEnd)
+            .items(move |_, _| {
+                let act = |action: fn(&mut Workspace, &mut Window, &mut Context<Workspace>)| {
+                    let workspace = workspace.clone();
+
+                    move |window: &mut Window, cx: &mut App| {
+                        let _ = workspace.update(cx, |this, cx| action(this, window, cx));
+                    }
+                };
                 let copied = session.clone();
 
-                menu.item(
-                    PopupMenuItem::new("Rename…")
-                        .icon(Lucide::Pencil)
+                vec![
+                    MenuItem::new("Rename…")
+                        .icon(IconName::Pencil)
                         .disabled(!rename)
                         .on_click(act(|this, window, cx| {
                             let current = this.current.clone();
                             this.rename(&current, window, cx)
                         })),
-                )
-                .item(
-                    PopupMenuItem::new("Branch")
-                        .icon(Lucide::GitBranch)
+                    MenuItem::new("Branch")
+                        .icon(IconName::GitBranch)
                         .disabled(!branch)
                         .on_click(act(|this, window, cx| this.branch(None, None, window, cx))),
-                )
-                .item(
-                    PopupMenuItem::new("Compact Now")
-                        .icon(Lucide::Shrink)
+                    MenuItem::new("Compact Now")
+                        .icon(IconName::Shrink)
                         .disabled(!compact)
                         .on_click(act(|this, window, cx| this.compact(window, cx))),
-                )
-                .item(PopupMenuItem::separator())
-                .item(
-                    PopupMenuItem::new("Export as Markdown…")
-                        .icon(Lucide::Download)
+                    MenuItem::separator(),
+                    MenuItem::new("Export as Markdown…")
+                        .icon(IconName::Download)
                         .disabled(!exportable)
                         .on_click(act(|this, window, cx| this.export(window, cx))),
-                )
-                .item(
-                    PopupMenuItem::new("Copy Session ID")
-                        .icon(Lucide::Copy)
+                    MenuItem::new("Copy Session ID")
+                        .icon(IconName::Copy)
                         .disabled(copied.is_empty())
-                        .on_click(move |_, _, cx| {
+                        .on_click(move |_, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
                         }),
-                )
-                .item(PopupMenuItem::separator())
-                .item(
-                    PopupMenuItem::new("Delete…")
-                        .icon(Lucide::Trash)
+                    MenuItem::separator(),
+                    MenuItem::new("Delete…")
+                        .icon(IconName::Trash)
                         .disabled(!delete)
                         .on_click(act(|this, window, cx| {
                             let current = this.current.clone();
                             this.delete(&current, window, cx)
                         })),
-                )
+                ]
             })
     }
 }

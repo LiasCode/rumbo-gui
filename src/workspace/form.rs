@@ -10,21 +10,16 @@
 //! The form says which lists it needs; the workspace asks for them, since
 //! everything the host answers arrives there, and hands the answers back.
 
-use gpui_kit::component::{
-    ActiveTheme as _, IndexPath, Sizable as _,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    input::{Input, InputEvent, InputState},
-    select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
-    spinner::Spinner,
-    v_flex,
-};
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Hsla, IntoElement,
+use gpui::{
+    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable as _, IntoElement,
     ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _,
 };
 use serde_json::Value as Json;
+use ui::{
+    ActiveTheme as _, Button, Input, InputEvent, InputState, Select, SelectEvent, SelectItem,
+    SelectState, Sizable as _, Spinner, h_flex, v_flex,
+};
 
 use crate::commands::{self, Lister};
 use crate::conversation::Source;
@@ -89,98 +84,30 @@ enum Note {
 enum Control {
     /// A list is on its way; the value is what the field held before.
     Listing(String),
-    List(Entity<SelectState<SearchableVec<Choice>>>),
+    List(Entity<SelectState>),
     Text(Entity<InputState>),
 }
 
-/// One value in a list, with what tells it apart. An empty value is the
-/// list's empty choice.
-#[derive(Clone)]
-struct Choice {
-    value: SharedString,
-    title: SharedString,
-    detail: SharedString,
-    /// The color of the detail, which the field shows without a theme.
-    muted: Hsla,
-}
+/// One value in a list as a person reads it: by its label when it has
+/// one, with the value and what describes it beside, which the field shows
+/// too, since values can share a label, as sessions share a title.
+fn choice(value: &Value) -> SelectItem {
+    let (title, shown) = if value.label.is_empty() {
+        (value.value.as_str(), "")
+    } else {
+        (value.label.as_str(), value.value.as_str())
+    };
 
-impl SelectItem for Choice {
-    type Value = SharedString;
+    let detail = [shown, value.description.as_str()]
+        .iter()
+        .filter(|part| !part.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" · ");
 
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
-    fn value(&self) -> &SharedString {
-        &self.value
-    }
-
-    /// The field shows what tells the value apart too, since values can
-    /// share a label, as sessions share a title.
-    fn display_title(&self) -> Option<AnyElement> {
-        if self.detail.is_empty() {
-            return None;
-        }
-
-        Some(
-            h_flex()
-                .min_w_0()
-                .gap_2()
-                .child(self.title.clone())
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(self.muted)
-                        .child(self.detail.clone()),
-                )
-                .into_any_element(),
-        )
-    }
-
-    /// One line: the list measures its rows as one.
-    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        h_flex().gap_2().child(self.title.clone()).child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(self.detail.clone()),
-        )
-    }
-
-    fn matches(&self, query: &str) -> bool {
-        let query = query.to_lowercase();
-
-        [&self.value, &self.title, &self.detail]
-            .iter()
-            .any(|text| text.to_lowercase().contains(&query))
-    }
-}
-
-impl Choice {
-    /// A value as a person reads it: by its label when it has one, with the
-    /// value and what describes it beside.
-    fn of(value: &Value, muted: Hsla) -> Choice {
-        let (title, shown) = if value.label.is_empty() {
-            (value.value.as_str(), "")
-        } else {
-            (value.label.as_str(), value.value.as_str())
-        };
-
-        let detail = [shown, value.description.as_str()]
-            .iter()
-            .filter(|part| !part.is_empty())
-            .copied()
-            .collect::<Vec<_>>()
-            .join(" · ");
-
-        Choice {
-            value: value.value.clone().into(),
-            title: title.to_string().into(),
-            detail: detail.into(),
-            muted,
-        }
-    }
+    SelectItem::new(value.value.clone())
+        .label(title.to_string())
+        .description(detail)
 }
 
 impl EventEmitter<Changed> for Form {}
@@ -350,6 +277,15 @@ impl Form {
         cx.notify();
     }
 
+    /// What takes the keyboard first, once the first field is there.
+    pub(super) fn first_focus(&self, cx: &App) -> Option<FocusHandle> {
+        match self.rows.first().map(|row| &row.control) {
+            Some(Control::List(state)) => Some(state.focus_handle(cx)),
+            Some(Control::Text(state)) => Some(state.focus_handle(cx)),
+            _ => None,
+        }
+    }
+
     /// Gives the keyboard to the first field, or to its list once it is
     /// there.
     pub(super) fn focus(&mut self, window: &mut Window, cx: &mut App) {
@@ -372,47 +308,33 @@ impl Row {
         window: &mut Window,
         cx: &mut Context<Form>,
     ) {
-        let muted = cx.theme().muted_foreground;
         let mut choices = Vec::new();
 
+        // The list's empty choice has an empty value.
         if let Some(empty) = &self.field.empty {
-            choices.push(Choice {
-                value: SharedString::default(),
-                title: empty.clone().into(),
-                detail: SharedString::default(),
-                muted,
-            });
+            choices.push(SelectItem::new(SharedString::default()).label(empty.clone()));
         }
 
-        choices.extend(values.iter().map(|value| Choice::of(value, muted)));
+        choices.extend(values.iter().map(choice));
 
         // A value the list does not have is kept, rather than lost.
         let selected = selected.trim();
 
         if !selected.is_empty() && !choices.iter().any(|choice| choice.value == selected) {
-            choices.push(Choice {
-                value: selected.to_string().into(),
-                title: selected.to_string().into(),
-                detail: "not listed".into(),
-                muted,
-            });
+            choices.push(SelectItem::new(selected.to_string()).description("not listed"));
         }
 
-        let index = choices
-            .iter()
-            .position(|choice| choice.value == selected)
-            .map(IndexPath::new);
+        let index = choices.iter().position(|choice| choice.value == selected);
         let searchable = choices.len() > 8;
 
-        let state = cx.new(|cx| {
-            SelectState::new(SearchableVec::new(choices), index, window, cx).searchable(searchable)
-        });
+        let state =
+            cx.new(|cx| SelectState::new(choices, index, window, cx).searchable(searchable));
 
-        self._watching = Some(cx.subscribe_in(
-            &state,
-            window,
-            |_, _, _: &SelectEvent<SearchableVec<Choice>>, _, cx| cx.emit(Changed),
-        ));
+        self._watching = Some(
+            cx.subscribe_in(&state, window, |_, _, _: &SelectEvent, _, cx| {
+                cx.emit(Changed)
+            }),
+        );
         self.control = Control::List(state);
     }
 
@@ -460,8 +382,8 @@ impl Row {
 
 impl Render for Form {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let muted = cx.theme().muted_foreground;
-        let danger = cx.theme().danger;
+        let muted = cx.theme().colors.muted_foreground;
+        let danger = cx.theme().colors.danger;
 
         let rows = self.rows.iter().enumerate();
 

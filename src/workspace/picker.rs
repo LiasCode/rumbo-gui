@@ -7,17 +7,12 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::{
-    ActiveTheme as _, WindowExt as _,
-    button::{Button, ButtonVariants as _},
-    dialog::{DialogAction, DialogClose, DialogFooter},
-    v_flex,
-};
-use gpui_kit::{
+use gpui::{
     App, Context, Entity, ParentElement as _, Styled as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
 use serde_json::{Value as Json, json};
+use ui::{ActiveTheme as _, Toast, v_flex};
 
 use super::form::{Field, Form};
 use super::{Feedback, Pending, Workspace};
@@ -147,94 +142,115 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let workspace = cx.weak_entity();
+        let toasts = self.toasts.clone();
         let focused = form.clone();
 
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let values = form.read(cx).values(cx);
+        self.dialogs.update(cx, |dialogs, cx| {
+            dialogs.open(
+                move |dialog, _, cx| {
+                    let values = form.read(cx).values(cx);
 
-            // The options shown are the provider's in use; another provider
-            // has others.
-            let other_provider = opened
-                .provider_row
-                .and_then(|row| values.get(row))
-                .filter(|chosen| chosen.trim() != opened.provider)
-                .map(|chosen| {
-                    format!(
-                        "The options of {} can be chosen once the session uses it.",
-                        chosen.trim()
-                    )
-                });
+                    // The options shown are the provider's in use; another
+                    // provider has others.
+                    let other_provider = opened
+                        .provider_row
+                        .and_then(|row| values.get(row))
+                        .filter(|chosen| chosen.trim() != opened.provider)
+                        .map(|chosen| {
+                            format!(
+                                "The options of {} can be chosen once the session uses it.",
+                                chosen.trim()
+                            )
+                        });
 
-            let apply = {
-                let form = form.clone();
-                let opened = opened.clone();
-                let workspace = workspace.clone();
+                    let apply = {
+                        let form = form.clone();
+                        let opened = opened.clone();
+                        let workspace = workspace.clone();
+                        let toasts = toasts.clone();
 
-                move |_: &_, window: &mut Window, cx: &mut App| {
-                    let after = form.read(cx).values(cx);
-                    let rows: Vec<choices::Row> = opened
-                        .rows
-                        .iter()
-                        .zip(&opened.initial)
-                        .zip(&after)
-                        .map(|(((role, parameter), before), after)| choices::Row {
-                            role: *role,
-                            parameter,
-                            before,
-                            after,
-                        })
-                        .collect();
+                        move |_: &mut Window, cx: &mut App| {
+                            let after = form.read(cx).values(cx);
+                            let rows: Vec<choices::Row> = opened
+                                .rows
+                                .iter()
+                                .zip(&opened.initial)
+                                .zip(&after)
+                                .map(|(((role, parameter), before), after)| choices::Row {
+                                    role: *role,
+                                    parameter,
+                                    before,
+                                    after,
+                                })
+                                .collect();
 
-                    match choices::changes(&rows) {
-                        Ok(changes) => {
-                            let _ = workspace.update(cx, |this, cx| this.change_session(changes, cx));
-                            true
+                            match choices::changes(&rows) {
+                                Ok(changes) => {
+                                    let _ = workspace
+                                        .update(cx, |this, cx| this.change_session(changes, cx));
+                                    true
+                                }
+
+                                Err(problem) => {
+                                    toasts.update(cx, |toasts, cx| {
+                                        toasts.push(Toast::new(problem).danger(), cx);
+                                    });
+                                    false
+                                }
+                            }
                         }
+                    };
 
-                        Err(problem) => {
-                            window.push_notification(problem, cx);
-                            false
-                        }
-                    }
-                }
-            };
+                    let colors = cx.theme().colors;
 
-            let muted = cx.theme().muted_foreground;
+                    let first = form.read(cx).first_focus(cx);
 
-            dialog
-                .title("Model and Options")
-                .w(px(480.))
-                .child(
-                    v_flex()
-                        .gap_3()
-                        .child(div().text_sm().text_color(muted).child(
-                            "The session keeps what is chosen here, for the tasks that start after. A task in progress goes on with what it started with.",
-                        ))
-                        .child(form.clone())
-                        .when(without_options, |column| {
-                            column.child(div().text_xs().text_color(muted).child(format!(
-                                "{} describes no options.",
-                                opened.provider
-                            )))
-                        })
-                        .when_some(problem.clone(), |column, problem| {
-                            column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
-                        })
-                        .when_some(other_provider, |column, note| {
-                            column.child(div().text_xs().text_color(cx.theme().warning).child(note))
-                        }),
-                )
-                .on_ok(apply)
-                .footer(
-                    DialogFooter::new()
-                        .gap_2()
-                        .child(DialogClose::new().child(Button::new("cancel").outline().label("Cancel")))
-                        .child(DialogAction::new().child(Button::new("apply").primary().label("Apply"))),
-                )
+                    let dialog = match first {
+                        Some(first) => dialog.initial_focus(first),
+                        None => dialog,
+                    };
+
+                    dialog
+                        .title("Model and Options")
+                        .width(px(480.))
+                        .child(
+                            v_flex()
+                                .gap_3()
+                                .child(div().text_sm().text_color(colors.muted_foreground).child(
+                                    "The session keeps what is chosen here, for the tasks that start after. A task in progress goes on with what it started with.",
+                                ))
+                                .child(form.clone())
+                                .when(without_options, |column| {
+                                    column.child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child(format!(
+                                                "{} describes no options.",
+                                                opened.provider
+                                            )),
+                                    )
+                                })
+                                .when_some(problem.clone(), |column, problem| {
+                                    column.child(
+                                        div().text_xs().text_color(colors.danger).child(problem),
+                                    )
+                                })
+                                .when_some(other_provider, |column, note| {
+                                    column.child(
+                                        div().text_xs().text_color(colors.warning).child(note),
+                                    )
+                                }),
+                        )
+                        .on_ok("Apply", apply)
+                },
+                window,
+                cx,
+            )
         });
 
-        // After the dialog opens, which takes the focus and remembers where
-        // it was, to give it back on closing.
+        // After the dialog opens, which remembers where the keyboard was,
+        // to give it back on closing.
         focused.update(cx, |form, cx| form.focus(window, cx));
     }
 

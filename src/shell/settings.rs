@@ -11,22 +11,16 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use gpui_kit::component::{
-    ActiveTheme as _, Selectable as _, Sizable as _,
-    button::{Button, ButtonGroup, ButtonVariants as _},
-    h_flex,
-    input::{Input, InputEvent, InputState},
-    setting::{SettingGroup, SettingItem, SettingPage, Settings},
-    spinner::Spinner,
-    switch::Switch,
-    v_flex,
-};
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
+use gpui::{
+    AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, EventEmitter, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
     WeakEntity, Window, div, prelude::FluentBuilder as _, px,
 };
 use serde_json::Value as Json;
+use ui::{
+    ActiveTheme as _, Button, Input, InputEvent, InputState, Settings, SettingsGroup, SettingsItem,
+    SettingsPage, Sizable as _, Spinner, Switch, Toggle, ToggleGroup, h_flex, v_flex,
+};
 
 use super::SHORTCUTS;
 use crate::preferences::{Preferences, Theme as Colors, Width};
@@ -85,7 +79,7 @@ impl SettingsView {
 
         // Kept when the person is done typing, not at every key.
         let editing = cx.subscribe(&editor, |view, editor, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+            if matches!(event, InputEvent::Blur | InputEvent::Submit) {
                 let typed = editor.read(cx).value().trim().to_string();
 
                 if typed != view.preferences.editor {
@@ -214,7 +208,7 @@ impl SettingsView {
         });
     }
 
-    fn appearance_page(&self, cx: &mut Context<Self>) -> SettingPage {
+    fn appearance_page(&self, cx: &mut Context<Self>) -> SettingsPage {
         let view = cx.weak_entity();
         let theme = self.preferences.theme;
         let width = self.preferences.width;
@@ -225,24 +219,22 @@ impl SettingsView {
         let problem = self.problem.clone();
 
         let theming = view.clone();
-        let theme_item = SettingItem::render(move |_, _, cx| {
-            // Each button chooses by itself: the group's own handler hears
-            // only the mouse, and the keyboard should choose too.
-            let choices =
-                ButtonGroup::new("theme")
-                    .outline()
-                    .small()
-                    .children(Colors::ALL.iter().map(|choice| {
-                        let view = theming.clone();
-                        let chosen = *choice;
-
-                        Button::new(choice.label())
-                            .label(choice.label())
-                            .selected(chosen == theme)
-                            .on_click(move |_, _, cx| {
-                                Self::prefer(&view, |preferences| preferences.theme = chosen, cx)
-                            })
-                    }));
+        let theme_item = SettingsItem::new(move |_, cx| {
+            let view = theming.clone();
+            let choices = ToggleGroup::new()
+                .outline()
+                .small()
+                .single()
+                .children(Colors::ALL.iter().map(|choice| {
+                    Toggle::new(ElementId::Name(format!("theme-{}", choice.label()).into()))
+                        .label(choice.label())
+                        .checked(*choice == theme)
+                }))
+                .on_change(move |checks: &[bool], _, cx| {
+                    if let Some(chosen) = chosen(&Colors::ALL, checks) {
+                        Self::prefer(&view, |preferences| preferences.theme = chosen, cx)
+                    }
+                });
 
             h_flex()
                 .gap_4()
@@ -257,22 +249,22 @@ impl SettingsView {
         .keywords(["theme", "dark", "light", "appearance", "color"]);
 
         let widening = view.clone();
-        let width_item = SettingItem::render(move |_, _, cx| {
-            let choices =
-                ButtonGroup::new("width")
-                    .outline()
-                    .small()
-                    .children(Width::ALL.iter().map(|choice| {
-                        let view = widening.clone();
-                        let chosen = *choice;
-
-                        Button::new(choice.label())
-                            .label(choice.label())
-                            .selected(chosen == width)
-                            .on_click(move |_, _, cx| {
-                                Self::prefer(&view, |preferences| preferences.width = chosen, cx)
-                            })
-                    }));
+        let width_item = SettingsItem::new(move |_, cx| {
+            let view = widening.clone();
+            let choices = ToggleGroup::new()
+                .outline()
+                .small()
+                .single()
+                .children(Width::ALL.iter().map(|choice| {
+                    Toggle::new(ElementId::Name(format!("width-{}", choice.label()).into()))
+                        .label(choice.label())
+                        .checked(*choice == width)
+                }))
+                .on_change(move |checks: &[bool], _, cx| {
+                    if let Some(chosen) = chosen(&Width::ALL, checks) {
+                        Self::prefer(&view, |preferences| preferences.width = chosen, cx)
+                    }
+                });
 
             h_flex()
                 .gap_4()
@@ -286,18 +278,23 @@ impl SettingsView {
         })
         .keywords(["width", "wide", "narrow", "chat", "conversation"]);
 
-        let kept_item = SettingItem::render(move |_, _, cx| {
+        let kept_item = SettingsItem::new(move |_, cx| {
             v_flex()
                 .gap_1()
                 .child(note(&kept, cx))
                 .when_some(problem.clone(), |column, problem| {
-                    column.child(div().text_xs().text_color(cx.theme().danger).child(problem))
+                    column.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors.danger)
+                            .child(problem),
+                    )
                 })
         });
 
         let quiet = self.preferences.quiet;
         let quieting = view.clone();
-        let notify_item = SettingItem::render(move |_, _, cx| {
+        let notify_item = SettingsItem::new(move |_, cx| {
             let view = quieting.clone();
 
             h_flex()
@@ -308,7 +305,7 @@ impl SettingsView {
                     "A notification when a run ends in a session that is not shown. The sidebar marks the session either way.",
                     cx,
                 ))
-                .child(Switch::new("notify").checked(!quiet).on_click(
+                .child(Switch::new("notify").checked(!quiet).on_change(
                     move |checked, _, cx| {
                         let quiet = !*checked;
 
@@ -319,7 +316,7 @@ impl SettingsView {
         .keywords(["notification", "notify", "background", "quiet"]);
 
         let editor = self.editor.clone();
-        let editor_item = SettingItem::render(move |_, _, cx| {
+        let editor_item = SettingsItem::new(move |_, cx| {
             h_flex()
                 .gap_4()
                 .justify_between()
@@ -332,25 +329,25 @@ impl SettingsView {
         })
         .keywords(["editor", "open", "zed", "code", "cursor"]);
 
-        SettingPage::new("Window")
+        SettingsPage::new("Window")
             .group(
-                SettingGroup::new()
+                SettingsGroup::new()
                     .title("Appearance")
                     .item(theme_item)
                     .item(width_item),
             )
             .group(
-                SettingGroup::new()
+                SettingsGroup::new()
                     .title("Behavior")
                     .item(notify_item)
                     .item(editor_item),
             )
-            .group(SettingGroup::new().item(kept_item))
+            .group(SettingsGroup::new().item(kept_item))
     }
 
-    fn keys_page(&self) -> SettingPage {
+    fn keys_page(&self) -> SettingsPage {
         let items = SHORTCUTS.iter().map(|(keys, does)| {
-            SettingItem::render(move |_, _, cx| {
+            SettingsItem::new(move |_, cx| {
                 h_flex()
                     .gap_4()
                     .justify_between()
@@ -359,42 +356,42 @@ impl SettingsView {
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .font_family(cx.theme().mono_font_family.clone())
+                            .font_family(cx.theme().mono_family.clone())
                             .px_2()
                             .py_0p5()
                             .rounded_sm()
                             .border_1()
-                            .border_color(cx.theme().border)
+                            .border_color(cx.theme().colors.border)
                             .child(keys.to_string()),
                     )
             })
             .keywords([keys.to_string(), does.to_string()])
         });
 
-        SettingPage::new("Keyboard").group(
-            SettingGroup::new()
+        SettingsPage::new("Keyboard").group(
+            SettingsGroup::new()
                 .title("Shortcuts")
                 .description("Every key works wherever the keyboard is in the window, unless a field needs it.")
                 .items(items),
         )
     }
 
-    fn system_page(&self, cx: &mut Context<Self>) -> SettingPage {
-        let page = SettingPage::new("System");
+    fn system_page(&self, cx: &mut Context<Self>) -> SettingsPage {
+        let page = SettingsPage::new("System");
 
         if self.workspace.is_none() {
             return page.group(unreachable());
         }
 
         let shown = self.configuration.clone();
-        let in_force = SettingItem::render(move |_, _, cx| match &shown {
+        let in_force = SettingsItem::new(move |_, cx| match &shown {
             Some(answer) => said(answer, cx),
             None => note("This rumbo does not show its configuration.", cx).into_any_element(),
         })
         .keywords(["settings", "configuration", "in force", "config"]);
 
         let page = page.group(
-            SettingGroup::new()
+            SettingsGroup::new()
                 .title("In Force")
                 .description("What is set and what applies here, the session shown first, each value with where it comes from. What a program has by default is in its details, under Providers.")
                 .item(in_force),
@@ -406,8 +403,8 @@ impl SettingsView {
 
         let workspace = self.workspace.clone();
 
-        page.group(SettingGroup::new().title("Settings").item(
-            SettingItem::render(move |_, _, cx| {
+        page.group(SettingsGroup::new().title("Settings").item(
+            SettingsItem::new(move |_, cx| {
                 h_flex()
                     .gap_4()
                     .justify_between()
@@ -429,8 +426,8 @@ impl SettingsView {
         ))
     }
 
-    fn providers_page(&self, cx: &mut Context<Self>) -> SettingPage {
-        let page = SettingPage::new("Providers");
+    fn providers_page(&self, cx: &mut Context<Self>) -> SettingsPage {
+        let page = SettingsPage::new("Providers");
 
         if self.workspace.is_none() {
             return page.group(unreachable());
@@ -448,7 +445,7 @@ impl SettingsView {
         .collect::<Vec<_>>();
         let can_show = self.offers(protocol::FUNCTION_PROVIDER_SHOW, cx);
 
-        let providers: Vec<SettingItem> = match &self.providers {
+        let providers: Vec<SettingsItem> = match &self.providers {
             Some(Asked::Here(providers)) => providers
                 .iter()
                 .map(|provider| {
@@ -459,7 +456,7 @@ impl SettingsView {
                     let offered = offered.clone();
                     let view = view.clone();
 
-                    SettingItem::render(move |_, _, cx| {
+                    SettingsItem::new(move |_, cx| {
                         let toggling = view.clone();
                         let toggled = name.clone();
 
@@ -511,10 +508,10 @@ impl SettingsView {
             Some(answer) => {
                 let answer = unlisted(answer);
 
-                vec![SettingItem::render(move |_, _, cx| said(&answer, cx))]
+                vec![SettingsItem::new(move |_, cx| said(&answer, cx))]
             }
 
-            None => vec![SettingItem::render(|_, _, cx| {
+            None => vec![SettingsItem::new(|_, cx| {
                 note("This rumbo does not list its providers.", cx)
             })],
         };
@@ -523,7 +520,7 @@ impl SettingsView {
         let adding = workspace.clone();
 
         let page = page.group(
-            SettingGroup::new()
+            SettingsGroup::new()
                 .title("Providers")
                 .description("The programs that reach a model, those rumbo has built in and those added. Each session uses one; a new session starts with the default provider, a system setting, and the model set for it. Change sets its model, a field of its configuration, or one of its options, which it is started to check.")
                 .items(providers),
@@ -533,23 +530,23 @@ impl SettingsView {
             return page;
         }
 
-        page.group(SettingGroup::new().item(SettingItem::render(move |_, _, cx| {
-                h_flex()
-                    .gap_4()
-                    .justify_between()
-                    .child(described(
-                        "Add a provider",
-                        "A name and the command that starts it, which is started to see that it works.",
-                        cx,
-                    ))
-                    .child(action(
-                        "add-provider",
-                        "Add Provider…",
-                        &adding,
-                        protocol::FUNCTION_PROVIDER_ADD,
-                        ("name", String::new()),
-                        true,
-                    ))
+        page.group(SettingsGroup::new().item(SettingsItem::new(move |_, cx| {
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Add a provider",
+                    "A name and the command that starts it, which is started to see that it works.",
+                    cx,
+                ))
+                .child(action(
+                    "add-provider",
+                    "Add Provider…",
+                    &adding,
+                    protocol::FUNCTION_PROVIDER_ADD,
+                    ("name", String::new()),
+                    true,
+                ))
         })))
     }
 }
@@ -569,6 +566,14 @@ impl Render for SettingsView {
             .size_full()
             .child(Settings::new("settings").pages(pages))
     }
+}
+
+/// The choice a group of one checked gives, of `choices` in its order.
+fn chosen<T: Copy>(choices: &[T], checks: &[bool]) -> Option<T> {
+    checks
+        .iter()
+        .position(|checked| *checked)
+        .and_then(|index| choices.get(index).copied())
 }
 
 /// An answer, once the host gave it.
@@ -609,15 +614,15 @@ fn said(answer: &Asked<String>, cx: &App) -> AnyElement {
         Asked::Here(text) => div()
             .p_3()
             .rounded_md()
-            .bg(cx.theme().muted)
-            .font_family(cx.theme().mono_font_family.clone())
+            .bg(cx.theme().colors.muted)
+            .font_family(cx.theme().mono_family.clone())
             .text_xs()
             .child(text.clone())
             .into_any_element(),
 
         Asked::Failed(problem) => div()
             .text_sm()
-            .text_color(cx.theme().danger)
+            .text_color(cx.theme().colors.danger)
             .child(problem.clone())
             .into_any_element(),
     }
@@ -668,16 +673,16 @@ fn described(title: &str, description: &str, cx: &App) -> impl IntoElement {
         })
 }
 
-fn note(text: &str, cx: &App) -> gpui_kit::Div {
+fn note(text: &str, cx: &App) -> Div {
     div()
         .text_xs()
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().colors.muted_foreground)
         .child(text.to_string())
 }
 
 /// What a page of rumbo's says with no project open.
-fn unreachable() -> SettingGroup {
-    SettingGroup::new().item(SettingItem::render(|_, _, cx| {
+fn unreachable() -> SettingsGroup {
+    SettingsGroup::new().item(SettingsItem::new(|_, cx| {
         note(
             "rumbo's settings are asked of the rumbo working in a project. Open a project to see and change them.",
             cx,

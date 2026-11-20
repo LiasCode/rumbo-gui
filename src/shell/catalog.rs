@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{AppContext as _, Context, Task};
+use gpui::{AppContext as _, Context, Task};
 use serde_json::{Value as Json, json};
 
 use crate::commands;

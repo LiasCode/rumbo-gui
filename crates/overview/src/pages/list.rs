@@ -63,8 +63,9 @@ pub fn render(_: &mut super::Demos, _: &mut Window, cx: &mut Context<Overview>) 
     let tasks = List::tasks().children([
         ListItem::new("Create the overview").done(true),
         ListItem::new("Build every component on GPUI alone").done(true),
-        ListItem::new("Move the window's views to them"),
-        ListItem::new("Drop GPUI Kit"),
+        ListItem::new("Move the window's views to them").done(true),
+        ListItem::new("Drop GPUI Kit").done(true),
+        ListItem::new("Take the views' shared pieces into components"),
     ]);
 
     let mixed = List::ordered().w(px(480.)).children([

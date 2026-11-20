@@ -5,19 +5,14 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::{
-    ActiveTheme as _, Icon, Sizable as _,
-    button::{Button, ButtonVariants as _},
-    diff::{Diff, DiffFile, DiffState},
-    h_flex,
-    scroll::ScrollableElement as _,
-    spinner::Spinner,
-    v_flex,
+use gpui::{
+    AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, ScrollHandle, StatefulInteractiveElement as _, Styled as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
-use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
+use ui::{
+    ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Scrollbar, Sizable as _,
+    Spinner, h_flex, v_flex,
 };
 
 use super::{Panel, Workspace, WorkspaceEvent};
@@ -53,6 +48,8 @@ pub(super) struct Panels {
     reading: u64,
     status: Option<Read<String>>,
     skills: Option<Read<String>>,
+    /// Where the details are scrolled.
+    details_scroll: ScrollHandle,
 }
 
 impl Panels {
@@ -63,6 +60,7 @@ impl Panels {
             reading: 0,
             status: None,
             skills: None,
+            details_scroll: ScrollHandle::new(),
         }
     }
 }
@@ -120,11 +118,10 @@ impl Workspace {
             return;
         }
 
-        let read = read.and_then(|changes| {
-            let files = DiffFile::parse(&changes.patch)
-                .map_err(|error| format!("The changes could not be read: {error}"))?;
+        let read = read.map(|changes| {
+            let files = DiffFile::parse(&changes.patch);
 
-            Ok((changes, files))
+            (changes, files)
         });
 
         self.panels.changes = Some(match read {
@@ -190,8 +187,8 @@ impl Workspace {
 
     pub(super) fn render_panel(&self, panel: Panel, cx: &mut Context<Self>) -> AnyElement {
         let (title, icon, body) = match panel {
-            Panel::Changes => ("Changes", Lucide::GitCompare, self.render_changes(cx)),
-            Panel::Details => ("Session", Lucide::Info, self.render_details(cx)),
+            Panel::Changes => ("Changes", IconName::GitCompare, self.render_changes(cx)),
+            Panel::Details => ("Session", IconName::Info, self.render_details(cx)),
         };
 
         let actions =
@@ -201,7 +198,7 @@ impl Workspace {
                     Button::new("panel-refresh")
                         .ghost()
                         .xsmall()
-                        .icon(Lucide::RefreshCw)
+                        .icon(IconName::RefreshCw)
                         .tooltip("Read it again")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.refresh_panel(cx);
@@ -212,7 +209,7 @@ impl Workspace {
                     Button::new("panel-close")
                         .ghost()
                         .xsmall()
-                        .icon(Lucide::X)
+                        .icon(IconName::Close)
                         .tooltip("Close")
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.toggle_panel(panel, window, cx)
@@ -224,8 +221,8 @@ impl Workspace {
             .flex_shrink_0()
             .h_full()
             .border_l_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background)
+            .border_color(cx.theme().colors.border)
+            .bg(cx.theme().colors.background)
             .child(
                 h_flex()
                     .h(px(40.))
@@ -234,7 +231,7 @@ impl Workspace {
                     .gap_2()
                     .justify_between()
                     .border_b_1()
-                    .border_color(cx.theme().border)
+                    .border_color(cx.theme().colors.border)
                     .child(
                         h_flex()
                             .gap_2()
@@ -249,7 +246,8 @@ impl Workspace {
     }
 
     fn render_changes(&self, cx: &mut Context<Self>) -> AnyElement {
-        let muted = cx.theme().muted_foreground;
+        let colors = cx.theme().colors;
+        let muted = colors.muted_foreground;
 
         let changed = match &self.panels.changes {
             None | Some(Read::Reading) => {
@@ -273,12 +271,12 @@ impl Workspace {
             .text_xs()
             .text_color(muted)
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(colors.border)
             .when(!changed.branch.is_empty(), |row| {
                 row.child(
                     h_flex()
                         .gap_1()
-                        .child(Icon::new(Lucide::GitBranch).xsmall())
+                        .child(Icon::new(IconName::GitBranch).xsmall())
                         .child(changed.branch.clone()),
                 )
             })
@@ -288,12 +286,12 @@ impl Workspace {
             })
             .child(
                 div()
-                    .text_color(cx.theme().success)
+                    .text_color(colors.success)
                     .child(format!("+{}", changed.additions)),
             )
             .child(
                 div()
-                    .text_color(cx.theme().danger)
+                    .text_color(colors.danger)
                     .child(format!("−{}", changed.deletions)),
             )
             .child(div().flex_1())
@@ -301,7 +299,7 @@ impl Workspace {
                 Button::new("changes-editor")
                     .ghost()
                     .xsmall()
-                    .icon(Lucide::ExternalLink)
+                    .icon(IconName::ExternalLink)
                     .label("Open in Editor")
                     .on_click(cx.listener(|this, _, _, cx| {
                         cx.emit(WorkspaceEvent::OpenInEditor {
@@ -316,7 +314,7 @@ impl Workspace {
                 .child(summary)
                 .child(
                     centered()
-                        .child(Icon::new(Lucide::CircleCheck).text_color(muted))
+                        .child(Icon::new(IconName::CircleCheck).color(muted))
                         .child(
                             div()
                                 .text_sm()
@@ -334,7 +332,7 @@ impl Workspace {
                 div()
                     .flex_1()
                     .min_h_0()
-                    .child(Diff::new(&self.panels.diff).size_full()),
+                    .child(Diff::new("changes", &self.panels.diff)),
             )
             .when(changed.more_new > 0, |column| {
                 column.child(
@@ -344,7 +342,7 @@ impl Workspace {
                         .text_xs()
                         .text_color(muted)
                         .border_t_1()
-                        .border_color(cx.theme().border)
+                        .border_color(colors.border)
                         .child(format!(
                             "{} more new files are not shown.",
                             changed.more_new
@@ -355,7 +353,7 @@ impl Workspace {
     }
 
     fn render_details(&self, cx: &mut Context<Self>) -> AnyElement {
-        let muted = cx.theme().muted_foreground;
+        let muted = cx.theme().colors.muted_foreground;
 
         let section = |title: &'static str, read: &Option<Read<String>>, cx: &App| {
             let body: AnyElement = match read {
@@ -370,8 +368,8 @@ impl Workspace {
                 Some(Read::Failed(problem)) | Some(Read::Here(problem)) => div()
                     .p_2()
                     .rounded_md()
-                    .bg(cx.theme().muted)
-                    .font_family(cx.theme().mono_font_family.clone())
+                    .bg(cx.theme().colors.muted)
+                    .font_family(cx.theme().mono_family.clone())
                     .text_xs()
                     .whitespace_normal()
                     .child(problem.clone())
@@ -384,10 +382,11 @@ impl Workspace {
                 .child(body)
         };
 
-        v_flex()
+        let details = v_flex()
             .id("details")
             .size_full()
-            .overflow_y_scrollbar()
+            .overflow_y_scroll()
+            .track_scroll(&self.panels.details_scroll)
             .p_3()
             .gap_4()
             .child(
@@ -399,7 +398,7 @@ impl Workspace {
                         Button::new("details-editor")
                             .outline()
                             .small()
-                            .icon(Lucide::ExternalLink)
+                            .icon(IconName::ExternalLink)
                             .label("Open in Editor")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 cx.emit(WorkspaceEvent::OpenInEditor {
@@ -409,12 +408,21 @@ impl Workspace {
                     ),
             )
             .child(section("Status", &self.panels.status, cx))
-            .child(section("Skills", &self.panels.skills, cx))
+            .child(section("Skills", &self.panels.skills, cx));
+
+        div()
+            .relative()
+            .size_full()
+            .child(details)
+            .child(Scrollbar::vertical(
+                "details-scrollbar",
+                self.panels.details_scroll.clone(),
+            ))
             .into_any_element()
     }
 }
 
-fn centered() -> gpui_kit::Div {
+fn centered() -> Div {
     v_flex()
         .size_full()
         .p_6()

@@ -6,18 +6,14 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, WindowExt as _,
-    button::{Button, ButtonVariant, ButtonVariants as _},
-    command::{Command as Palette, CommandGroup, CommandItem, CommandState},
-    dialog::{DialogAction, DialogClose, DialogFooter},
-    v_flex,
-};
-use gpui_kit::{
-    Context, Entity, ParentElement as _, Styled as _, WeakEntity, Window, div,
+use gpui::{
+    App, Context, Focusable as _, ParentElement as _, Styled as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
 use serde_json::Value as Json;
+use ui::{
+    ActiveTheme as _, CommandGroup, CommandIndex, CommandItem, CommandPalette, Toast, v_flex,
+};
 
 use super::form::Field;
 use super::{Feedback, Workspace, WorkspaceEvent};
@@ -55,7 +51,7 @@ impl Workspace {
     /// Opens the commands: the window's own, the host's by what they act on,
     /// and the provider's.
     pub fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ended.is_some() || window.has_active_dialog(cx) {
+        if self.ended.is_some() || self.dialogs.read(cx).is_open() {
             return;
         }
 
@@ -124,30 +120,42 @@ impl Workspace {
             sections.push(provider);
         }
 
+        let groups = labels
+            .iter()
+            .zip(&sections)
+            .map(|(label, section)| {
+                CommandGroup::new(label.clone()).items(section.iter().map(item))
+            })
+            .collect();
         let sections: Sections = Rc::new(sections);
-        let labels = Rc::new(labels);
         let state = self.palette.clone();
         let workspace = cx.weak_entity();
+        let dialogs = self.dialogs.clone();
 
-        state.update(cx, |state, cx| state.set_query("", window, cx));
+        state.update(cx, |state, cx| state.set_groups(groups, window, cx));
 
-        window.open_dialog(cx, move |dialog, _, _| {
-            let sections = sections.clone();
-            let labels = labels.clone();
-            let state = state.clone();
-            let workspace = workspace.clone();
+        self.dialogs.update(cx, |opened, cx| {
+            opened.open(
+                move |dialog, _, cx| {
+                    let sections = sections.clone();
+                    let workspace = workspace.clone();
+                    let dialogs = dialogs.clone();
 
-            dialog
-                .close_button(false)
-                .p_0()
-                .content(move |content, _, cx| {
-                    content.child(palette(&state, &sections, &labels, workspace.clone(), cx))
-                })
+                    dialog
+                        .title("Commands")
+                        .width(px(480.))
+                        .initial_focus(state.focus_handle(cx))
+                        .child(
+                            CommandPalette::new(&state).on_confirm(move |index, window, cx| {
+                                dialogs.update(cx, |dialogs, cx| dialogs.close(window, cx));
+                                chose_entry(&workspace, &sections, index, window, cx);
+                            }),
+                        )
+                },
+                window,
+                cx,
+            )
         });
-
-        // After the dialog opens, which takes the focus and remembers where
-        // it was, to give it back on closing.
-        self.palette.update(cx, |state, cx| state.focus(window, cx));
     }
 
     /// Goes on with the command the person chose: asks for its parameters,
@@ -191,72 +199,78 @@ impl Workspace {
         let form = self.open_form(fields, provider_functions, window, cx);
         let command = Rc::new(command);
         let workspace = cx.weak_entity();
+        let dialogs = self.dialogs.clone();
+        let toasts = self.toasts.clone();
         let focused = form.clone();
 
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let accepted = {
-                let form = form.clone();
-                let command = command.clone();
-                let workspace = workspace.clone();
+        self.dialogs.update(cx, |opened, cx| {
+            opened.open(
+                move |dialog, _, cx| {
+                    let accepted = {
+                        let form = form.clone();
+                        let command = command.clone();
+                        let workspace = workspace.clone();
+                        let dialogs = dialogs.clone();
+                        let toasts = toasts.clone();
 
-                move |_: &_, window: &mut Window, cx: &mut gpui_kit::App| {
-                    let typed = form.read(cx).values(cx);
+                        move |window: &mut Window, cx: &mut App| {
+                            let typed = form.read(cx).values(cx);
 
-                    match commands::arguments(&command.function, &typed) {
-                        Ok(params) => {
-                            let command = (*command).clone();
+                            match commands::arguments(&command.function, &typed) {
+                                Ok(params) => {
+                                    let command = (*command).clone();
 
-                            // The form closes first, so a confirmation can
-                            // take its place.
-                            window.close_dialog(cx);
+                                    // The form closes first, so a confirmation
+                                    // can take its place.
+                                    dialogs.update(cx, |dialogs, cx| dialogs.close(window, cx));
 
-                            let _ = workspace.update(cx, |this, cx| {
-                                this.confirm_and_call(command, params, feedback, window, cx)
-                            });
+                                    let _ = workspace.update(cx, |this, cx| {
+                                        this.confirm_and_call(command, params, feedback, window, cx)
+                                    });
 
-                            false
+                                    false
+                                }
+
+                                Err(problem) => {
+                                    toasts.update(cx, |toasts, cx| {
+                                        toasts.push(Toast::new(problem).danger(), cx);
+                                    });
+                                    false
+                                }
+                            }
                         }
+                    };
 
-                        Err(problem) => {
-                            window.push_notification(problem, cx);
-                            false
-                        }
-                    }
-                }
-            };
+                    let dialog = match form.read(cx).first_focus(cx) {
+                        Some(first) => dialog.initial_focus(first),
+                        None => dialog,
+                    };
 
-            dialog
-                .title(command.function.name.clone())
-                .w(px(440.))
-                .child(
-                    v_flex()
-                        .gap_3()
-                        .when(!command.function.description.is_empty(), |column| {
-                            column.child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(command.function.description.clone()),
-                            )
-                        })
-                        .child(form.clone()),
-                )
-                .on_ok(accepted)
-                .footer(
-                    DialogFooter::new()
-                        .gap_2()
+                    dialog
+                        .title(command.function.name.clone())
+                        .width(px(440.))
                         .child(
-                            DialogClose::new()
-                                .child(Button::new("cancel").outline().label("Cancel")),
+                            v_flex()
+                                .gap_3()
+                                .when(!command.function.description.is_empty(), |column| {
+                                    column.child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().colors.muted_foreground)
+                                            .child(command.function.description.clone()),
+                                    )
+                                })
+                                .child(form.clone()),
                         )
-                        .child(
-                            DialogAction::new().child(Button::new("run").primary().label("Run")),
-                        ),
-                )
+                        .on_ok("Run", accepted)
+                },
+                window,
+                cx,
+            )
         });
 
-        // After the dialog opens, which takes the focus and remembers where
-        // it was, to give it back on closing.
+        // A field that waits for its list takes the keyboard once it is
+        // there.
         focused.update(cx, |form, cx| form.focus(window, cx));
     }
 
@@ -278,153 +292,126 @@ impl Workspace {
         let workspace = cx.weak_entity();
         let command = Rc::new(command);
 
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let command = command.clone();
-            let params = params.clone();
-            let workspace = workspace.clone();
+        self.dialogs.update(cx, |dialogs, cx| {
+            dialogs.open(
+                move |dialog, _, _| {
+                    let command = command.clone();
+                    let params = params.clone();
+                    let workspace = workspace.clone();
 
-            alert
-                .title(command.function.name.clone())
-                .description(command.function.confirm.clone())
-                .confirm()
-                .ok_text(commands::capitalized(&command.function.name))
-                .ok_variant(ButtonVariant::Danger)
-                .on_ok(move |_, _, cx| {
-                    let _ = workspace.update(cx, |this, cx| {
-                        this.call(&command, params.clone(), feedback, cx)
-                    });
-                    true
-                })
+                    dialog
+                        .title(command.function.name.clone())
+                        .child(command.function.confirm.clone())
+                        .danger()
+                        .on_ok(
+                            commands::capitalized(&command.function.name),
+                            move |_, cx| {
+                                let _ = workspace.update(cx, |this, cx| {
+                                    this.call(&command, params.clone(), feedback, cx)
+                                });
+                                true
+                            },
+                        )
+                },
+                window,
+                cx,
+            )
         });
     }
 }
 
-/// The palette, rebuilt each time the dialog renders from what was
-/// described when it opened.
-fn palette(
-    state: &Entity<CommandState>,
+/// Goes on with the row of the palette chosen.
+fn chose_entry(
+    workspace: &gpui::WeakEntity<Workspace>,
     sections: &Sections,
-    labels: &[String],
-    workspace: WeakEntity<Workspace>,
-    cx: &gpui_kit::App,
-) -> Palette {
-    let muted = cx.theme().muted_foreground;
-    let mut palette = Palette::new(state)
-        .bordered(false)
-        .placeholder("Type a command or a session")
-        .w(px(480.));
+    index: CommandIndex,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let chosen = sections
+        .get(index.group)
+        .and_then(|section| section.get(index.item))
+        .cloned();
 
-    for (label, section) in labels.iter().zip(sections.iter()) {
-        let items = section.iter().map(|entry| match entry {
-            Entry::Function(command) => item(
-                command.function.name.clone(),
-                command.function.description.clone(),
-                muted,
-            ),
-
-            Entry::Picker => item(
-                "model".into(),
-                "Choose the model and the options this session keeps".into(),
-                muted,
-            ),
-
-            Entry::NewSession => item(
-                "New Session".into(),
-                "Start the next task in a new session (Ctrl-N)".into(),
-                muted,
-            ),
-
-            Entry::Changes => item(
-                "Changes".into(),
-                "What changed in the project's folder, as Git sees it (Ctrl-Shift-G)".into(),
-                muted,
-            ),
-
-            Entry::Details => item(
-                "Details".into(),
-                "How the session stands, and its skills (Ctrl-Alt-B)".into(),
-                muted,
-            ),
-
-            Entry::Export => item(
-                "Export as Markdown…".into(),
-                "Write this session's conversation to a file".into(),
-                muted,
-            ),
-
-            Entry::Editor => item(
-                "Open in Editor".into(),
-                "Open the project's folder in your editor (Ctrl-Shift-E)".into(),
-                muted,
-            ),
-
-            Entry::Session(_, name, said) => item(name.clone(), said.clone(), muted),
-
-            Entry::OpenProject => item(
-                "Open Project…".into(),
-                "Work in another folder, beside the projects open here".into(),
-                muted,
-            ),
-
-            Entry::OpenSettings => item(
-                "Settings…".into(),
-                "The theme, and rumbo's settings and providers".into(),
-                muted,
-            ),
-
-            Entry::CloseProject => item(
-                "Close Project".into(),
-                "End the rumbo of this project; its sessions stay".into(),
-                muted,
-            ),
-
-            Entry::Unavailable(problem) => CommandItem::new()
-                .label(format!("Not available: {problem}"))
-                .disabled(true),
-        });
-
-        palette = palette.group(CommandGroup::new().label(label.clone()).items(items));
-    }
-
-    let sections = sections.clone();
-
-    palette.on_confirm(move |index, window, cx| {
-        let chosen = sections
-            .get(index.section)
-            .and_then(|section| section.get(index.row))
-            .cloned();
-
-        window.close_dialog(cx);
-
-        let _ = workspace.update(cx, |this, cx| match chosen {
-            Some(Entry::Function(command)) => this.chose(command, window, cx),
-            Some(Entry::Picker) => this.open_picker(cx),
-            Some(Entry::NewSession) => this.new_session(cx),
-            Some(Entry::Changes) => this.toggle_panel(super::Panel::Changes, window, cx),
-            Some(Entry::Details) => this.toggle_panel(super::Panel::Details, window, cx),
-            Some(Entry::Export) => this.export(window, cx),
-            Some(Entry::Editor) => cx.emit(WorkspaceEvent::OpenInEditor {
-                path: this.dir.clone(),
-            }),
-            Some(Entry::Session(id, _, _)) => this.open_session(&id, cx),
-            Some(Entry::OpenProject) => cx.emit(WorkspaceEvent::OpenProject),
-            Some(Entry::OpenSettings) => cx.emit(WorkspaceEvent::OpenSettings),
-            Some(Entry::CloseProject) => cx.emit(WorkspaceEvent::CloseProject),
-            _ => {}
-        });
-    })
+    let _ = workspace.update(cx, |this, cx| match chosen {
+        Some(Entry::Function(command)) => this.chose(command, window, cx),
+        Some(Entry::Picker) => this.open_picker(cx),
+        Some(Entry::NewSession) => this.new_session(cx),
+        Some(Entry::Changes) => this.toggle_panel(super::Panel::Changes, window, cx),
+        Some(Entry::Details) => this.toggle_panel(super::Panel::Details, window, cx),
+        Some(Entry::Export) => this.export(window, cx),
+        Some(Entry::Editor) => cx.emit(WorkspaceEvent::OpenInEditor {
+            path: this.dir.clone(),
+        }),
+        Some(Entry::Session(id, _, _)) => this.open_session(&id, cx),
+        Some(Entry::OpenProject) => cx.emit(WorkspaceEvent::OpenProject),
+        Some(Entry::OpenSettings) => cx.emit(WorkspaceEvent::OpenSettings),
+        Some(Entry::CloseProject) => cx.emit(WorkspaceEvent::CloseProject),
+        _ => {}
+    });
 }
 
 /// A row with its name, which is what the search matches, as rumbo's
 /// terminal UI completes, so the first match is the one typed; and what it
 /// does below.
-fn item(name: String, description: String, muted: gpui_kit::Hsla) -> CommandItem {
-    let shown = name.clone();
+fn item(entry: &Entry) -> CommandItem {
+    let (name, description): (String, String) = match entry {
+        Entry::Function(command) => (
+            command.function.name.clone(),
+            command.function.description.clone(),
+        ),
 
-    CommandItem::new().label(name).child(move |_, _| {
-        v_flex()
-            .py_1()
-            .child(shown.clone())
-            .child(div().text_xs().text_color(muted).child(description.clone()))
-    })
+        Entry::Picker => (
+            "model".into(),
+            "Choose the model and the options this session keeps".into(),
+        ),
+
+        Entry::NewSession => (
+            "New Session".into(),
+            "Start the next task in a new session (Ctrl-N)".into(),
+        ),
+
+        Entry::Changes => (
+            "Changes".into(),
+            "What changed in the project's folder, as Git sees it (Ctrl-Shift-G)".into(),
+        ),
+
+        Entry::Details => (
+            "Details".into(),
+            "How the session stands, and its skills (Ctrl-Alt-B)".into(),
+        ),
+
+        Entry::Export => (
+            "Export as Markdown…".into(),
+            "Write this session's conversation to a file".into(),
+        ),
+
+        Entry::Editor => (
+            "Open in Editor".into(),
+            "Open the project's folder in your editor (Ctrl-Shift-E)".into(),
+        ),
+
+        Entry::Session(_, name, said) => (name.clone(), said.clone()),
+
+        Entry::OpenProject => (
+            "Open Project…".into(),
+            "Work in another folder, beside the projects open here".into(),
+        ),
+
+        Entry::OpenSettings => (
+            "Settings…".into(),
+            "The theme, and rumbo's settings and providers".into(),
+        ),
+
+        Entry::CloseProject => (
+            "Close Project".into(),
+            "End the rumbo of this project; its sessions stay".into(),
+        ),
+
+        Entry::Unavailable(problem) => {
+            return CommandItem::new(format!("Not available: {problem}")).disabled(true);
+        }
+    };
+
+    CommandItem::new(name).description(description)
 }

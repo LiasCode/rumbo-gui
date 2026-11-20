@@ -6,15 +6,11 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui_kit::component::{
-    ActiveTheme as _, WindowExt as _,
-    button::{Button, ButtonVariants as _},
-    dialog::{DialogAction, DialogClose, DialogFooter},
-    input::{Input, InputState},
-    v_flex,
+use gpui::{
+    App, AppContext as _, Context, Focusable as _, ParentElement as _, Styled as _, Window, div, px,
 };
-use gpui_kit::{App, AppContext as _, Context, ParentElement as _, Styled as _, Window, div, px};
 use serde_json::json;
+use ui::{ActiveTheme as _, Input, InputState, v_flex};
 
 use super::Workspace;
 use crate::protocol::{self, AskParams, CODE_INTERNAL, CODE_INVALID_PARAMS, CancelParams};
@@ -84,7 +80,7 @@ impl Workspace {
             let connection = connection.clone();
             let answered = answered.clone();
 
-            move |_: &_, window: &mut Window, cx: &mut App| {
+            move |window: &mut Window, cx: &mut App| {
                 if answered.replace(true) {
                     return true;
                 }
@@ -103,7 +99,7 @@ impl Workspace {
         let decline = {
             let answered = answered.clone();
 
-            move |_: &_, _: &mut Window, cx: &mut App| {
+            move |_: &mut Window, cx: &mut App| {
                 if answered.replace(true) {
                     return true;
                 }
@@ -118,46 +114,40 @@ impl Workspace {
         let question = params.text;
         let shown = field.clone();
 
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let hint = if secret {
-                "What is typed here is not shown, and not kept."
-            } else {
-                ""
-            };
+        self.dialogs.update(cx, |dialogs, cx| {
+            dialogs.open(
+                move |dialog, _, cx| {
+                    let hint = if secret {
+                        "What is typed here is not shown, and not kept."
+                    } else {
+                        ""
+                    };
+                    let answer = answer.clone();
+                    let decline = decline.clone();
 
-            dialog
-                .title(name.clone())
-                .w(px(440.))
-                .close_button(false)
-                .overlay_closable(false)
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .child(div().text_sm().child(question.clone()))
-                        .child(Input::new(&shown))
+                    dialog
+                        .title(name.clone())
+                        .width(px(440.))
+                        .close_on_backdrop(false)
+                        .initial_focus(shown.focus_handle(cx))
                         .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(hint),
-                        ),
-                )
-                .on_ok(answer.clone())
-                .on_cancel(decline.clone())
-                .footer(
-                    DialogFooter::new()
-                        .gap_2()
-                        .child(
-                            DialogClose::new()
-                                .child(Button::new("give-up").outline().label("Give Up")),
+                            v_flex()
+                                .gap_2()
+                                .child(div().text_sm().child(question.clone()))
+                                .child(Input::new(&shown))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().colors.muted_foreground)
+                                        .child(hint),
+                                ),
                         )
-                        .child(
-                            DialogAction::new()
-                                .child(Button::new("answer").primary().label("Answer")),
-                        ),
-                )
+                        .on_ok("Answer", move |window, cx| answer(window, cx))
+                        .on_cancel("Give Up", move |window, cx| decline(window, cx))
+                },
+                window,
+                cx,
+            )
         });
-
-        field.update(cx, |state, cx| state.focus(window, cx));
     }
 }
