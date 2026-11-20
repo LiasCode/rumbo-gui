@@ -39,9 +39,9 @@ pub const GROUP_PROVIDER: &str = "provider";
 /// and deletes sessions; the session's menu and its messages rename,
 /// branch, and compact it; the details panel shows its status and skills;
 /// the picker changes the model and the options a session keeps; and the
-/// settings show and change the system settings and the providers.
-/// Each is offered only when `initialize` lists it, and called with the
-/// parameters it describes there.
+/// settings show everything that is set, with `config`, and change the
+/// system settings and the providers. Each is offered only when
+/// `initialize` lists it, and called with the parameters it describes there.
 pub const FUNCTION_SESSIONS: &str = "sessions";
 pub const FUNCTION_PROJECTS: &str = "projects";
 pub const FUNCTION_OPEN: &str = "open";
@@ -53,15 +53,12 @@ pub const FUNCTION_COMPACT: &str = "compact";
 pub const FUNCTION_STATUS: &str = "status";
 pub const FUNCTION_SKILLS: &str = "skills";
 pub const FUNCTION_USE: &str = "use";
-pub const FUNCTION_SESSION_OPTIONS: &str = "session-options";
-pub const FUNCTION_SYSTEM: &str = "system";
-pub const FUNCTION_SYSTEM_KEYS: &str = "system-keys";
+pub const FUNCTION_SESSION_SET: &str = "session-set";
+pub const FUNCTION_CONFIG: &str = "config";
 pub const FUNCTION_SYSTEM_SET: &str = "system-set";
-pub const FUNCTION_SYSTEM_UNSET: &str = "system-unset";
 pub const FUNCTION_PROVIDERS: &str = "providers";
 pub const FUNCTION_PROVIDER_SHOW: &str = "provider-show";
-pub const FUNCTION_PROVIDER_OPTIONS: &str = "provider-options";
-pub const FUNCTION_PROVIDER_CONFIG: &str = "provider-config";
+pub const FUNCTION_PROVIDER_SET: &str = "provider-set";
 pub const FUNCTION_PROVIDER_ADD: &str = "provider-add";
 pub const FUNCTION_PROVIDER_RM: &str = "provider-rm";
 
@@ -110,8 +107,8 @@ pub struct InitializeParams {
 pub struct InitializeResult {
     pub protocol: i64,
     pub name: &'static str,
-    /// The start configuration in force, which the host keeps with the
-    /// registration. This front end has no fields of its own yet.
+    /// The start configuration in force, with a default for every field.
+    /// This front end has no fields of its own yet.
     pub config: Json,
 }
 
@@ -208,6 +205,10 @@ pub struct Function {
     pub confirm: String,
     /// What a function of the host acts on; empty for a provider's.
     pub group: String,
+    /// Set when the function is there to list the values a parameter of
+    /// another function takes: it is asked for them, and not offered as a
+    /// command.
+    pub lists: bool,
 }
 
 /// One value a function takes: a small subset of JSON Schema.
@@ -220,7 +221,8 @@ pub struct Parameter {
     pub description: String,
     #[serde(rename = "enum")]
     pub choices: Vec<String>,
-    /// The function of the provider that lists the accepted values.
+    /// The function that lists the accepted values: the host's for a
+    /// parameter of the host, else the provider's.
     pub values: String,
     /// The value in force when none is chosen, for display.
     pub default: Option<Json>,
@@ -368,10 +370,13 @@ mod tests {
     fn reads_functions_as_the_host_describes_them() {
         let line = r#"{"protocol":1,"dir":"/p","provider":"anthropic","model":"m","functions":[
             {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string","values":"sessions"}],"confirm":"Delete it?","group":"session"},
-            {"name":"status","params":[{"name":"session","optional":true}]}]}"#;
+            {"name":"status","params":[{"name":"session","optional":true}]},
+            {"name":"session-values","group":"session","lists":true}]}"#;
         let params: InitializeParams = serde_json::from_str(line).unwrap();
 
-        assert_eq!(params.functions.len(), 2);
+        assert_eq!(params.functions.len(), 3);
+        assert!(!params.functions[0].lists);
+        assert!(params.functions[2].lists);
         assert_eq!(params.functions[0].confirm, "Delete it?");
         assert_eq!(params.functions[0].group, GROUP_SESSION);
         assert_eq!(params.functions[0].params[0].kind, "string");

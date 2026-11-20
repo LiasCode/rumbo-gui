@@ -2,13 +2,18 @@
 //! built from their descriptions alone. A parameter whose values a function
 //! lists offers them in a list, asked for with what was given for the
 //! parameters before it, and asked again when that changes: the models
-//! listed after a provider are that provider's.
+//! listed after a provider are that provider's. Such a list need not hold
+//! every value the parameter takes, as a provider can take a model it does
+//! not list, or a setting a value of the person's own; so the value can be
+//! typed instead, starting from the one chosen.
 //!
 //! The form says which lists it needs; the workspace asks for them, since
 //! everything the host answers arrives there, and hands the answers back.
 
 use gpui_kit::component::{
-    ActiveTheme as _, IndexPath, Sizable as _, h_flex,
+    ActiveTheme as _, IndexPath, Sizable as _,
+    button::{Button, ButtonVariants as _},
+    h_flex,
     input::{Input, InputEvent, InputState},
     select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
     spinner::Spinner,
@@ -70,6 +75,9 @@ struct Row {
     generation: u64,
     /// What came with the list, or why there is none.
     note: Option<Note>,
+    /// The person chose to type the value rather than choose it, so the
+    /// list is not asked for again.
+    typed: bool,
     _watching: Option<Subscription>,
 }
 
@@ -203,6 +211,7 @@ impl Form {
                 asked: None,
                 generation: 0,
                 note: None,
+                typed: false,
                 _watching: None,
             };
 
@@ -233,6 +242,10 @@ impl Form {
             let Lister::Function(function) = self.rows[index].lister.clone() else {
                 continue;
             };
+
+            if self.rows[index].typed {
+                continue;
+            }
 
             let source = self.rows[index].field.source;
             let functions = match source {
@@ -313,6 +326,25 @@ impl Form {
 
         if field == 0 && self.focus_when_listed {
             self.focus(window, cx);
+        }
+
+        cx.notify();
+    }
+
+    /// Turns a field whose values a function lists into one where the value
+    /// is typed, starting from the one chosen, and gives it the keyboard.
+    fn type_instead(&mut self, field: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(row) = self.rows.get_mut(field) else {
+            return;
+        };
+
+        let value = row.value(cx);
+
+        row.typed = true;
+        row.show_text(&value, window, cx);
+
+        if let Control::Text(state) = &row.control {
+            state.update(cx, |state, cx| state.focus(window, cx));
         }
 
         cx.notify();
@@ -431,7 +463,9 @@ impl Render for Form {
         let muted = cx.theme().muted_foreground;
         let danger = cx.theme().danger;
 
-        self.rows.iter().fold(v_flex().gap_3(), |form, row| {
+        let rows = self.rows.iter().enumerate();
+
+        rows.fold(v_flex().gap_3(), |form, (index, row)| {
             let parameter = &row.field.parameter;
             let label = if parameter.optional {
                 format!("{} (optional)", commands::capitalized(&parameter.name))
@@ -455,6 +489,20 @@ impl Render for Form {
                 Note::Problem(text) => div().text_xs().text_color(danger).child(text.clone()),
             });
 
+            // A list a function made may not hold the value wanted.
+            let typing = (matches!(row.lister, Lister::Function(_))
+                && matches!(row.control, Control::List(_)))
+            .then(|| {
+                Button::new(("type", index))
+                    .link()
+                    .xsmall()
+                    .label("Type a value")
+                    .tooltip("Type the value, starting from the one chosen, when the list does not have it")
+                    .on_click(cx.listener(move |form, _, window, cx| {
+                        form.type_instead(index, window, cx)
+                    }))
+            });
+
             form.when_some(row.field.heading.clone(), |form, heading| {
                 form.child(div().pt_2().text_sm().text_color(muted).child(heading))
             })
@@ -475,7 +523,9 @@ impl Render for Form {
                         },
                     )
                     .child(control)
-                    .children(note),
+                    .children(note)
+                    // At its own width, under the field's start.
+                    .children(typing.map(|button| h_flex().child(button))),
             )
         })
     }

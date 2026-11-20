@@ -1699,9 +1699,11 @@ impl Workspace {
     }
 
     /// The provider and the model of the session shown, as the host said.
+    /// A session can start before its model is chosen, which the picker
+    /// does, and a task is refused until then.
     fn model_name(&self) -> String {
         if self.model.is_empty() {
-            self.provider.clone()
+            format!("{} · no model yet", self.provider)
         } else {
             format!("{} · {}", self.provider, self.model)
         }

@@ -1,10 +1,12 @@
 //! The settings, shown in place of the work: the window's preferences,
-//! which it keeps itself, and its keys; and rumbo's system settings and
-//! providers, which are asked of the host of the project shown. rumbo keeps
-//! them the same for every project, so any host answers for all.
+//! which it keeps itself, and its keys; and rumbo's configuration, which is
+//! asked of the host of the project shown. rumbo keeps it the same for every
+//! project, so any host answers for all: what is set and what applies, with
+//! `config`, and what each provider has, with `provider-show`.
 //!
 //! What the host says is shown as it says it, and every change goes through
-//! the host's functions, with the form their descriptions make.
+//! the host's functions, with the form their descriptions make. rumbo checks
+//! a change before it keeps it, and says why when it does not.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,8 +58,7 @@ pub(super) struct SettingsView {
     path: Option<PathBuf>,
     problem: Option<String>,
     /// None for what the host does not offer.
-    system: Option<Asked<String>>,
-    keys: Option<Asked<Vec<Value>>>,
+    configuration: Option<Asked<String>>,
     providers: Option<Asked<Vec<Value>>>,
     /// What each provider shown says it offers.
     details: HashMap<String, Asked<String>>,
@@ -100,8 +101,7 @@ impl SettingsView {
             editor,
             path,
             problem,
-            system: None,
-            keys: None,
+            configuration: None,
             providers: None,
             details: HashMap::new(),
             focus_handle: cx.focus_handle(),
@@ -119,21 +119,17 @@ impl SettingsView {
     /// Asks the host again what the settings show, after a change. What was
     /// shown stays until the new answer comes.
     pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
-        let system = self.ask(protocol::FUNCTION_SYSTEM, None, cx, |view, answer| {
-            view.system = Some(asked(answer.map(|result| result.text)));
-        });
-        let keys = self.ask(protocol::FUNCTION_SYSTEM_KEYS, None, cx, |view, answer| {
-            view.keys = Some(asked(answer.map(|result| result.values)));
+        let configuration = self.ask(protocol::FUNCTION_CONFIG, None, cx, |view, answer| {
+            view.configuration = Some(asked(answer.map(|result| result.text)));
         });
         let providers = self.ask(protocol::FUNCTION_PROVIDERS, None, cx, |view, answer| {
             view.providers = Some(asked(answer.map(|result| result.values)));
         });
 
-        waiting(&mut self.system, system);
-        waiting(&mut self.keys, keys);
+        waiting(&mut self.configuration, configuration);
         waiting(&mut self.providers, providers);
 
-        // What a provider says it offers can change with its configuration.
+        // What a provider has can change with what is set for it.
         let shown: Vec<String> = self.details.keys().cloned().collect();
 
         for provider in shown {
@@ -390,85 +386,47 @@ impl SettingsView {
             return page.group(unreachable());
         }
 
-        let shown = self.system.clone();
+        let shown = self.configuration.clone();
         let in_force = SettingItem::render(move |_, _, cx| match &shown {
             Some(answer) => said(answer, cx),
-            None => note("This rumbo does not show its settings.", cx).into_any_element(),
+            None => note("This rumbo does not show its configuration.", cx).into_any_element(),
         })
-        .keywords(["settings", "in force"]);
-
-        let can_set = self.offers(protocol::FUNCTION_SYSTEM_SET, cx);
-        let can_unset = self.offers(protocol::FUNCTION_SYSTEM_UNSET, cx);
-        let workspace = self.workspace.clone();
-
-        let keys: Vec<SettingItem> = match &self.keys {
-            Some(Asked::Here(keys)) => keys
-                .iter()
-                .map(|key| {
-                    let name = key.value.clone();
-                    let help = key.description.clone();
-                    let workspace = workspace.clone();
-
-                    SettingItem::render(move |_, _, cx| {
-                        let change = action(
-                            element_id("change", &name),
-                            "Change…",
-                            &workspace,
-                            protocol::FUNCTION_SYSTEM_SET,
-                            ("key", name.clone()),
-                            true,
-                        );
-                        let unset = action(
-                            element_id("unset", &name),
-                            "Use Default",
-                            &workspace,
-                            protocol::FUNCTION_SYSTEM_UNSET,
-                            ("key", name.clone()),
-                            false,
-                        );
-
-                        h_flex()
-                            .gap_4()
-                            .justify_between()
-                            .child(described(&name, &help, cx))
-                            .child(
-                                h_flex()
-                                    .gap_1()
-                                    .flex_shrink_0()
-                                    .when(can_set, |row| row.child(change))
-                                    .when(can_unset, |row| row.child(unset)),
-                            )
-                    })
-                    .keywords([key.value.clone(), key.description.clone()])
-                })
-                .collect(),
-
-            Some(answer) => {
-                let answer = unlisted(answer);
-
-                vec![SettingItem::render(move |_, _, cx| said(&answer, cx))]
-            }
-
-            None => Vec::new(),
-        };
+        .keywords(["settings", "configuration", "in force", "config"]);
 
         let page = page.group(
             SettingGroup::new()
                 .title("In Force")
-                .description("As rumbo applies them, and where each value comes from. A session's own choice wins over them in it.")
+                .description("What is set and what applies here, the session shown first, each value with where it comes from. What a program has by default is in its details, under Providers.")
                 .item(in_force),
         );
 
-        if keys.is_empty() {
+        if !self.offers(protocol::FUNCTION_SYSTEM_SET, cx) {
             return page;
         }
 
-        page.group(
-            SettingGroup::new()
-                .title("Settings")
-                .description("Each applies to the runs that start after it is stored.")
-                .items(keys),
-        )
+        let workspace = self.workspace.clone();
+
+        page.group(SettingGroup::new().title("Settings").item(
+            SettingItem::render(move |_, _, cx| {
+                h_flex()
+                    .gap_4()
+                    .justify_between()
+                    .child(described(
+                        "Change a system setting",
+                        "Chosen from the list, or typed, as name=value; an empty value gives it back to its default. rumbo checks it before it keeps it.",
+                        cx,
+                    ))
+                    .child(action(
+                        "change-system",
+                        "Change…",
+                        &workspace,
+                        protocol::FUNCTION_SYSTEM_SET,
+                        ("change", String::new()),
+                        true,
+                    ))
+            })
+            .keywords(["default provider", "frontend", "max turns", "max tokens", "compact"]),
+        ))
     }
 
     fn providers_page(&self, cx: &mut Context<Self>) -> SettingPage {
@@ -482,8 +440,7 @@ impl SettingsView {
         let view = cx.weak_entity();
 
         let offered = [
-            (protocol::FUNCTION_PROVIDER_OPTIONS, "Options…", true),
-            (protocol::FUNCTION_PROVIDER_CONFIG, "Configuration…", true),
+            (protocol::FUNCTION_PROVIDER_SET, "Change…", true),
             (protocol::FUNCTION_PROVIDER_RM, "Remove…", false),
         ]
         .into_iter()
@@ -510,7 +467,7 @@ impl SettingsView {
                             .ghost()
                             .small()
                             .label(if details.is_some() { "Hide" } else { "Details" })
-                            .tooltip("What the provider offers; it is started to say")
+                            .tooltip("Each of its settings, where its value comes from, and what it offers; it is started to say")
                             .on_click(move |_, _, cx| {
                                 let _ = toggling.update(cx, |view, cx| {
                                     view.toggle_details(toggled.clone(), cx)
@@ -567,8 +524,8 @@ impl SettingsView {
 
         let page = page.group(
             SettingGroup::new()
-                .title("Registered")
-                .description("The programs that reach a model. Each session uses one; a new session starts with the default provider, a system setting.")
+                .title("Providers")
+                .description("The programs that reach a model, those rumbo has built in and those added. Each session uses one; a new session starts with the default provider, a system setting, and the model set for it. Change sets its model, a field of its configuration, or one of its options, which it is started to check.")
                 .items(providers),
         );
 
@@ -582,7 +539,7 @@ impl SettingsView {
                     .justify_between()
                     .child(described(
                         "Add a provider",
-                        "A name and the command that starts it, which is started to keep its defaults.",
+                        "A name and the command that starts it, which is started to see that it works.",
                         cx,
                     ))
                     .child(action(

@@ -1,8 +1,9 @@
 //! The model and the options of the session shown, which the session keeps.
 //! The provider and the model are the parameters of the host's `use`, with
 //! the values it lists for them; the options are those the provider
-//! describes, each changed with the host's `session-options`. A run in
-//! progress goes on with what it started with.
+//! describes, each changed with the host's `session-set`, which checks it
+//! against what the provider describes. A run in progress goes on with what
+//! it started with.
 
 use std::rc::Rc;
 
@@ -59,9 +60,7 @@ impl Workspace {
         self.notice = None;
 
         let using = self.host_function(protocol::FUNCTION_USE).cloned();
-        let options = self
-            .host_function(protocol::FUNCTION_SESSION_OPTIONS)
-            .is_some();
+        let options = self.host_function(protocol::FUNCTION_SESSION_SET).is_some();
 
         let (provider, model) = match &described {
             Ok(described) => (described.provider.clone(), described.model.clone()),
@@ -239,16 +238,17 @@ impl Workspace {
         focused.update(cx, |form, cx| form.focus(window, cx));
     }
 
-    /// Asks the host for the changes the picker holds, in order: the host
-    /// answers each before it reads the next.
+    /// Asks the host for the changes the picker holds, in order. `use`
+    /// goes first and is answered before the next is read; the options
+    /// that follow may be answered together, and rumbo lays each over what
+    /// the session has then, so none is lost.
     fn change_session(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
         for change in changes {
             let (name, params) = match change {
                 Change::Use(params) => (protocol::FUNCTION_USE, params),
-                Change::Option(change) => (
-                    protocol::FUNCTION_SESSION_OPTIONS,
-                    json!({ "change": change }),
-                ),
+                Change::Option(change) => {
+                    (protocol::FUNCTION_SESSION_SET, json!({ "change": change }))
+                }
             };
 
             self.call_host(name, Some(params), Feedback::Notice, cx);

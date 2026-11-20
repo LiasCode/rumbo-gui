@@ -53,10 +53,12 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   each session in its menu. It can be dragged wider and put away; the
   window keeps both.
 - **settings** (`src/shell/settings.rs`) show the window's preferences and
-  keys, and rumbo's system settings and providers. rumbo keeps those the same for
-  every project, so they are asked of the host of the project shown, with
-  its functions of the system and the providers; what the host says is
-  shown as it says it, and a change goes through the function's form.
+  keys, and rumbo's configuration. rumbo keeps it the same for every
+  project, so it is asked of the host of the project shown: what is set and
+  what applies, each value with where it comes from, with `config`, and what
+  each provider has, with `provider-show`; what the host says is shown as it
+  says it. A change goes through the form of `system-set` or `provider-set`,
+  as `name=value`, and rumbo checks it before it keeps it.
 - **host** (`src/host.rs`) starts `rumbo serve` in the folder and keeps what
   it writes to stderr, which is where rumbo explains a failure to start; or
   takes the pipes rumbo gives a registered front end on file descriptors 3
@@ -78,7 +80,7 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   history, which comes before anything that happens in it after. The
   composer starts with what the host recalls of the project's sessions. The
   model and the options belong to the session, which keeps them: the picker
-  changes them with the host's `use` and `session-options`, and every run
+  changes them with the host's `use` and `session-set`, and every run
   gets what its session has. The workspace follows the provider's function
   it called, answering the questions asked for it and refusing any other.
   What the window asks of the host for itself, as the settings do, goes
@@ -102,7 +104,9 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 - **form** (`src/workspace/form.rs`) is a form built from the parameters a
   function describes, or from what the picker changes. A parameter whose
   values a function lists shows them in a list, asked for with what was
-  given for the parameters before it and asked again when that changes.
+  given for the parameters before it and asked again when that changes. Such
+  a list need not hold every value, so the field can be typed instead,
+  starting from the value chosen.
   The form says which lists it needs; the workspace sends the requests and
   hands the answers back, since everything the host says arrives in one
   order, on one channel.

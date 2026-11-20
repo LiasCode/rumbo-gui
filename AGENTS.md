@@ -26,18 +26,21 @@ must not do. Both live in the rumbo repository.
   calls the host's `projects`, `sessions`, `open`, `new`, `rename`, and
   `delete`; the session's menu and the person's messages `rename`,
   `branch`, `compact`, and `delete`; the details panel `status` and
-  `skills`; the picker `use` and `session-options`; and the settings the
-  functions of the system and the providers; their names are in
+  `skills`; the picker `use` and `session-set`; and the settings `config`,
+  `system-set`, and the functions of the providers; their names are in
   `protocol.rs`. Each is
   offered only when `initialize` lists it, and called with the parameters
   it describes there. What it answers is shown as the host says it, never
   read for meaning. Every command comes from the descriptions the host and
-  the provider give, and a parameter's values from the function it names.
+  the provider give, and a parameter's values from the function it names;
+  a function marked `lists` is there for those values, and is no command.
+  A list a function makes may not hold every value a parameter takes, so
+  a field can always be typed instead.
 - **One host per project, and one that lists.** A host works only in its
   project's sessions, so the window starts one for each project it opens
   and closes it with the project; and one more in the person's home, the
   catalog's, which only lists every project and its sessions. Nothing reads
-  rumbo's database.
+  rumbo's files.
 - **The project's files are only read, through Git.** The changes panel
   runs `git` in the project's folder on a background thread and never
   writes there; the window edits no file of the person's.
@@ -89,15 +92,16 @@ which must leave no `rumbo serve` behind.
 
 Run it against rumbo with a provider that needs no model, such as rumbo's
 `examples/provider.py`, which also offers a function that asks a question,
-and with `RUMBO_DB` pointing at a scratch database, so the person's own
-sessions and settings stay untouched, and with `XDG_CONFIG_HOME` and `HOME`
+and with `RUMBO_CONFIG` and `RUMBO_DATA` pointing at a scratch file and
+folder, so the person's own sessions and settings stay untouched, and with
+`XDG_CONFIG_HOME` and `HOME`
 pointing at scratch folders, so the window's own preferences do too and the
 catalog's host does not start in the person's home. That provider
 describes no model and no options; a scratch copy of it that describes
 some is how the picker is looked at.
 
 ```sh
-export RUMBO_DB=/tmp/scratch/rumbo.db XDG_CONFIG_HOME=/tmp/scratch/config HOME=/tmp/scratch/home
+export RUMBO_CONFIG=/tmp/scratch/config.yaml RUMBO_DATA=/tmp/scratch/data XDG_CONFIG_HOME=/tmp/scratch/config HOME=/tmp/scratch/home
 rumbo provider add toy python3 /path/to/rumbo/examples/provider.py
 rumbo-gui --rumbo /path/to/rumbo /path/to/a/git/repo -- -p toy -m any "list the files"
 ```
@@ -119,7 +123,7 @@ The person may be using the desktop meanwhile, and may have a rumbo-gui
 of their own open. Open the window on a workspace of its own without moving
 them there, with `hl.dsp.exec_cmd(command, {workspace = "3 silent"})`; find
 it by the process started, through `pgrep -x rumbo-gui` and the scratch
-`RUMBO_DB` in its environment, and send it keys and close it by its
+`RUMBO_CONFIG` in its environment, and send it keys and close it by its
 `address:` from `hyprctl clients -j`, never by its class; and take
 screenshots only while its workspace is the one shown, since a hidden window
 does not draw. Never move the pointer or click: what is under it may be

@@ -1,8 +1,9 @@
 //! The model and the options a session uses, and the changes the picker asks
 //! the host for. The session keeps them, as rumbo's terminal UI leaves them:
-//! a run gets the session's model, and the provider's option values with
-//! those chosen in the session over them. `use` changes the provider and the
-//! model, and `session-options` one option at a time.
+//! a run gets the session's model, and the option values the provider's
+//! configuration gives, with those chosen in the session over them. `use`
+//! changes the provider and the model, and `session-set` one option at a
+//! time, as `name=value`.
 
 use serde_json::{Map, Value as Json};
 
@@ -38,8 +39,8 @@ impl Row<'_> {
 pub enum Change {
     /// Change the provider and the model, with these parameters of `use`.
     Use(Json),
-    /// Change one option, as `name=value`. An empty value removes what the
-    /// session chose, so the provider's own applies.
+    /// Change one option, as `name=value`. An empty value gives back what
+    /// the session chose, so the provider's own applies.
     Option(String),
 }
 

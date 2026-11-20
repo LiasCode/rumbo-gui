@@ -8,12 +8,13 @@ conversation, and rumbo's settings, without a terminal.
 
 ## How it works
 
-![The window speaks rumbo's Agent Frontend Protocol with one rumbo serve per open project, and with one more that only lists every project; the hosts reach the providers, and keep everything in rumbo's database.](docs/how-it-works.svg)
+![The window speaks rumbo's Agent Frontend Protocol with one rumbo serve per open project, and with one more that only lists every project; the hosts reach the providers, and keep everything in rumbo's files: what you set in config.yaml, and a folder for each session.](docs/how-it-works.svg)
 
 - **Each open project has its own `rumbo serve`.** Its runs go on while
   you look at another project or session.
 - **Everything is rumbo's.** Sessions, settings, and providers live in
-  rumbo, and the settings change them through rumbo. The window keeps only
+  rumbo, and the settings show them and change them through rumbo, which
+  checks a change before it keeps it. The window keeps only
   its preferences (theme, conversation width, the sidebar, the editor, and
   whether to say when a run ends elsewhere), in
   `rumbo-gui/preferences.json` under `~/.config` (or `$XDG_CONFIG_HOME`).
@@ -45,9 +46,12 @@ install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
                            # with Exec set to the binary's path if it is not on PATH
 ```
 
-rumbo 0.4 or later must be installed apart. The Recent projects need a rumbo
-whose host offers `projects`; without it, the sidebar lists only the
-projects open in the window.
+rumbo must be installed apart: a version later than 0.5, whose
+configuration is in `config.yaml` and whose host offers `config`,
+`system-set`, `session-set`, and `provider-set`. With an earlier one, the
+window still works, without the settings it does not offer. The Recent
+projects need a rumbo whose host offers `projects`; without it, the sidebar
+lists only the projects open in the window.
 
 ## Use
 

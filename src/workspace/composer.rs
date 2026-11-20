@@ -80,11 +80,7 @@ impl Workspace {
             .ghost()
             .xsmall()
             .icon(Lucide::Cpu)
-            .label(if self.model.is_empty() {
-                self.provider.clone()
-            } else {
-                format!("{} · {}", self.provider, self.model)
-            })
+            .label(self.model_name())
             .tooltip("The model and the options of this session")
             .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx)));
 

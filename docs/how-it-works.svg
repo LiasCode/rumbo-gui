@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" role="img" aria-labelledby="title desc">
   <title id="title">How rumbo-gui works</title>
-  <desc id="desc">The rumbo-gui window speaks rumbo's Agent Frontend Protocol, JSON-RPC on stdin and stdout, with one rumbo serve for each project open in it, which runs its tasks and tells their history, and with one more, started in your home, which only lists every project and its sessions. The hosts reach the providers through the Agent Provider Protocol, and keep the sessions of every project, the system settings, and the providers in rumbo's database. The window keeps only its theme.</desc>
+  <desc id="desc">The rumbo-gui window speaks rumbo's Agent Frontend Protocol, JSON-RPC on stdin and stdout, with one rumbo serve for each project open in it, which runs its tasks and tells their history, and with one more, started in your home, which only lists every project and its sessions. The hosts reach the providers through the Agent Provider Protocol, and keep what you set, in rumbo's config.yaml, and each session of every project in a folder of its own. The window keeps only its theme.</desc>
   <style>
     text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -97,11 +97,11 @@
   <text class="sub" x="758" y="170">reach the model</text>
 
   <rect class="host" x="740" y="212" width="236" height="124" rx="12"/>
-  <text class="name" x="758" y="240">rumbo's database</text>
-  <text class="sub" x="758" y="262">the sessions of every project</text>
+  <text class="name" x="758" y="240">rumbo's files</text>
+  <text class="sub" x="758" y="262">config.yaml: what you set</text>
   <text class="sub" x="758" y="280">the system settings</text>
-  <text class="sub" x="758" y="298">the providers and their options</text>
-  <text class="sub" x="758" y="316">what each session chose</text>
+  <text class="sub" x="758" y="298">each provider and its model</text>
+  <text class="sub" x="758" y="316">a folder for each session</text>
 
   <path class="wire" d="M632 118 C680 118 700 134 738 134" marker-end="url(#arrow)"/>
   <path class="wire" d="M632 210 C680 210 700 150 738 150" marker-end="url(#arrow)"/>

@@ -94,12 +94,18 @@ pub fn listed(source: Source, answer: Json) -> (Vec<Value>, String) {
     }
 }
 
-/// The functions of the host by what they act on, in the order the host
-/// lists them, each group named for a person.
+/// The functions offered as commands: all but those there to list the
+/// values a parameter takes, which its form lists in their place.
+pub fn offered(functions: &[Function]) -> impl Iterator<Item = &Function> {
+    functions.iter().filter(|function| !function.lists)
+}
+
+/// The functions of the host offered as commands, by what they act on, in
+/// the order the host lists them, each group named for a person.
 pub fn by_group(functions: &[Function]) -> Vec<(String, Vec<Function>)> {
     let mut groups: Vec<(String, Vec<Function>)> = Vec::new();
 
-    for function in functions {
+    for function in offered(functions) {
         let title = group_title(&function.group);
 
         match groups.iter_mut().find(|(known, _)| *known == title) {
@@ -381,9 +387,15 @@ mod tests {
             ..Function::default()
         };
 
+        let listing = Function {
+            lists: true,
+            ..function("system-values", "system")
+        };
+
         let groups = by_group(&[
-            function("system", "system"),
+            function("config", "system"),
             function("status", "session"),
+            listing,
             function("quit", "system"),
             function("providers", "provider"),
             function("plugins", "plugin"),
@@ -401,7 +413,8 @@ mod tests {
             titles,
             ["System", "Session", "Providers", "Plugin", "rumbo"]
         );
-        assert_eq!(system, ["system", "quit"]);
+        // One there to list a parameter's values is no command.
+        assert_eq!(system, ["config", "quit"]);
     }
 
     #[test]

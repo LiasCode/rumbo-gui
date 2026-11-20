@@ -107,8 +107,7 @@ impl Workspace {
         }
 
         let provider: Vec<Entry> = match &self.provider_functions {
-            Ok(functions) => functions
-                .iter()
+            Ok(functions) => commands::offered(functions)
                 .map(|function| {
                     Entry::Function(Command {
                         source: Source::Provider,
