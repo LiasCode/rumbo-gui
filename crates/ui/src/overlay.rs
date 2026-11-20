@@ -1,11 +1,11 @@
-//! What the surfaces that float over the rest share: how they look, and
-//! Escape putting them away.
+//! What the surfaces that float over the rest share: how they look, Escape
+//! putting them away, and Enter doing what a dialog asks.
 
 use gpui::{App, Div, KeyBinding, Styled as _, actions, div};
 
 use crate::theme::ActiveTheme as _;
 
-actions!(overlay, [Dismiss]);
+actions!(overlay, [Dismiss, Confirm]);
 
 /// The key contexts of the surfaces Escape puts away.
 pub(crate) const POPOVER_CONTEXT: &str = "Popover";
@@ -17,6 +17,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", Dismiss, Some(POPOVER_CONTEXT)),
         KeyBinding::new("escape", Dismiss, Some(SELECT_CONTEXT)),
         KeyBinding::new("escape", Dismiss, Some(WINDOW_CONTEXT)),
+        KeyBinding::new("enter", Confirm, Some(WINDOW_CONTEXT)),
     ]);
 }
 

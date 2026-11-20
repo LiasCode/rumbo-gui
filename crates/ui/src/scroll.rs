@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use gpui::{
     Along as _, App, Axis, Bounds, CursorStyle, DispatchPhase, Element, ElementId, Entity,
-    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
+    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, ListState,
     MouseMoveEvent, Pixels, Point, RenderOnce, ScrollHandle, Size, Style, UniformListScrollHandle,
     Window, fill, point, px, size,
 };
@@ -85,6 +85,31 @@ impl ScrollSource for UniformListScrollHandle {
         let handle = self.0.borrow().base_handle.clone();
 
         handle.scroll_to(axis, distance, window, cx);
+    }
+}
+
+/// What a `list` of rows of their own heights scrolls. It reaches only as
+/// far as it has measured, which grows as rows come into view.
+impl ScrollSource for ListState {
+    fn measure(&self, axis: Axis, _: &App) -> Option<Measure> {
+        if axis != Axis::Vertical {
+            return None;
+        }
+
+        let shown = self.viewport_bounds().size.height;
+
+        (shown > Pixels::ZERO).then(|| Measure {
+            scrolled: Pixels::ZERO - self.scroll_px_offset_for_scrollbar().y,
+            most: self.max_offset_for_scrollbar().y,
+            shown,
+        })
+    }
+
+    fn scroll_to(&self, axis: Axis, distance: Pixels, window: &mut Window, _: &mut App) {
+        if axis == Axis::Vertical {
+            self.set_offset_from_scrollbar(point(Pixels::ZERO, -distance));
+            window.refresh();
+        }
     }
 }
 

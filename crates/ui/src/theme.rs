@@ -59,6 +59,10 @@ pub struct ThemeColors {
     /// tells them.
     pub success: Hsla,
     pub warning: Hsla,
+    /// A sidebar's ground, and what its rows turn to under the pointer or
+    /// shown.
+    pub sidebar: Hsla,
+    pub sidebar_accent: Hsla,
     /// Surfaces that float over the rest: popovers, lists, tooltips, windows.
     pub popover: Hsla,
     pub popover_foreground: Hsla,
@@ -88,6 +92,8 @@ pub struct Theme {
     /// The corners of surfaces that float.
     pub radius_lg: Pixels,
     pub typeface: Typeface,
+    /// The family code is drawn in: one the machine has, found once.
+    pub mono_family: SharedString,
 }
 
 impl Global for Theme {}
@@ -131,6 +137,8 @@ impl Theme {
                 danger_foreground: hex(NEUTRAL_50),
                 success: hex(GREEN_600),
                 warning: hex(AMBER_600),
+                sidebar: hex(NEUTRAL_50),
+                sidebar_accent: hex(NEUTRAL_200),
                 popover: hex(0xffffff),
                 popover_foreground: hex(NEUTRAL_950),
                 overlay: rgba(0x00000033).into(),
@@ -147,6 +155,7 @@ impl Theme {
             radius: px(6.),
             radius_lg: px(8.),
             typeface: Typeface::default(),
+            mono_family: crate::fonts::FALLBACK.into(),
         }
     }
 
@@ -177,6 +186,8 @@ impl Theme {
                 danger_foreground: hex(NEUTRAL_50),
                 success: hex(GREEN_500),
                 warning: hex(AMBER_500),
+                sidebar: hex(NEUTRAL_950),
+                sidebar_accent: hex(NEUTRAL_800),
                 popover: hex(NEUTRAL_900),
                 popover_foreground: hex(NEUTRAL_50),
                 overlay: rgba(0x00000066).into(),
@@ -193,6 +204,7 @@ impl Theme {
             radius: px(6.),
             radius_lg: px(8.),
             typeface: Typeface::default(),
+            mono_family: crate::fonts::FALLBACK.into(),
         }
     }
 
@@ -213,16 +225,17 @@ impl Theme {
         self.typeface.family()
     }
 
-    /// Puts a mode in force, keeping the typeface, and draws every window
+    /// Puts a mode in force, keeping the typefaces, and draws every window
     /// again with it.
     pub fn change(mode: ThemeMode, cx: &mut App) {
-        let typeface = cx
-            .try_global::<Theme>()
-            .map(|theme| theme.typeface)
-            .unwrap_or_default();
+        let (typeface, mono_family) = match cx.try_global::<Theme>() {
+            Some(theme) => (theme.typeface, theme.mono_family.clone()),
+            None => (Typeface::default(), crate::fonts::mono(cx)),
+        };
 
         cx.set_global(Theme {
             typeface,
+            mono_family,
             ..Theme::of_mode(mode)
         });
         cx.refresh_windows();
@@ -275,7 +288,12 @@ impl Theme {
 /// Puts the light theme in force unless one already is.
 pub(crate) fn init(cx: &mut App) {
     if !cx.has_global::<Theme>() {
-        cx.set_global(Theme::light());
+        let mono_family = crate::fonts::mono(cx);
+
+        cx.set_global(Theme {
+            mono_family,
+            ..Theme::light()
+        });
     }
 }
 

@@ -20,8 +20,9 @@ use gpui::{
     size,
 };
 use ui::{
-    ActiveTheme as _, Button, Label, Scrollbar, Select, SelectEvent, SelectItem, SelectState,
-    Sizable as _, Switch, Theme, ThemeMode, Toaster, Toasts, Typeface, h_flex, v_flex,
+    ActiveTheme as _, Button, DialogLayer, Dialogs, Label, Scrollbar, Select, SelectEvent,
+    SelectItem, SelectState, Sizable as _, StatusBar, Switch, Theme, ThemeMode, TitleBar, Toaster,
+    Toasts, Typeface, WindowFrame, h_flex, v_flex,
 };
 
 use pages::{Demos, Page};
@@ -32,8 +33,9 @@ struct Overview {
     scroll: ScrollHandle,
     pages: ScrollHandle,
     demos: Demos,
-    /// The window's toasts, which any page can push to.
+    /// The window's toasts and dialogs, which any page can show.
     toasts: Entity<Toasts>,
+    dialogs: Entity<Dialogs>,
     /// The typeface in force, chosen under the navigation.
     typeface: Entity<SelectState>,
     focus_handle: FocusHandle,
@@ -86,6 +88,7 @@ impl Overview {
             pages: ScrollHandle::new(),
             demos: Demos::new(window, cx),
             toasts: cx.new(|_| Toasts::new()),
+            dialogs: cx.new(|_| Dialogs::new()),
             typeface,
             focus_handle,
         }
@@ -130,15 +133,7 @@ impl Overview {
             .bg(theme.colors.muted.opacity(0.4))
             .child(
                 div()
-                    .px_4()
-                    .pt_5()
-                    .pb_3()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("rumbo · components"),
-            )
-            .child(
-                div()
+                    .pt_3()
                     .relative()
                     .flex_1()
                     .min_h_0()
@@ -190,24 +185,50 @@ impl Render for Overview {
         let sections = self.demos.render(self.page, window, cx);
         let page_content = self.render_page(sections, cx);
 
-        ui::root(cx)
-            .track_focus(&self.focus_handle)
-            .child(
-                h_flex()
-                    .size_full()
-                    .items_start()
-                    .child(self.render_navigation(cx))
-                    .child(
+        let theme = cx.theme();
+        let mode = match theme.mode {
+            ThemeMode::Light => "Light",
+            ThemeMode::Dark => "Dark",
+        };
+        let status = StatusBar::new()
+            .start(format!("{} · {}", self.page.title(), self.page.slug()))
+            .end(format!("{} components", Page::ALL.len()))
+            .end(format!("{mode} · {}", theme.typeface.name()));
+
+        WindowFrame::new().child(
+            ui::root(cx)
+                .track_focus(&self.focus_handle)
+                .flex()
+                .flex_col()
+                .child(
+                    TitleBar::new().child(
                         div()
-                            .relative()
-                            .flex_1()
-                            .h_full()
-                            .min_w_0()
-                            .child(page_content)
-                            .child(Scrollbar::vertical("page-scrollbar", self.scroll.clone())),
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("rumbo · components"),
                     ),
-            )
-            .child(Toaster::new(&self.toasts))
+                )
+                .child(
+                    h_flex()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .items_start()
+                        .child(self.render_navigation(cx))
+                        .child(
+                            div()
+                                .relative()
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .child(page_content)
+                                .child(Scrollbar::vertical("page-scrollbar", self.scroll.clone())),
+                        ),
+                )
+                .child(status)
+                .child(DialogLayer::new(&self.dialogs))
+                .child(Toaster::new(&self.toasts)),
+        )
     }
 }
 
@@ -303,6 +324,7 @@ fn main() {
             })
             .detach();
 
+            // The title bar is the overview's own, as the window's is.
             let options = WindowOptions {
                 app_id: Some("rumbo-ui-overview".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -310,7 +332,7 @@ fn main() {
                     size(px(1180.), px(820.)),
                     cx,
                 ))),
-                ..WindowOptions::default()
+                ..TitleBar::window_options()
             };
 
             cx.open_window(options, |window, cx| {

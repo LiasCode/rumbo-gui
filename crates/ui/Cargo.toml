@@ -8,6 +8,7 @@ publish = false
 # The version GPUI Kit 0.9.1 pins, so the window builds one GPUI while it
 # still uses GPUI Kit.
 gpui = { package = "gpui-pre", version = "=0.3.12" }
+markdown = "1.0.0"
 unicode-segmentation = "1.13.3"
 
 [dev-dependencies]

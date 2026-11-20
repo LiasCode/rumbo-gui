@@ -6,6 +6,7 @@
 //! draws a variable font only at its default weight.
 
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use gpui::{App, Result, SharedString};
 
@@ -74,9 +75,66 @@ const FILES: [&[u8]; 8] = [
     include_bytes!("../assets/fonts/shantell-sans/Shantell_Sans-Normal-Bold.otf"),
 ];
 
+/// The families code is drawn in, the platform's own first.
+const MONO: &[&str] = if cfg!(target_os = "macos") {
+    &["Menlo", "Monaco", "Courier New"]
+} else if cfg!(target_os = "windows") {
+    &["Consolas", "Cascadia Mono", "Courier New"]
+} else {
+    &[
+        "DejaVu Sans Mono",
+        "Noto Sans Mono",
+        "Liberation Mono",
+        "Ubuntu Mono",
+    ]
+};
+
+/// What GPUI always has, the desktop's interface font.
+pub(crate) const FALLBACK: &str = ".SystemUIFont";
+
+/// The first of `candidates` the machine has, or the fallback: GPUI cannot
+/// lay out a line in a family it does not have.
+fn first_installed(candidates: &[&str], installed: &[String]) -> SharedString {
+    candidates
+        .iter()
+        .find(|candidate| installed.iter().any(|name| name == *candidate))
+        .copied()
+        .unwrap_or(FALLBACK)
+        .into()
+}
+
+/// The family code is drawn in on this machine, found once, since listing
+/// its fonts takes a while and they do not change while it runs.
+pub(crate) fn mono(cx: &App) -> SharedString {
+    static FOUND: OnceLock<SharedString> = OnceLock::new();
+
+    FOUND
+        .get_or_init(|| first_installed(MONO, &cx.text_system().all_font_names()))
+        .clone()
+}
+
 /// Gives GPUI the bundled typefaces.
 pub(crate) fn load(cx: &App) -> Result<()> {
     let fonts = FILES.iter().map(|bytes| Cow::Borrowed(*bytes)).collect();
 
     cx.text_system().add_fonts(fonts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FALLBACK, first_installed};
+
+    #[test]
+    fn draws_code_in_the_first_family_the_machine_has() {
+        let installed = ["Noto Sans Mono".to_string(), "Liberation Mono".to_string()];
+
+        assert_eq!(
+            first_installed(
+                &["DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono"],
+                &installed
+            ),
+            "Noto Sans Mono"
+        );
+        assert_eq!(first_installed(&["Menlo"], &installed), FALLBACK);
+    }
 }

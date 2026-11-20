@@ -5,16 +5,25 @@ mod alert;
 mod breadcrumb;
 mod button;
 mod checkbox;
+mod command_palette;
+mod dialog;
+mod diff;
 mod floating_window;
 mod input;
 mod label;
 mod list;
+mod markdown;
+mod menu;
+mod message;
+mod message_list;
 mod pagination;
 mod popover;
 mod radio;
 mod resizable;
 mod scrollbar;
 mod select;
+mod settings;
+mod sidebar;
 mod skeleton;
 mod slider;
 mod spinner;
@@ -26,6 +35,7 @@ mod toast;
 mod toggle;
 mod tooltip;
 mod typography;
+mod window;
 
 use gpui::{
     AnyElement, App, Context, Div, FontWeight, IntoElement, ParentElement as _, SharedString,
@@ -58,14 +68,24 @@ pub enum Page {
     Textarea,
     Select,
     Popover,
+    Menu,
+    Dialog,
+    CommandPalette,
     Toast,
+    Message,
+    Markdown,
+    MessageList,
+    Sidebar,
+    Settings,
     Resizable,
     Table,
+    Diff,
     FloatingWindow,
+    Window,
 }
 
 impl Page {
-    pub const ALL: [Page; 25] = [
+    pub const ALL: [Page; 35] = [
         Page::Typography,
         Page::Label,
         Page::List,
@@ -87,10 +107,20 @@ impl Page {
         Page::Textarea,
         Page::Select,
         Page::Popover,
+        Page::Menu,
+        Page::Dialog,
+        Page::CommandPalette,
         Page::Toast,
+        Page::Message,
+        Page::Markdown,
+        Page::MessageList,
+        Page::Sidebar,
+        Page::Settings,
         Page::Resizable,
         Page::Table,
+        Page::Diff,
         Page::FloatingWindow,
+        Page::Window,
     ];
 
     pub fn title(self) -> &'static str {
@@ -116,10 +146,20 @@ impl Page {
             Page::Textarea => "Textarea",
             Page::Select => "Select",
             Page::Popover => "Popover",
+            Page::Menu => "Menu",
+            Page::Dialog => "Dialog",
+            Page::CommandPalette => "Command palette",
             Page::Toast => "Toast",
+            Page::Message => "Message",
+            Page::Markdown => "Markdown",
+            Page::MessageList => "Message list",
+            Page::Sidebar => "Sidebar",
+            Page::Settings => "Settings",
             Page::Resizable => "Resizable",
             Page::Table => "Table",
+            Page::Diff => "Diff",
             Page::FloatingWindow => "Floating window",
+            Page::Window => "Window",
         }
     }
 
@@ -146,10 +186,20 @@ impl Page {
             Page::Textarea => "textarea",
             Page::Select => "select",
             Page::Popover => "popover",
+            Page::Menu => "menu",
+            Page::Dialog => "dialog",
+            Page::CommandPalette => "command-palette",
             Page::Toast => "toast",
+            Page::Message => "message",
+            Page::Markdown => "markdown",
+            Page::MessageList => "message-list",
+            Page::Sidebar => "sidebar",
+            Page::Settings => "settings",
             Page::Resizable => "resizable",
             Page::Table => "table",
+            Page::Diff => "diff",
             Page::FloatingWindow => "floating-window",
+            Page::Window => "window",
         }
     }
 
@@ -204,6 +254,27 @@ impl Page {
             Page::Popover => {
                 "A surface that opens beside its trigger and holds anything. Escape or a press outside closes it."
             }
+            Page::Menu => {
+                "What can be done, under a button or where the pointer pressed with its other button."
+            }
+            Page::Dialog => "A question over the work, which waits for an answer.",
+            Page::CommandPalette => {
+                "Commands in groups, found by typing part of their name, and chosen with the keyboard."
+            }
+            Page::Markdown => {
+                "What a model writes, drawn: each block's words can be selected and copied."
+            }
+            Page::MessageList => {
+                "A long conversation, of which only the rows in view are drawn, that keeps to its end."
+            }
+            Page::Settings => "Settings in pages, with a search that finds them by their words.",
+            Page::Diff => {
+                "The changes a patch makes, file by file, each line on green where added and red where taken out."
+            }
+            Page::Message => "A message in a conversation, on a quiet ground, with words over it.",
+            Page::Sidebar => {
+                "The column beside the work: a head, groups of rows that hold rows, and a foot."
+            }
             Page::Toast => {
                 "A short message in a corner of the window that says what happened, and goes after a while."
             }
@@ -216,6 +287,9 @@ impl Page {
             Page::FloatingWindow => {
                 "A window inside the window, dragged by its title. A modal one dims the work behind it."
             }
+            Page::Window => {
+                "What a window that draws its own frame has: its title bar, its frame, and a status bar."
+            }
         }
     }
 }
@@ -224,6 +298,9 @@ impl Page {
 pub struct Demos {
     button: button::Demo,
     alert: alert::Demo,
+    menu: menu::Demo,
+    dialog: dialog::Demo,
+    sidebar: sidebar::Demo,
     radio: radio::Demo,
     breadcrumb: breadcrumb::Demo,
     pagination: pagination::Demo,
@@ -242,6 +319,10 @@ pub struct Demos {
     resizable: resizable::Demo,
     table: table::Demo,
     floating_window: floating_window::Demo,
+    command_palette: command_palette::Demo,
+    message_list: message_list::Demo,
+    settings: settings::Demo,
+    diff: diff::Demo,
 }
 
 impl Demos {
@@ -249,6 +330,9 @@ impl Demos {
         Demos {
             button: button::Demo::default(),
             alert: alert::Demo::default(),
+            menu: menu::Demo::default(),
+            dialog: dialog::Demo::new(window, cx),
+            sidebar: sidebar::Demo::new(window, cx),
             radio: radio::Demo::default(),
             breadcrumb: breadcrumb::Demo::default(),
             pagination: pagination::Demo::default(),
@@ -267,6 +351,10 @@ impl Demos {
             resizable: resizable::Demo::default(),
             table: table::Demo::new(cx),
             floating_window: floating_window::Demo::new(window, cx),
+            command_palette: command_palette::Demo::new(window, cx),
+            message_list: message_list::Demo::new(cx),
+            settings: settings::Demo::new(window, cx),
+            diff: diff::Demo::new(cx),
         }
     }
 
@@ -299,10 +387,20 @@ impl Demos {
             Page::Textarea => textarea::render(self, window, cx),
             Page::Select => select::render(self, window, cx),
             Page::Popover => popover::render(self, window, cx),
+            Page::Menu => menu::render(self, window, cx),
+            Page::Dialog => dialog::render(self, window, cx),
+            Page::CommandPalette => command_palette::render(self, window, cx),
+            Page::Markdown => markdown::render(self, window, cx),
+            Page::MessageList => message_list::render(self, window, cx),
+            Page::Settings => settings::render(self, window, cx),
+            Page::Diff => diff::render(self, window, cx),
             Page::Toast => toast::render(self, window, cx),
+            Page::Message => message::render(self, window, cx),
+            Page::Sidebar => sidebar::render(self, window, cx),
             Page::Resizable => resizable::render(self, window, cx),
             Page::Table => table::render(self, window, cx),
             Page::FloatingWindow => floating_window::render(self, window, cx),
+            Page::Window => window::render(self, window, cx),
         }
     }
 }
@@ -359,7 +457,7 @@ fn told(lines: &[SharedString], cx: &App) -> AnyElement {
         .rounded(theme.radius)
         .bg(theme.colors.muted)
         .text_xs()
-        .font_family("monospace")
+        .font_family(theme.mono_family.clone())
         .text_color(theme.colors.muted_foreground)
         .map(|column| match lines.is_empty() {
             true => column.child("Nothing yet."),

@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use gpui::{AssetSource, Result, SharedString};
 
 /// Every file, by the path an element asks for.
-const FILES: [(&str, &[u8]); 24] = [
+const FILES: [(&str, &[u8]); 50] = [
     (
         "icons/arrow-down.svg",
         include_bytes!("../assets/icons/arrow-down.svg"),
@@ -14,6 +14,10 @@ const FILES: [(&str, &[u8]); 24] = [
     (
         "icons/arrow-up.svg",
         include_bytes!("../assets/icons/arrow-up.svg"),
+    ),
+    (
+        "icons/book-open.svg",
+        include_bytes!("../assets/icons/book-open.svg"),
     ),
     (
         "icons/check.svg",
@@ -47,10 +51,55 @@ const FILES: [(&str, &[u8]); 24] = [
         "icons/circle-check.svg",
         include_bytes!("../assets/icons/circle-check.svg"),
     ),
+    (
+        "icons/circle-stop.svg",
+        include_bytes!("../assets/icons/circle-stop.svg"),
+    ),
+    (
+        "icons/circle-x.svg",
+        include_bytes!("../assets/icons/circle-x.svg"),
+    ),
+    (
+        "icons/clock.svg",
+        include_bytes!("../assets/icons/clock.svg"),
+    ),
     ("icons/copy.svg", include_bytes!("../assets/icons/copy.svg")),
+    ("icons/cpu.svg", include_bytes!("../assets/icons/cpu.svg")),
+    (
+        "icons/download.svg",
+        include_bytes!("../assets/icons/download.svg"),
+    ),
     (
         "icons/ellipsis.svg",
         include_bytes!("../assets/icons/ellipsis.svg"),
+    ),
+    (
+        "icons/external-link.svg",
+        include_bytes!("../assets/icons/external-link.svg"),
+    ),
+    (
+        "icons/file-pen.svg",
+        include_bytes!("../assets/icons/file-pen.svg"),
+    ),
+    (
+        "icons/file-plus.svg",
+        include_bytes!("../assets/icons/file-plus.svg"),
+    ),
+    (
+        "icons/file-text.svg",
+        include_bytes!("../assets/icons/file-text.svg"),
+    ),
+    (
+        "icons/folder-closed.svg",
+        include_bytes!("../assets/icons/folder-closed.svg"),
+    ),
+    (
+        "icons/folder-open.svg",
+        include_bytes!("../assets/icons/folder-open.svg"),
+    ),
+    (
+        "icons/git-branch.svg",
+        include_bytes!("../assets/icons/git-branch.svg"),
     ),
     (
         "icons/git-compare.svg",
@@ -62,6 +111,10 @@ const FILES: [(&str, &[u8]); 24] = [
         include_bytes!("../assets/icons/loader-circle.svg"),
     ),
     (
+        "icons/message-square.svg",
+        include_bytes!("../assets/icons/message-square.svg"),
+    ),
+    (
         "icons/minus.svg",
         include_bytes!("../assets/icons/minus.svg"),
     ),
@@ -70,10 +123,34 @@ const FILES: [(&str, &[u8]); 24] = [
         include_bytes!("../assets/icons/panel-left.svg"),
     ),
     (
+        "icons/panel-left-close.svg",
+        include_bytes!("../assets/icons/panel-left-close.svg"),
+    ),
+    (
+        "icons/panel-left-open.svg",
+        include_bytes!("../assets/icons/panel-left-open.svg"),
+    ),
+    (
         "icons/panel-right.svg",
         include_bytes!("../assets/icons/panel-right.svg"),
     ),
+    (
+        "icons/pencil.svg",
+        include_bytes!("../assets/icons/pencil.svg"),
+    ),
     ("icons/plus.svg", include_bytes!("../assets/icons/plus.svg")),
+    (
+        "icons/refresh-cw.svg",
+        include_bytes!("../assets/icons/refresh-cw.svg"),
+    ),
+    (
+        "icons/rotate-ccw.svg",
+        include_bytes!("../assets/icons/rotate-ccw.svg"),
+    ),
+    (
+        "icons/rotate-cw.svg",
+        include_bytes!("../assets/icons/rotate-cw.svg"),
+    ),
     (
         "icons/search.svg",
         include_bytes!("../assets/icons/search.svg"),
@@ -83,12 +160,36 @@ const FILES: [(&str, &[u8]); 24] = [
         include_bytes!("../assets/icons/settings.svg"),
     ),
     (
+        "icons/shrink.svg",
+        include_bytes!("../assets/icons/shrink.svg"),
+    ),
+    (
+        "icons/sparkles.svg",
+        include_bytes!("../assets/icons/sparkles.svg"),
+    ),
+    (
+        "icons/square.svg",
+        include_bytes!("../assets/icons/square.svg"),
+    ),
+    (
+        "icons/square-pen.svg",
+        include_bytes!("../assets/icons/square-pen.svg"),
+    ),
+    (
+        "icons/square-terminal.svg",
+        include_bytes!("../assets/icons/square-terminal.svg"),
+    ),
+    (
         "icons/trash.svg",
         include_bytes!("../assets/icons/trash.svg"),
     ),
     (
         "icons/triangle-alert.svg",
         include_bytes!("../assets/icons/triangle-alert.svg"),
+    ),
+    (
+        "icons/wrench.svg",
+        include_bytes!("../assets/icons/wrench.svg"),
     ),
     ("icons/x.svg", include_bytes!("../assets/icons/x.svg")),
 ];

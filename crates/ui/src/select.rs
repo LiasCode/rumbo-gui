@@ -5,7 +5,7 @@
 //! and closes it with Escape.
 
 use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable as _,
+    App, AppContext as _, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Refineable as _,
     RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement as _, StyleRefinement,
     Styled, Subscription, Window, actions, anchored, deferred, div, point,
@@ -122,10 +122,11 @@ impl SelectState {
         let subscriptions = vec![cx.subscribe_in(
             &search,
             window,
-            |this, _, event: &InputEvent, window, cx| match event {
-                InputEvent::Change => this.searched(cx),
-                InputEvent::Submit => this.confirm(&Confirm, window, cx),
-                _ => {}
+            // Enter in the search goes on to the list, which chooses.
+            |this, _, event: &InputEvent, _, cx| {
+                if *event == InputEvent::Change {
+                    this.searched(cx);
+                }
             },
         )];
 
@@ -308,8 +309,25 @@ impl SelectState {
         self.choose(self.highlighted, window, cx);
     }
 
+    /// Enter in the search, which the search lets go on to the list.
+    fn confirm_searched(
+        &mut self,
+        _: &crate::text::Enter,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.choose(self.highlighted, window, cx);
+    }
+
     fn dismiss(&mut self, _: &Dismiss, window: &mut Window, cx: &mut Context<Self>) {
         self.close(window, cx);
+    }
+}
+
+/// Its keyboard is its trigger's.
+impl Focusable for SelectState {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.trigger_focus.clone()
     }
 }
 
@@ -353,9 +371,11 @@ impl RenderOnce for Select {
         let id = self.state.entity_id().as_u64();
         let ring = theme.focus_ring();
 
-        let (label, chosen) = match state.selected_item() {
-            Some(item) => (item.label.clone(), true),
-            None => (state.placeholder.clone(), false),
+        // What tells the value chosen apart shows beside it, as in the
+        // list, since values can share a label.
+        let (label, said, chosen) = match state.selected_item() {
+            Some(item) => (item.label.clone(), item.description.clone(), true),
+            None => (state.placeholder.clone(), SharedString::default(), false),
         };
 
         let padding = match size {
@@ -377,12 +397,28 @@ impl RenderOnce for Select {
             .bg(colors.background)
             .text_size(size.text())
             .child(
-                div()
+                h_flex()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .when(!chosen, |label| label.text_color(colors.muted_foreground))
-                    .child(label),
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_none()
+                            .max_w_full()
+                            .truncate()
+                            .when(!chosen, |label| label.text_color(colors.muted_foreground))
+                            .child(label),
+                    )
+                    .when(!said.is_empty(), |row| {
+                        row.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_color(colors.muted_foreground)
+                                .child(said),
+                        )
+                    }),
             )
             .child(
                 Icon::new(IconName::ChevronDown)
@@ -510,6 +546,7 @@ impl RenderOnce for Select {
             .on_action(window.listener_for(&self.state, SelectState::previous))
             .on_action(window.listener_for(&self.state, SelectState::next))
             .on_action(window.listener_for(&self.state, SelectState::confirm))
+            .on_action(window.listener_for(&self.state, SelectState::confirm_searched))
             .on_action(window.listener_for(&self.state, SelectState::dismiss))
             // A press on the trigger closes it as the trigger's press.
             .on_mouse_down_out(move |event, window, cx| {

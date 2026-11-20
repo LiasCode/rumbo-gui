@@ -670,10 +670,20 @@ impl InputState {
         }
     }
 
+    /// A field of several lines takes Enter as a new line. Otherwise Enter
+    /// sends it, and a field of one line lets the key go on too, so that
+    /// what holds it, such as a dialog or a list, does what Enter does
+    /// there.
     fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
         match self.rows.is_some() && !self.submit_on_enter {
             true => self.insert("\n", EditKind::Other, window, cx),
-            false => cx.emit(InputEvent::Submit),
+            false => {
+                cx.emit(InputEvent::Submit);
+
+                if self.rows.is_none() {
+                    cx.propagate();
+                }
+            }
         }
     }
 

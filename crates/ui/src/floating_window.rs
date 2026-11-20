@@ -67,6 +67,7 @@ pub struct FloatingWindow {
     children: Vec<AnyElement>,
     footer: Option<AnyElement>,
     on_close: Option<CloseHandler>,
+    on_enter: Option<CloseHandler>,
     initial_focus: Option<FocusHandle>,
     style: StyleRefinement,
 }
@@ -82,6 +83,7 @@ impl FloatingWindow {
             children: Vec::new(),
             footer: None,
             on_close: None,
+            on_enter: None,
             initial_focus: None,
             style: StyleRefinement::default(),
         }
@@ -121,6 +123,14 @@ impl FloatingWindow {
     /// Called when the person closes it: its view stops rendering it here.
     pub fn on_close(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_close = Some(Rc::new(handler));
+        self
+    }
+
+    /// What Enter does, as a dialog's: in a field of one line, or with the
+    /// window itself holding the keyboard. A button with the keyboard takes
+    /// Enter as its own press.
+    pub(crate) fn on_enter(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_enter = Some(Rc::new(handler));
         self
     }
 }
@@ -244,6 +254,19 @@ impl RenderOnce for FloatingWindow {
             .occlude()
             .on_action(move |_: &Dismiss, window, cx| {
                 close(&dismissing.0, &dismissing.1, window, cx)
+            })
+            .when_some(self.on_enter, |panel, on_enter| {
+                let from_field = on_enter.clone();
+                let own = focus.clone();
+
+                panel
+                    .on_action(move |_: &crate::text::Enter, window, cx| from_field(window, cx))
+                    .on_action(move |_: &overlay::Confirm, window, cx| {
+                        match own.is_focused(window) {
+                            true => on_enter(window, cx),
+                            false => cx.propagate(),
+                        }
+                    })
             })
             .on_drag_move(move |event: &gpui::DragMoveEvent<Dragged>, window, cx| {
                 if event.drag(cx).window != dragged {

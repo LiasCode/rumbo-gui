@@ -4,9 +4,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Refineable as _, RenderOnce, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _,
+    App, ClickEvent, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, Refineable as _, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    prelude::FluentBuilder as _,
 };
 
 use crate::icon::{Icon, IconName};
@@ -116,6 +117,7 @@ pub struct Button {
     tooltip: Option<SharedString>,
     shortcut: Option<SharedString>,
     on_click: Option<ClickHandler>,
+    focus: Option<FocusHandle>,
     style: StyleRefinement,
 }
 
@@ -133,6 +135,7 @@ impl Button {
             tooltip: None,
             shortcut: None,
             on_click: None,
+            focus: None,
             style: StyleRefinement::default(),
         }
     }
@@ -217,6 +220,13 @@ impl Button {
         self.on_click = Some(Rc::new(handler));
         self
     }
+
+    /// The keyboard's handle it takes, for its view to give it the
+    /// keyboard, as a screen does its main action.
+    pub fn track_focus(mut self, focus: &FocusHandle) -> Self {
+        self.focus = Some(focus.clone());
+        self
+    }
 }
 
 impl Sizable for Button {
@@ -279,7 +289,10 @@ impl RenderOnce for Button {
         } else {
             button = button
                 .cursor_pointer()
-                .tab_index(0)
+                .map(|button| match self.focus {
+                    Some(focus) => button.track_focus(&focus.tab_stop(true)),
+                    None => button.tab_index(0),
+                })
                 .focus_visible(move |style| style.shadow(ring))
                 .when_some(paint.hover, |button, hover| {
                     button.hover(move |style| style.bg(hover))
