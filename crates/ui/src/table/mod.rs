@@ -464,7 +464,11 @@ impl RenderOnce for Table {
             let sorted = sort
                 .filter(|sort| sort.column == index)
                 .map(|sort| sort.direction);
-            let words = div().min_w_0().truncate().child(column.title.clone());
+            let words = div()
+                .debug_selector(|| format!("words-{index}"))
+                .min_w_0()
+                .truncate()
+                .child(column.title.clone());
 
             let title = match column.sortable {
                 false => words.into_any_element(),
@@ -477,8 +481,11 @@ impl RenderOnce for Table {
                     };
                     let pressed = entity.clone();
                     let ring = ring.clone();
+                    let icon = Icon::new(icon).small().color(color);
 
-                    // Its words line up with the cells' under it.
+                    // Its words line up with the values under it: they start
+                    // where the values start, or end where they end, with the
+                    // icon on the inner side.
                     h_flex()
                         .id(("table-title", index))
                         .min_w_0()
@@ -497,13 +504,18 @@ impl RenderOnce for Table {
                         .on_click(move |_, _, cx| {
                             pressed.update(cx, |state, cx| state.press_title(index, cx))
                         })
-                        .child(words)
-                        .child(Icon::new(icon).small().color(color))
+                        .map(|title| match column.end {
+                            true => title.child(icon).child(words),
+                            false => title.child(words).child(icon),
+                        })
                         .into_any_element()
                 }
             };
 
-            let mut title_cell = cell(column).relative().child(title);
+            let mut title_cell = cell(column)
+                .debug_selector(|| format!("title-{index}"))
+                .relative()
+                .child(title);
 
             if index > 0 {
                 title_cell = title_cell.child(edge(index - 1, window, cx));
@@ -512,13 +524,20 @@ impl RenderOnce for Table {
             titles.push(title_cell);
         }
 
-        // What is left of the titles' row, and the last column's edge.
+        // What is left of the titles' row, and the last column's edge. It
+        // takes no room from a column that grows, which takes the same in
+        // every row.
+        let grows = columns.iter().any(|column| column.grow);
+
         if let Some(last) = columns.len().checked_sub(1) {
             titles.push(
                 div()
                     .relative()
-                    .flex_1()
                     .h_full()
+                    .map(|rest| match grows {
+                        true => rest.flex_none(),
+                        false => rest.flex_1(),
+                    })
                     .child(edge(last, window, cx)),
             );
         }
@@ -572,7 +591,17 @@ impl RenderOnce for Table {
                                         let text =
                                             row.cells.get(index).cloned().unwrap_or_default();
 
-                                        cell(column).child(div().min_w_0().truncate().child(text))
+                                        cell(column)
+                                            .debug_selector(|| format!("cell-{place}-{index}"))
+                                            .child(
+                                                div()
+                                                    .debug_selector(|| {
+                                                        format!("value-{place}-{index}")
+                                                    })
+                                                    .min_w_0()
+                                                    .truncate()
+                                                    .child(text),
+                                            )
                                     },
                                 ))
                                 .on_click(move |event, window, cx| {
@@ -846,6 +875,85 @@ mod pointer_tests {
                 TableEvent::Select("s27".into()),
             ]
         );
+    }
+
+    /// A table 702 wide, so 700 inside its border, with a column that takes
+    /// what the others leave and one of numbers against its end.
+    struct Spread {
+        state: Entity<TableState>,
+    }
+
+    impl Render for Spread {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(Table::new(&self.state).w(px(702.)).h(px(301.)))
+        }
+    }
+
+    #[gpui::test]
+    fn lines_up_each_title_with_its_cells(cx: &mut TestAppContext) {
+        cx.update(crate::theme::init);
+
+        let (_, cx) = cx.add_window_view(|_, cx| {
+            let columns = vec![
+                TableColumn::new("name", "Name")
+                    .width(px(200.))
+                    .grow()
+                    .sortable(),
+                TableColumn::new("tokens", "Tokens")
+                    .width(px(100.))
+                    .end()
+                    .sortable(),
+                TableColumn::new("model", "Model").width(px(150.)),
+            ];
+            let rows = vec![TableRow::new("s0", ["Session 0", "1,234", "opus"])];
+
+            Spread {
+                state: cx.new(|cx| TableState::new(columns, rows, cx)),
+            }
+        });
+
+        let bounds = |cx: &mut VisualTestContext, selector: &'static str| {
+            cx.debug_bounds(selector)
+                .unwrap_or_else(|| panic!("{selector} was not drawn"))
+        };
+
+        // Each column is as wide under its title as in it, and the one that
+        // grows takes all that is left: 700 less 250.
+        for (title, cell) in [
+            ("title-0", "cell-0-0"),
+            ("title-1", "cell-0-1"),
+            ("title-2", "cell-0-2"),
+        ] {
+            let title = bounds(cx, title);
+            let cell = bounds(cx, cell);
+
+            assert_eq!((title.left(), title.right()), (cell.left(), cell.right()));
+        }
+
+        assert_eq!(bounds(cx, "cell-0-0").size.width, px(450.));
+
+        // A title's words start where its values start, or end where they
+        // end in a column against its end.
+        assert_eq!(bounds(cx, "words-0").left(), bounds(cx, "value-0-0").left());
+        assert_eq!(
+            bounds(cx, "words-1").right(),
+            bounds(cx, "value-0-1").right()
+        );
+        assert_eq!(bounds(cx, "words-2").left(), bounds(cx, "value-0-2").left());
+    }
+
+    #[gpui::test]
+    fn lines_up_the_titles_when_no_column_grows(cx: &mut TestAppContext) {
+        let (_, _, cx) = sessions(cx);
+
+        for (title, cell) in [("title-0", "cell-0-0"), ("title-1", "cell-0-1")] {
+            let title = cx.debug_bounds(title).unwrap();
+            let cell = cx.debug_bounds(cell).unwrap();
+
+            assert_eq!((title.left(), title.right()), (cell.left(), cell.right()));
+        }
     }
 
     #[gpui::test]
