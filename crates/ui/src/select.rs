@@ -1,5 +1,6 @@
-//! A choice of one value from a list, which opens under its trigger. A list
-//! can be searched as it is typed in. The keyboard opens it with Up, Down,
+//! A choice of one value from a list, which opens under its trigger and,
+//! when it is longer than it shows, scrolls with a scrollbar. A list can be
+//! searched as it is typed in. The keyboard opens it with Up, Down,
 //! Enter, or Space, moves through it with Up and Down, chooses with Enter,
 //! and closes it with Escape.
 
@@ -15,6 +16,7 @@ use crate::icon::{Icon, IconName};
 use crate::input::Input;
 use crate::overlay::{self, Dismiss};
 use crate::root::{h_flex, v_flex};
+use crate::scroll::Scrollbar;
 use crate::size::{Sizable, Size};
 use crate::text::{InputEvent, InputState};
 use crate::theme::ActiveTheme as _;
@@ -489,6 +491,12 @@ impl RenderOnce for Select {
                         .child("Nothing matches"),
                 )
             });
+
+        // The scrollbar stays put over the list that scrolls under it.
+        let list = div().relative().child(list).child(Scrollbar::vertical(
+            ("select-scrollbar", id),
+            state.scroll.clone(),
+        ));
 
         let closing = self.state.clone();
         let surface = overlay::surface(cx)

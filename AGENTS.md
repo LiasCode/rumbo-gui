@@ -180,3 +180,12 @@ hyprctl output remove RUMBOUI
 
 Keys sent to a window that does not have the desktop's keyboard make GPUI
 take the window as left after them, so a field tells `Blur` once they stop.
+Removing the output gives the monitor focus to another of the person's
+monitors; say so, since giving it back would move the pointer.
+
+What needs the pointer, such as dragging a scrollbar, is tested in GPUI's
+test context instead: `ui` has `gpui` with `test-support` as a
+dev-dependency, which gives a window in the test's own process that
+`simulate_mouse_down`, `simulate_mouse_move`, and `simulate_mouse_up`
+drive, as `scroll.rs`'s tests do. What a person sees under the pointer,
+such as a hover, is for them to look at.

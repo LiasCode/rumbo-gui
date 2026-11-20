@@ -14,20 +14,22 @@
 mod pages;
 
 use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    AnyElement, App, AppContext as _, Bounds, Context, Entity, FocusHandle, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement as _, Point, Render, ScrollHandle,
     StatefulInteractiveElement as _, Styled as _, Window, WindowBounds, WindowOptions, div, px,
     size,
 };
 use ui::{
-    ActiveTheme as _, Button, Label, Select, SelectEvent, SelectItem, SelectState, Sizable as _,
-    Switch, Theme, ThemeMode, Typeface, h_flex, v_flex,
+    ActiveTheme as _, Button, Label, Scrollbar, Select, SelectEvent, SelectItem, SelectState,
+    Sizable as _, Switch, Theme, ThemeMode, Typeface, h_flex, v_flex,
 };
 
 use pages::{Demos, Page};
 
 struct Overview {
     page: Page,
+    /// Where the page shown is scrolled.
+    scroll: ScrollHandle,
     demos: Demos,
     /// The typeface in force, chosen under the navigation.
     typeface: Entity<SelectState>,
@@ -77,6 +79,7 @@ impl Overview {
 
         Overview {
             page,
+            scroll: ScrollHandle::new(),
             demos: Demos::new(window, cx),
             typeface,
             focus_handle,
@@ -106,7 +109,9 @@ impl Overview {
                 .w_full()
                 .justify_start()
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    // Another page starts at its top.
                     this.page = page;
+                    this.scroll.set_offset(Point::default());
                     cx.notify();
                 }))
         });
@@ -160,9 +165,8 @@ impl Overview {
 
 impl Render for Overview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let muted = cx.theme().colors.muted_foreground;
-        let page = self.page;
-        let sections = self.demos.render(page, window, cx);
+        let sections = self.demos.render(self.page, window, cx);
+        let page_content = self.render_page(sections, cx);
 
         ui::root(cx).track_focus(&self.focus_handle).child(
             h_flex()
@@ -170,30 +174,46 @@ impl Render for Overview {
                 .items_start()
                 .child(self.render_navigation(cx))
                 .child(
-                    v_flex()
-                        .id("page")
+                    div()
+                        .relative()
                         .flex_1()
                         .h_full()
                         .min_w_0()
-                        .overflow_y_scroll()
-                        .px_10()
-                        .pt_8()
-                        .pb_16()
-                        .gap_8()
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_2xl()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(page.title()),
-                                )
-                                .child(div().text_sm().text_color(muted).child(page.about())),
-                        )
-                        .children(sections),
+                        .child(page_content)
+                        .child(Scrollbar::vertical("page-scrollbar", self.scroll.clone())),
                 ),
         )
+    }
+}
+
+impl Overview {
+    /// The page shown, which scrolls under its scrollbar.
+    fn render_page(&self, sections: Vec<AnyElement>, cx: &App) -> AnyElement {
+        let muted = cx.theme().colors.muted_foreground;
+        let page = self.page;
+
+        v_flex()
+            .id("page")
+            .size_full()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .px_10()
+            .pt_8()
+            .pb_16()
+            .gap_8()
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_2xl()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(page.title()),
+                    )
+                    .child(div().text_sm().text_color(muted).child(page.about())),
+            )
+            .children(sections)
+            .into_any_element()
     }
 }
 

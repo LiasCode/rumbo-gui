@@ -14,6 +14,7 @@ use gpui::{
 
 use super::edit::{self, Buffer, EditKind, Motion};
 use super::element::Painted;
+use crate::scroll::Measure;
 
 actions!(
     input,
@@ -328,6 +329,26 @@ impl InputState {
 
     pub(super) fn buffer(&self) -> &Buffer {
         &self.buffer
+    }
+
+    /// How far a field of several lines is scrolled down, how far it can
+    /// be, and how much of it shows; none for one line, or until painted.
+    pub(crate) fn vertical_scroll(&self) -> Option<Measure> {
+        let painted = self.painted.as_ref().filter(|_| self.rows.is_some())?;
+        let shown = painted.bounds().size.height;
+
+        Some(Measure {
+            scrolled: self.scroll.y,
+            most: (painted.height() - shown).max(Pixels::ZERO),
+            shown,
+        })
+    }
+
+    /// Scrolls a field of several lines down to `distance`, as its
+    /// scrollbar does; the cursor may go out of view.
+    pub(crate) fn scroll_down_to(&mut self, distance: Pixels, cx: &mut Context<Self>) {
+        self.scroll.y = distance.max(Pixels::ZERO);
+        cx.notify();
     }
 
     /// What the field shows of its text, and where an offset of it falls

@@ -9,3 +9,7 @@ publish = false
 # still uses GPUI Kit.
 gpui = { package = "gpui-pre", version = "=0.3.12" }
 unicode-segmentation = "1.13.3"
+
+[dev-dependencies]
+# A window in the test's own process, for the pointer to be simulated on.
+gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }

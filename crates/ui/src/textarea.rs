@@ -1,12 +1,13 @@
 //! A field of several lines, drawing an `InputState` made with
 //! `multi_line`: it grows with its text between the rows it was given, and
-//! scrolls past them.
+//! scrolls past them, with a scrollbar.
 
 use gpui::{
     App, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Refineable as _,
     RenderOnce, StyleRefinement, Styled, Window,
 };
 
+use crate::scroll::Scrollbar;
 use crate::size::{Sizable, Size};
 use crate::text::{self, InputState, TextElement};
 
@@ -68,7 +69,13 @@ impl RenderOnce for Textarea {
             .text_size(size.text())
             .line_height(size.line_height())
             .on_scroll(window.listener_for(&self.state, InputState::on_scroll))
-            .child(TextElement::new(&self.state));
+            .relative()
+            .child(TextElement::new(&self.state))
+            // Over the frame's padding, beside the text rather than on it.
+            .child(Scrollbar::vertical(
+                ("textarea-scrollbar", self.state.entity_id().as_u64()),
+                self.state.clone(),
+            ));
 
         textarea.style().refine(&self.style);
         textarea

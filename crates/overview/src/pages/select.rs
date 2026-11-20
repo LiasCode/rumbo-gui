@@ -141,7 +141,7 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
         ),
         section(
             "Searched",
-            "Typing narrows it to what holds every word typed. It scrolls past ten rows.",
+            "Typing narrows it to what holds every word typed. Longer than it shows, it scrolls: with the wheel, or its scrollbar dragged or pressed on its track.",
             div().w(width).child(Select::new(&demo.searchable)),
             cx,
         ),

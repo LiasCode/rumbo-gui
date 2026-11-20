@@ -7,6 +7,7 @@ mod floating_window;
 mod input;
 mod label;
 mod popover;
+mod scrollbar;
 mod select;
 mod switch;
 mod textarea;
@@ -29,6 +30,7 @@ pub enum Page {
     Checkbox,
     Switch,
     Tooltip,
+    Scrollbar,
     Input,
     Textarea,
     Select,
@@ -37,13 +39,14 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 11] = [
+    pub const ALL: [Page; 12] = [
         Page::Typography,
         Page::Label,
         Page::Button,
         Page::Checkbox,
         Page::Switch,
         Page::Tooltip,
+        Page::Scrollbar,
         Page::Input,
         Page::Textarea,
         Page::Select,
@@ -59,6 +62,7 @@ impl Page {
             Page::Checkbox => "Checkbox",
             Page::Switch => "Switch",
             Page::Tooltip => "Tooltip",
+            Page::Scrollbar => "Scrollbar",
             Page::Input => "Input",
             Page::Textarea => "Textarea",
             Page::Select => "Select",
@@ -75,6 +79,7 @@ impl Page {
             Page::Checkbox => "checkbox",
             Page::Switch => "switch",
             Page::Tooltip => "tooltip",
+            Page::Scrollbar => "scrollbar",
             Page::Input => "input",
             Page::Textarea => "textarea",
             Page::Select => "select",
@@ -101,6 +106,9 @@ impl Page {
             Page::Checkbox => "A choice that is on or off and takes effect when a form is sent.",
             Page::Switch => "A setting that is on or off and takes effect at once.",
             Page::Tooltip => "A word about a control, shown when the pointer rests on it.",
+            Page::Scrollbar => {
+                "Along the edge of what scrolls: where the view is in it, and how much of it shows. It shows only while something is out of view."
+            }
             Page::Input => {
                 "A field of one line: typed, selected, copied, undone, and composed with an input method."
             }
@@ -126,6 +134,7 @@ pub struct Demos {
     checkbox: checkbox::Demo,
     switch: switch::Demo,
     tooltip: tooltip::Demo,
+    scrollbar: scrollbar::Demo,
     input: input::Demo,
     textarea: textarea::Demo,
     select: select::Demo,
@@ -140,6 +149,7 @@ impl Demos {
             checkbox: checkbox::Demo::default(),
             switch: switch::Demo::default(),
             tooltip: tooltip::Demo::new(cx),
+            scrollbar: scrollbar::Demo::default(),
             input: input::Demo::new(window, cx),
             textarea: textarea::Demo::new(window, cx),
             select: select::Demo::new(window, cx),
@@ -162,6 +172,7 @@ impl Demos {
             Page::Checkbox => checkbox::render(self, window, cx),
             Page::Switch => switch::render(self, window, cx),
             Page::Tooltip => tooltip::render(self, window, cx),
+            Page::Scrollbar => scrollbar::render(self, window, cx),
             Page::Input => input::render(self, window, cx),
             Page::Textarea => textarea::render(self, window, cx),
             Page::Select => select::render(self, window, cx),

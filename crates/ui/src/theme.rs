@@ -65,6 +65,12 @@ pub struct ThemeColors {
     pub caret: Hsla,
     /// The track of a switch that is off.
     pub switch: Hsla,
+    /// A scrollbar's thumb at rest, under the pointer, and dragged, and
+    /// its track while the pointer is on it.
+    pub scrollbar_thumb: Hsla,
+    pub scrollbar_thumb_hover: Hsla,
+    pub scrollbar_thumb_active: Hsla,
+    pub scrollbar_track: Hsla,
     pub link: Hsla,
     pub link_hover: Hsla,
 }
@@ -125,6 +131,10 @@ impl Theme {
                 selection: rgba(0x55a0fc66).into(),
                 caret: hex(NEUTRAL_950),
                 switch: hex(NEUTRAL_300),
+                scrollbar_thumb: rgba(0xa3a3a399).into(),
+                scrollbar_thumb_hover: hex(NEUTRAL_400),
+                scrollbar_thumb_active: hex(NEUTRAL_500),
+                scrollbar_track: rgba(0xf5f5f5cc).into(),
                 link: hex(NEUTRAL_950),
                 link_hover: hex(NEUTRAL_700),
             },
@@ -165,6 +175,10 @@ impl Theme {
                 selection: rgba(0x1d4ed899).into(),
                 caret: hex(NEUTRAL_50),
                 switch: hex(NEUTRAL_700),
+                scrollbar_thumb: rgba(0x525252b3).into(),
+                scrollbar_thumb_hover: hex(NEUTRAL_600),
+                scrollbar_thumb_active: hex(NEUTRAL_500),
+                scrollbar_track: rgba(0x171717cc).into(),
                 link: hex(NEUTRAL_50),
                 link_hover: hex(NEUTRAL_300),
             },
@@ -268,6 +282,7 @@ const NEUTRAL_200: u32 = 0xe5e5e5;
 const NEUTRAL_300: u32 = 0xd4d4d4;
 const NEUTRAL_400: u32 = 0xa3a3a3;
 const NEUTRAL_500: u32 = 0x737373;
+const NEUTRAL_600: u32 = 0x525252;
 const NEUTRAL_700: u32 = 0x404040;
 const NEUTRAL_800: u32 = 0x262626;
 const NEUTRAL_900: u32 = 0x171717;
