@@ -49,7 +49,11 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   opens the person's home folder as one. Started by rumbo, it attaches to
   that rumbo instead, and works only in its project. Ctrl-+ and Ctrl--
   draw the whole window bigger or smaller, and Ctrl-0 at its own size, by
-  the window's rem size, which the preferences keep.
+  the window's rem size, which the preferences keep. When a run ends where
+  the person may not see it, the shell says so: in a notification of the
+  window when its session is not shown, and, if the person turned it on,
+  in one of the desktop when the window is in the background, through
+  GPUI's system notifications. Pressing that one shows its session.
 - **navigation** (`src/navigation.rs`) keeps the places the window showed,
   as a browser keeps the pages: a session of a project, a new session
   included, or the settings. The toolbar's arrows, Alt-Left and Alt-Right,

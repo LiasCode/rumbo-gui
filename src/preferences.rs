@@ -108,6 +108,10 @@ pub struct Preferences {
     /// Keeps quiet when a run ends in a session that is not shown, which the
     /// window otherwise says in a notification.
     pub quiet: bool,
+    /// Has the desktop say when a run ends while the window is in the
+    /// background. Off until the person turns it on, as the window said
+    /// nothing to the desktop before it could.
+    pub desktop_notifications: bool,
     /// How big the interface is drawn, in percent of its own size; none
     /// draws it at its own.
     pub zoom: Option<u32>,
@@ -247,6 +251,22 @@ mod tests {
                 .unwrap()
                 .contains(r#""theme": "dark""#)
         );
+    }
+
+    #[test]
+    fn says_nothing_to_the_desktop_until_asked() {
+        let scratch = Scratch::new("desktop");
+        let file = scratch.0.join("preferences.json");
+
+        // A file kept before the window could say anything to the desktop.
+        fs::create_dir_all(&scratch.0).unwrap();
+        fs::write(&file, r#"{"theme": "dark", "quiet": false}"#).unwrap();
+
+        let (kept, problem) = load(&file);
+
+        assert_eq!(problem, None);
+        assert!(!kept.desktop_notifications);
+        assert!(!Preferences::default().desktop_notifications);
     }
 
     #[test]

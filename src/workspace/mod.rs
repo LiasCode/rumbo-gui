@@ -88,11 +88,15 @@ pub enum WorkspaceEvent {
     OpenInEditor {
         path: String,
     },
-    /// A run of this window ended in a session that is not shown.
-    EndedElsewhere {
+    /// A run of this window ended: in the session shown when `shown`, by
+    /// the title a person knows the session by, with how it ended and the
+    /// error it ended with.
+    RunEnded {
         session: String,
         title: String,
         status: String,
+        error: String,
+        shown: bool,
     },
     /// The session shown is now another: a place the person went to when
     /// `went`, or else the place shown under its own name, as when going
@@ -489,6 +493,33 @@ impl Workspace {
     /// Whether the host offers a function of its own, by name.
     pub fn offers(&self, name: &str) -> bool {
         self.host_function(name).is_some()
+    }
+
+    /// The name a person knows a session by: the title the host gives it,
+    /// else the first line of its first task, as a new one has until the
+    /// host lists it, else its id.
+    fn title_of(&self, session: &str) -> String {
+        let titled = self
+            .listed
+            .iter()
+            .find(|listed| listed.value == session)
+            .map(|listed| listed.label.clone())
+            .filter(|label| !label.is_empty());
+
+        let asked = || {
+            self.views.get(session).and_then(|view| {
+                view.conversation
+                    .items()
+                    .iter()
+                    .find_map(|item| match &item.kind {
+                        Kind::Task(text, _) => Some(crate::conversation::first_line(text)),
+                        _ => None,
+                    })
+                    .filter(|line| !line.is_empty())
+            })
+        };
+
+        titled.or_else(asked).unwrap_or_else(|| session.to_string())
     }
 
     /// The title the host gives the session shown, once it has one.
@@ -1360,24 +1391,22 @@ impl Workspace {
 
         self.show(&key, change, cx);
 
-        if key == self.current {
+        let shown = key == self.current;
+
+        // A session not shown is marked until it is.
+        if shown {
             self.set_hint(cx);
         } else {
-            let title = self
-                .listed
-                .iter()
-                .find(|listed| listed.value == key)
-                .map(|listed| listed.label.clone())
-                .filter(|label| !label.is_empty())
-                .unwrap_or_else(|| key.clone());
-
             self.unseen.insert(key.clone());
-            cx.emit(WorkspaceEvent::EndedElsewhere {
-                session: key.clone(),
-                title,
-                status,
-            });
         }
+
+        cx.emit(WorkspaceEvent::RunEnded {
+            session: key.clone(),
+            title: self.title_of(&key),
+            status,
+            error,
+            shown,
+        });
 
         self.refresh_sessions();
         self.refresh_panel(cx);

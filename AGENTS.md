@@ -123,7 +123,9 @@ among words and on their own, a Mermaid diagram, and images from a file
 and from the web, the details panel (a session with runs and a new one,
 the skills with one left out, and everything rumbo reports opened), a session
 exported, the project opened in the editor, the notification of a run that
-ends in a session not shown and the mark it leaves, a system setting
+ends in a session not shown and the mark it leaves, the desktop's
+notification of one that ends while the window is in the background, with
+it turned on and off, and one pressed to show its session, a system setting
 changed and a provider's details, the window started with
 no project, the window started by `rumbo -f gui`, and closing the window,
 which must leave no `rumbo serve` behind.
@@ -202,6 +204,19 @@ size.
 # sway.conf: output HEADLESS-1 resolution 1280x800
 env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DISPLAY \
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 sway -c sway.conf
+```
+
+A notification of the desktop goes to the D-Bus of the session the window
+runs in, which shows it on the person's desktop. Give the window and the
+Sway a bus of their own instead, with `DBUS_SESSION_BUS_ADDRESS` naming it,
+and run mako on it, which draws the notifications in the Sway, where they
+are seen and pressed; `dbus-monitor` on that bus shows what was sent.
+Switching the Sway to an empty workspace puts the window in the
+background.
+
+```sh
+dbus-daemon --session --nofork --address=unix:path=/tmp/scratch/bus
+DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/scratch/bus mako   # with the Sway's WAYLAND_DISPLAY
 ```
 
 Open Project… asks the desktop's folder dialog, which takes `/` and a path

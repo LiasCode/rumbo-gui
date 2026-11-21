@@ -89,6 +89,9 @@ fn main() {
             shell::bind_keys(cx);
             workspace::bind_keys(cx);
 
+            // The name the desktop shows the window's notifications under.
+            cx.set_app_identity(protocol::NAME, "rumbo");
+
             // Closing the last window ends the app, and with it the host.
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {

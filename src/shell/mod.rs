@@ -15,8 +15,8 @@ use std::time::Duration;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, MouseButton, NavigationDirection,
-    ParentElement as _, PathPromptOptions, Render, Styled as _, Subscription, Task, Window,
-    actions, div, prelude::FluentBuilder as _, px,
+    ParentElement as _, PathPromptOptions, Render, Styled as _, Subscription, SystemNotification,
+    Task, Window, actions, div, prelude::FluentBuilder as _, px,
 };
 use ui::{
     ActiveTheme as _, Button, DialogLayer, Dialogs, IconName, InputEvent, InputState, PanelSize,
@@ -267,6 +267,28 @@ impl Shell {
         // When what had the keyboard is gone, as a session deleted from the
         // sidebar, the work takes it, so the window's keys still work.
         let focus_lost = cx.on_focus_lost(window, |this, window, cx| this.focus_work(window, cx));
+
+        // Pressing a desktop notification of a run shows its session, and
+        // asks the desktop to bring the window to the front, which it may
+        // not do without a press in the window.
+        let shell = cx.weak_entity();
+        let handle = window.window_handle();
+
+        cx.on_system_notification_response(move |response, cx| {
+            let Some((id, session)) = tagged(&response.tag) else {
+                return;
+            };
+
+            let _ = handle.update(cx, |_, window, cx| {
+                window.activate_window();
+
+                let _ = shell.update(cx, |this, cx| {
+                    if this.project(id).is_some() {
+                        this.open_session(id, session, window, cx);
+                    }
+                });
+            });
+        });
 
         let mut shell = Shell {
             config: None,
@@ -615,14 +637,21 @@ impl Shell {
                 cx,
             ),
 
-            WorkspaceEvent::EndedElsewhere {
+            WorkspaceEvent::RunEnded {
                 session,
                 title,
                 status,
+                error,
+                shown,
             } => {
-                let _ = session;
+                let ended = Ended {
+                    session,
+                    title,
+                    status,
+                    error,
+                };
 
-                self.ended_elsewhere(id, title, status, cx)
+                self.run_ended(id, &ended, *shown, window, cx)
             }
 
             WorkspaceEvent::Shown { session, went } => self.shown(id, session, *went, cx),
@@ -651,40 +680,47 @@ impl Shell {
         cx.notify();
     }
 
-    /// Says that a run ended in a session that is not shown, unless the
-    /// person asked for quiet. The sidebar marks the session until it is
-    /// shown.
-    fn ended_elsewhere(
+    /// Says that a run ended where the person may not see it: in a
+    /// notification of the window when its session is not shown, unless
+    /// they asked for quiet, and the sidebar marks the session until it is;
+    /// and in one of the desktop when the window is in the background, if
+    /// they asked for that.
+    fn run_ended(
         &mut self,
         id: ProjectId,
-        title: &str,
-        status: &str,
+        ended: &Ended<'_>,
+        shown: bool,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
-        if self.preferred.preferences.quiet {
-            return;
-        }
-
         let project = self
             .project(id)
             .map(|project| folder_name(&project.dir))
             .unwrap_or_default();
-        let said = match status {
-            crate::protocol::RUN_DONE => "finished",
-            crate::protocol::RUN_CANCELLED => "was cancelled",
-            _ => "failed",
-        };
-        let note = Toast::new(format!("A run {said} in {project}")).description(title.to_string());
 
-        let note = match status {
-            crate::protocol::RUN_DONE => note.success(),
-            crate::protocol::RUN_CANCELLED => note,
-            _ => note.danger(),
-        };
+        if !shown && !self.preferred.preferences.quiet {
+            let said = match ended.status {
+                crate::protocol::RUN_DONE => "finished",
+                crate::protocol::RUN_CANCELLED => "was cancelled",
+                _ => "failed",
+            };
+            let note = Toast::new(format!("A run {said} in {project}"))
+                .description(ended.title.to_string());
 
-        self.toasts.update(cx, |toasts, cx| {
-            toasts.push(note, cx);
-        });
+            let note = match ended.status {
+                crate::protocol::RUN_DONE => note.success(),
+                crate::protocol::RUN_CANCELLED => note,
+                _ => note.danger(),
+            };
+
+            self.toasts.update(cx, |toasts, cx| {
+                toasts.push(note, cx);
+            });
+        }
+
+        if self.preferred.preferences.desktop_notifications && !window.is_window_active() {
+            cx.show_system_notification(desktop_note(id, &project, ended));
+        }
     }
 
     /// Shows a project: the session its host has current, or why it has
@@ -1520,6 +1556,46 @@ impl Render for Shell {
     }
 }
 
+/// A run that ended, as its workspace told it.
+struct Ended<'a> {
+    session: &'a str,
+    title: &'a str,
+    status: &'a str,
+    error: &'a str,
+}
+
+/// What the desktop is told of a run that ended: the session's title, and
+/// how the run ended in which project, with the first line of its error.
+/// Its tag names the project and the session, which pressing it shows.
+fn desktop_note(id: ProjectId, project: &str, ended: &Ended<'_>) -> SystemNotification {
+    let error = crate::conversation::first_line(ended.error);
+    let body = match ended.status {
+        crate::protocol::RUN_DONE => format!("Finished in {project}"),
+        crate::protocol::RUN_CANCELLED => format!("Cancelled in {project}"),
+        _ if error.is_empty() => format!("Failed in {project}"),
+        _ => format!("Failed in {project}: {error}"),
+    };
+
+    SystemNotification {
+        tag: note_tag(id, ended.session).into(),
+        title: ended.title.to_string().into(),
+        body: body.into(),
+        actions: Vec::new(),
+    }
+}
+
+/// The tag of a desktop notification of a run in a session of a project.
+fn note_tag(id: ProjectId, session: &str) -> String {
+    format!("run:{id}:{session}")
+}
+
+/// The project and the session a desktop notification's tag names.
+fn tagged(tag: &str) -> Option<(ProjectId, String)> {
+    let (id, session) = tag.strip_prefix("run:")?.split_once(':')?;
+
+    Some((id.parse().ok()?, session.to_string()))
+}
+
 /// Puts a theme in force. One that follows the desktop asks the window,
 /// which knows its appearance better than the app on Linux.
 fn apply_theme(theme: Colors, window: &mut Window, cx: &mut App) {
@@ -1612,4 +1688,53 @@ fn folder_name(dir: &Path) -> String {
     dir.file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| dir.display().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ended<'a>(status: &'a str, error: &'a str) -> Ended<'a> {
+        Ended {
+            session: "4cf0261c",
+            title: "Fix the failing test",
+            status,
+            error,
+        }
+    }
+
+    #[test]
+    fn tells_the_desktop_how_a_run_ended_and_where() {
+        let done = desktop_note(3, "alpha", &ended(crate::protocol::RUN_DONE, ""));
+
+        assert_eq!(done.title, "Fix the failing test");
+        assert_eq!(done.body, "Finished in alpha");
+        assert_eq!(done.tag, "run:3:4cf0261c");
+
+        let cancelled = desktop_note(3, "alpha", &ended(crate::protocol::RUN_CANCELLED, ""));
+
+        assert_eq!(cancelled.body, "Cancelled in alpha");
+
+        let failed = desktop_note(
+            3,
+            "alpha",
+            &ended(crate::protocol::RUN_FAILED, "429 rate limited\nretry later"),
+        );
+
+        assert_eq!(failed.body, "Failed in alpha: 429 rate limited");
+
+        let failed = desktop_note(3, "alpha", &ended(crate::protocol::RUN_FAILED, ""));
+
+        assert_eq!(failed.body, "Failed in alpha");
+    }
+
+    #[test]
+    fn a_notification_names_the_session_it_shows() {
+        assert_eq!(
+            tagged(&note_tag(3, "4cf0261c")),
+            Some((3, "4cf0261c".into()))
+        );
+        assert_eq!(tagged("run:x:4cf0261c"), None);
+        assert_eq!(tagged("other"), None);
+    }
 }

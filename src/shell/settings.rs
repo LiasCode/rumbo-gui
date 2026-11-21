@@ -321,6 +321,33 @@ impl SettingsView {
         })
         .keywords(["notification", "notify", "background", "quiet"]);
 
+        let desktop = self.preferences.desktop_notifications;
+        let telling = view.clone();
+        let desktop_item = SettingsItem::new(move |_, cx| {
+            let view = telling.clone();
+
+            h_flex()
+                .gap_4()
+                .justify_between()
+                .child(described(
+                    "Notify from the desktop",
+                    "A notification of the desktop when a run ends while you work in another window. Pressing it shows the session.",
+                    cx,
+                ))
+                .child(Switch::new("desktop-notifications").checked(desktop).on_change(
+                    move |checked, _, cx| {
+                        let desktop = *checked;
+
+                        Self::prefer(
+                            &view,
+                            |preferences| preferences.desktop_notifications = desktop,
+                            cx,
+                        )
+                    },
+                ))
+        })
+        .keywords(["notification", "notify", "desktop", "system", "background"]);
+
         let editor = self.editor.clone();
         let editor_item = SettingsItem::new(move |_, cx| {
             h_flex()
@@ -346,6 +373,7 @@ impl SettingsView {
                 SettingsGroup::new()
                     .title("Behavior")
                     .item(notify_item)
+                    .item(desktop_item)
                     .item(editor_item),
             )
             .group(SettingsGroup::new().item(kept_item))

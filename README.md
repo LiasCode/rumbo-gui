@@ -16,7 +16,7 @@ conversation, and rumbo's settings, without a terminal.
   rumbo, and the settings show them and change them through rumbo, which
   checks a change before it keeps it. The window keeps only
   its preferences (theme, conversation width, the sidebar, the editor, and
-  whether to say when a run ends elsewhere), in
+  whether to say when a run ends elsewhere, and from the desktop), in
   `rumbo-gui/preferences.json` under `~/.config` (or `$XDG_CONFIG_HOME`).
 - **The files are yours.** rumbo keeps the conversation, not the files, so
   the Changes panel shows what Git sees changed in the project's folder,
@@ -43,7 +43,9 @@ conversation, and rumbo's settings, without a terminal.
   folder; the Details panel, how full the model's context is, the tokens
   spent, and the skills the model is told of.
 - **Leave runs working.** Runs go on in other sessions and projects; the
-  window tells you when one ends, and marks its session.
+  window tells you when one ends, and marks its session. Turn on Notify
+  from the desktop in the settings, and the desktop tells you when one ends
+  while you work in another window; pressing it shows the session.
 
 ## Install
 
