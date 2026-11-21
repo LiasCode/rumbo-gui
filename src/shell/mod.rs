@@ -1114,8 +1114,9 @@ impl Shell {
 
     /// The window with no project open yet: a way to open one, and the
     /// projects rumbo holds, most recently used first, which open in the
-    /// session used last.
+    /// session used last. The sidebar lists those when it is shown.
     fn render_empty(&self, cx: &mut Context<Self>) -> AnyElement {
+        let sidebar_shown = !self.preferred.preferences.sidebar_hidden;
         let listed: Vec<Button> = self
             .catalog
             .as_ref()
@@ -1134,6 +1135,7 @@ impl Shell {
                 Button::new(ElementId::Name(format!("recent-{root}").into()))
                     .ghost()
                     .w_full()
+                    .justify_start()
                     .icon(IconName::FolderClosed)
                     .label(format!("{label} — {}", project.description))
                     .tooltip(root.clone())
@@ -1143,9 +1145,14 @@ impl Shell {
             })
             .collect();
 
+        let said = match sidebar_shown && !listed.is_empty() {
+            true => "Open the folder of a project to work in it, or a recent one in the sidebar.",
+            false => "Open the folder of a project to work in it.",
+        };
+
         centered()
             .child(div().text_xl().child("rumbo"))
-            .child(muted("Open the folder of a project to work in it.", cx))
+            .child(muted(said, cx))
             .child(
                 Button::new("open-folder")
                     .track_focus(&self.action_focus)
@@ -1154,7 +1161,7 @@ impl Shell {
                     .label("Open Project…")
                     .on_click(cx.listener(|this, _, window, cx| this.choose_folder(window, cx))),
             )
-            .when(!listed.is_empty(), |screen| {
+            .when(!sidebar_shown && !listed.is_empty(), |screen| {
                 screen.child(
                     v_flex()
                         .w(rems_from_px(440.))

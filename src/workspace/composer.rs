@@ -51,7 +51,6 @@ impl Workspace {
             .views
             .get(&self.current)
             .is_some_and(|view| view.run.is_some());
-        let muted = cx.theme().colors.muted_foreground;
 
         let send = Button::new("send")
             .primary()
@@ -80,12 +79,6 @@ impl Workspace {
             .label(self.model_name())
             .tooltip("The model and the options of this session")
             .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx)));
-
-        let hint = if working {
-            "Enter tells the run · Escape cancels it · Ctrl-V pastes an image"
-        } else {
-            "Enter sends · Shift-Enter starts a line · Ctrl-V pastes an image · Up brings back what was asked"
-        };
 
         let card = v_flex()
             .w_full()
@@ -129,17 +122,7 @@ impl Workspace {
                     .child(send),
             );
 
-        column
-            .child(card)
-            .child(
-                div()
-                    .w_full()
-                    .text_center()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(hint),
-            )
-            .into_any_element()
+        column.child(card).into_any_element()
     }
 
     /// The images pasted into the composer, each with a button that takes it

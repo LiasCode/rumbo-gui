@@ -52,6 +52,11 @@ const KEY_CONTEXT: &str = "Workspace";
 const TASK_HINT: &str = "Give rumbo a task";
 const STEER_HINT: &str = "Tell the run something; it reads it before its next request";
 
+/// What the status bar says the keys do, while nothing else needs saying,
+/// with and without a run.
+const READY_HINT: &str = "Enter sends · Shift-Enter starts a line · Ctrl-V pastes an image · Up brings back what was asked";
+const WORKING_HINT: &str = "Working · Enter tells the run · Escape cancels it";
+
 /// The keys of the workspace. Escape reaches it after the composer, which
 /// lets it through when it has nothing of its own to dismiss.
 pub fn bind_keys(cx: &mut App) {
@@ -450,11 +455,6 @@ impl Workspace {
     /// How many runs of this window work in the project.
     pub fn working(&self) -> usize {
         self.runs.len()
-    }
-
-    /// Whether the host is gone; the window can start it again.
-    pub fn has_ended(&self) -> bool {
-        self.ended.is_some()
     }
 
     /// Whether a run ended in the session while another was shown, and the
@@ -1717,11 +1717,12 @@ impl Workspace {
                     .color(cx.theme().colors.primary),
             )
             .child(div().text_2xl().child("What should rumbo do?"))
-            .child(div().text_sm().text_color(muted).child(format!(
-                "It works in {}, with {}",
-                self.dir,
-                self.model_name()
-            )))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(format!("It works in {}", self.dir)),
+            )
             .child(
                 v_flex()
                     .w(rems_from_px(self.width.min(520.)))
@@ -1762,15 +1763,16 @@ impl Workspace {
             _ if working && waiting > 1 => {
                 format!("Working; {waiting} messages wait for the next turn")
             }
-            _ if working => "Working".into(),
-            _ => "Ready".into(),
+            _ if working => WORKING_HINT.into(),
+            _ => READY_HINT.into(),
         };
 
         let mut bar = StatusBar::new().start(
             h_flex()
+                .min_w_0()
                 .gap_1()
                 .when(working, |row| row.child(Spinner::new().xsmall()))
-                .child(state),
+                .child(div().min_w_0().truncate().child(state)),
         );
 
         if elsewhere > 0 {
@@ -1782,7 +1784,9 @@ impl Workspace {
                 bar = bar.end(context);
             }
 
-            bar = bar.end(view.spent.tokens());
+            if let Some(tokens) = view.spent.tokens() {
+                bar = bar.end(tokens);
+            }
         }
 
         bar
@@ -1812,7 +1816,6 @@ impl Render for Workspace {
             .min_w_0()
             .bg(cx.theme().colors.background)
             .text_color(cx.theme().colors.foreground)
-            .child(self.render_header(cx))
             .child(
                 h_flex()
                     .flex_1()

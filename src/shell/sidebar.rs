@@ -84,7 +84,7 @@ impl Shell {
         let new_session = Button::new("sidebar-new-session")
             .outline()
             .small()
-            .w_full()
+            .flex_1()
             .icon(IconName::SquarePen)
             .label("New Session")
             .disabled(self.selected_workspace().is_none())
@@ -93,48 +93,40 @@ impl Shell {
                 this.new_session_shown(&super::NewSession, window, cx)
             }));
 
-        let header = v_flex().w_full().gap_2().child(new_session).child(
-            Input::new(&self.search)
-                .small()
-                .cleanable(true)
-                .prefix(Icon::new(IconName::Search).xsmall()),
-        );
+        let open_project = Button::new("open-project")
+            .outline()
+            .small()
+            .icon(IconName::FolderOpen)
+            .disabled(!opens_projects)
+            .tooltip(if opens_projects {
+                "Open Project… (Ctrl-O)"
+            } else {
+                "This window belongs to the rumbo that started it, which works in one project"
+            })
+            .on_click(cx.listener(|this, _, window, cx| this.choose_folder(window, cx)));
 
-        let footer = h_flex()
+        let header = v_flex()
             .w_full()
-            .gap_1()
+            .gap_2()
             .child(
-                Button::new("open-project")
-                    .ghost()
-                    .small()
-                    .flex_1()
-                    .icon(IconName::FolderOpen)
-                    .label("Open Project…")
-                    .disabled(!opens_projects)
-                    .tooltip(if opens_projects {
-                        "Work in another folder (Ctrl-O)"
-                    } else {
-                        "This window belongs to the rumbo that started it, which works in one project"
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| this.choose_folder(window, cx))),
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .child(new_session)
+                    .child(open_project),
             )
             .child(
-                Button::new("sidebar-settings")
-                    .ghost()
+                Input::new(&self.search)
                     .small()
-                    .icon(IconName::Settings)
-                    .tooltip("Settings (Ctrl-,)")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_settings(&super::OpenSettings, window, cx)
-                    })),
+                    .cleanable(true)
+                    .prefix(Icon::new(IconName::Search).xsmall()),
             );
 
         // The divider beside it draws the line between it and the work.
         let mut sidebar = Sidebar::new("projects")
             .w_full()
             .border_r_0()
-            .header(header)
-            .footer(footer);
+            .header(header);
 
         if !open.is_empty() {
             sidebar = sidebar.child(SidebarGroup::new("Projects").children(open));
@@ -251,25 +243,17 @@ impl Shell {
             }
         };
 
-        let starting = opened(Opening::New);
         let menu_opening = opened(Opening::Latest);
         let menu_starting = opened(Opening::New);
         let said = listed.description.clone();
 
         // Pressed, it opens in its latest session only when the search
-        // leaves none of its sessions to show or hide.
+        // leaves none of its sessions to show or hide. A new session in it
+        // starts from its menu.
         let item = SidebarItem::new(row_id("recent", &root), label)
             .icon(IconName::FolderClosed)
             .default_open(!query.is_empty())
             .on_click(opened(Opening::Latest))
-            .suffix(
-                Button::new(row_id("start", &root))
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::SquarePen)
-                    .tooltip("New session")
-                    .on_click(move |_, window, cx| starting(window, cx)),
-            )
             .context_menu(move |_, _| {
                 let opening = menu_opening.clone();
                 let starting = menu_starting.clone();
@@ -316,7 +300,7 @@ impl Shell {
         // Pressed, it shows the project only while it lists no session, as
         // while its host starts; otherwise it shows or hides them.
         let selecting = shell.clone();
-        let mut item = SidebarItem::new(("project", id), name)
+        let item = SidebarItem::new(("project", id), name)
             .icon(IconName::FolderOpen)
             .default_open(true)
             .on_click(move |window, cx| {
@@ -369,21 +353,6 @@ impl Shell {
                 });
             }
         };
-
-        if workspace.offers(protocol::FUNCTION_NEW) && !workspace.has_ended() {
-            let shell = shell.clone();
-
-            item = item.suffix(
-                Button::new(("new-session", id))
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::SquarePen)
-                    .tooltip("New session")
-                    .on_click(move |_, window, cx| {
-                        let _ = shell.update(cx, |this, cx| this.new_session(id, window, cx));
-                    }),
-            );
-        }
 
         let current = workspace.current().to_string();
         let can_open = workspace.offers(protocol::FUNCTION_OPEN);

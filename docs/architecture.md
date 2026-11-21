@@ -36,7 +36,9 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   window, read once at startup from a file of the window's own and written
   when one changes. Everything else is rumbo's to keep.
 - **shell** (`src/shell/`) is the window's root view: the toolbar along the
-  top, which is also the title bar; the projects open in the window, each
+  top, which is also the title bar and the only bar over the work, with
+  where the window is, the session's panels and menu, the commands, and the
+  settings; the projects open in the window, each
   with its sessions, in the sidebar; and the work of the project shown, or
   the settings in its place. Each project has a workspace and a host of its
   own, started in the background when the project is opened, and its runs
@@ -73,15 +75,17 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   everything the host sends on one channel, in order. One order matters: a
   run's last events arrive before the answer that ends it.
 - **workspace** (`src/workspace/`) is one project attached to its host:
-  the sessions the host lists, the conversation of the one shown with a
-  header and the session's menu, the composer, a panel beside them, the
-  status bar, and the command palette. The shell lists the
-  sessions and opens them through it. It keeps a view of each session it
-  has shown, and sends each event to the view of the session it belongs
-  to: the session of the run it names, by the id of the run request, or the
-  session it names. A run in a new session learns the session's id from its
-  first event. A session shown for the first time asks the host for its
-  history, which comes before anything that happens in it after. The
+  the sessions the host lists, the conversation of the one shown, the
+  session's menu and the buttons of the panels, which the toolbar shows,
+  the composer, a panel beside them, the status bar, which says what the
+  keys do while nothing else needs saying, and the command palette. The
+  shell lists the sessions and opens them through it. It keeps a view of
+  each session it has shown, and sends each event to the view of the
+  session it belongs to: the session of the run it names, by the id of the
+  run request, or the session it names. A run in a new session learns the
+  session's id from its first event. A session shown for the first time
+  asks the host for its history, which comes before anything that happens
+  in it after. The
   composer starts with what the host recalls of the project's sessions,
   and keeps the images pasted into it, which go with what is sent next;
   **picture** (`src/picture.rs`) carries them between the clipboard, the

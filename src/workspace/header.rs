@@ -1,34 +1,29 @@
-//! The header above a session: which project and session are shown, a
-//! mark while a run works in it, the panels beside the conversation, and
-//! the session's menu, with what the host offers to do with it.
+//! What the window's title bar shows of the session shown: its name, the
+//! panels beside the conversation, and the session's menu, with what the
+//! host offers to do with it.
 
 use gpui::{
-    App, ClipboardItem, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _,
+    AnyElement, App, ClipboardItem, Context, IntoElement, ParentElement as _, Styled as _, Window,
 };
-use ui::{
-    ActiveTheme as _, Button, DropdownMenu, IconName, MenuItem, Placement, Sizable as _, Spinner,
-    h_flex, rems_from_px,
-};
+use ui::{Button, DropdownMenu, IconName, MenuItem, Placement, Sizable as _, h_flex};
 
 use super::{Panel, Workspace};
 use crate::protocol;
 
 impl Workspace {
-    pub(super) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let muted = cx.theme().colors.muted_foreground;
-        let project = folder_name(&self.dir);
-        let title = self
-            .session_title()
+    /// The name of the session shown: its title, or its id until it has
+    /// one, or New session until its first run makes it.
+    pub fn shown_name(&self) -> String {
+        self.session_title()
             .unwrap_or_else(|| match self.current.is_empty() {
                 true => "New session".into(),
                 false => self.current.clone(),
-            });
-        let working = self
-            .views
-            .get(&self.current)
-            .is_some_and(|view| view.run.is_some());
+            })
+    }
 
+    /// The buttons of the panels beside the conversation, and the session's
+    /// menu, for the window's title bar.
+    pub fn render_actions(&self, cx: &mut Context<Self>) -> AnyElement {
         let panel = |id: &'static str, icon: IconName, which: Panel, tooltip: &'static str| {
             Button::new(id)
                 .ghost()
@@ -42,41 +37,22 @@ impl Workspace {
         };
 
         h_flex()
-            .h(rems_from_px(44.))
             .flex_shrink_0()
-            .px_4()
-            .gap_2()
-            .justify_between()
-            .border_b_1()
-            .border_color(cx.theme().colors.border)
-            .child(
-                h_flex()
-                    .min_w_0()
-                    .gap_2()
-                    .text_sm()
-                    .child(div().flex_shrink_0().text_color(muted).child(project))
-                    .child(div().flex_shrink_0().text_color(muted).child("/"))
-                    .child(div().min_w_0().truncate().child(title))
-                    .when(working, |row| row.child(Spinner::new().xsmall())),
-            )
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_1()
-                    .child(panel(
-                        "panel-changes",
-                        IconName::GitCompare,
-                        Panel::Changes,
-                        "Changes in the project's folder (Ctrl-Shift-G)",
-                    ))
-                    .child(panel(
-                        "panel-details",
-                        IconName::PanelRight,
-                        Panel::Details,
-                        "The session's details (Ctrl-Alt-B)",
-                    ))
-                    .child(self.session_menu(cx)),
-            )
+            .gap_1()
+            .child(panel(
+                "panel-changes",
+                IconName::GitCompare,
+                Panel::Changes,
+                "Changes in the project's folder (Ctrl-Shift-G)",
+            ))
+            .child(panel(
+                "panel-details",
+                IconName::PanelRight,
+                Panel::Details,
+                "The session's details (Ctrl-Alt-B)",
+            ))
+            .child(self.session_menu(cx))
+            .into_any_element()
     }
 
     /// What can be done with the session shown, as the host offers it. A new
@@ -154,13 +130,4 @@ impl Workspace {
                 ]
             })
     }
-}
-
-/// The last part of a folder's path, which is how a person tells projects
-/// apart.
-pub(super) fn folder_name(dir: &str) -> String {
-    std::path::Path::new(dir)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| dir.to_string())
 }

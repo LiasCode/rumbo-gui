@@ -4,7 +4,7 @@ A desktop window for [rumbo](https://github.com/LiasCode/rumbo), the agent
 harness: every project and session in one place, each session as a
 conversation, and rumbo's settings, without a terminal.
 
-![The window: a toolbar with the commands and the settings; a sidebar with every project and its sessions; the conversation of the session shown, with tool calls; the composer; and a status bar with the model, the context, and the tokens.](docs/window.svg)
+![The window: a toolbar with the session shown, the commands, and the settings; a sidebar with every project and its sessions; the conversation of the session shown, with tool calls; the composer; and a status bar with what the keys do, the context, and the tokens.](docs/window.svg)
 
 ## How it works
 
