@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" role="img" aria-labelledby="title desc">
   <title id="title">How rumbo-gui works</title>
-  <desc id="desc">The rumbo-gui window speaks rumbo's Agent Frontend Protocol, JSON-RPC on stdin and stdout, with one rumbo serve for each project open in it, which runs its tasks and tells their history, and with one more, started in your home, which only lists every project and its sessions. The hosts reach the providers through the Agent Provider Protocol, and keep what you set, in rumbo's config.yaml, and each session of every project in a folder of its own. The window keeps only its theme.</desc>
+  <desc id="desc">The rumbo-gui window speaks rumbo's Agent Frontend Protocol, JSON-RPC on stdin and stdout, with one rumbo serve for each project open in it, which runs its tasks and tells their history, and with one more, started in your home, which only lists every project and its sessions. The hosts reach the providers through the Agent Provider Protocol, and keep what you set, in rumbo's config.yaml, and each session of every project in a folder of its own. The window keeps only its preferences.</desc>
   <style>
     text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -52,14 +52,14 @@
   <text class="sub" x="54" y="168">a conversation per session</text>
 
   <rect class="chip" x="40" y="188" width="208" height="44" rx="8"/>
-  <text class="step" x="54" y="208">Recent projects</text>
+  <text class="step" x="54" y="208">Every project</text>
   <text class="sub" x="54" y="224">all that rumbo holds</text>
 
   <rect class="chip" x="40" y="244" width="208" height="44" rx="8"/>
   <text class="step" x="54" y="264">Settings</text>
   <text class="sub" x="54" y="280">rumbo's, through rumbo</text>
 
-  <text class="sub" x="44" y="316">keeps only its theme, in</text>
+  <text class="sub" x="44" y="316">keeps only its preferences, in</text>
   <text class="sub mono" x="44" y="334">preferences.json</text>
 
   <!-- The hosts -->

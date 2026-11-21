@@ -46,6 +46,8 @@ pub enum IconName {
     PanelLeftOpen,
     PanelRight,
     Pencil,
+    Pin,
+    PinOff,
     Plus,
     RefreshCw,
     RotateCcw,
@@ -63,7 +65,7 @@ pub enum IconName {
 }
 
 impl IconName {
-    pub const ALL: [IconName; 51] = [
+    pub const ALL: [IconName; 53] = [
         IconName::ArrowDown,
         IconName::ArrowUp,
         IconName::BookOpen,
@@ -101,6 +103,8 @@ impl IconName {
         IconName::PanelLeftOpen,
         IconName::PanelRight,
         IconName::Pencil,
+        IconName::Pin,
+        IconName::PinOff,
         IconName::Plus,
         IconName::RefreshCw,
         IconName::RotateCcw,
@@ -157,6 +161,8 @@ impl IconName {
             IconName::PanelLeftOpen => "icons/panel-left-open.svg",
             IconName::PanelRight => "icons/panel-right.svg",
             IconName::Pencil => "icons/pencil.svg",
+            IconName::Pin => "icons/pin.svg",
+            IconName::PinOff => "icons/pin-off.svg",
             IconName::Plus => "icons/plus.svg",
             IconName::RefreshCw => "icons/refresh-cw.svg",
             IconName::RotateCcw => "icons/rotate-ccw.svg",

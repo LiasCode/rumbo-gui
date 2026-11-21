@@ -108,9 +108,12 @@ confirmation, a parameter whose values depend on the one before (the models
 `use` lists for the provider chosen), the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given
 up with Escape, a second project opened beside the first with each one's
-sessions under it, the projects rumbo holds listed with their sessions and
-one opened from that list, a new session started from the sidebar, and
-one started with no project open, which opens the home folder, a
+sessions under it, every project in one list, those rumbo holds with
+their sessions and one opened from it, a project pinned and one unpinned,
+kept for the next start, a search that finds a session under a project
+folded, a new session started from the sidebar, which opens the home
+folder whatever project is shown, and Ctrl-N, which starts one in the
+project shown, a
 project closed and listed again, the window with a rumbo that has no
 `projects`, the settings with the theme and the conversation width changed
 and kept for the next start, the window made bigger and smaller with

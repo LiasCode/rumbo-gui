@@ -794,14 +794,17 @@ impl Shell {
     }
 
     /// Makes the next task of the project shown start a new session. With
-    /// no project shown, the person's home folder is opened as one, in a
-    /// new session.
+    /// no project shown, the session starts in the person's home folder.
     fn new_session_shown(&mut self, _: &NewSession, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected {
-            self.new_session(id, window, cx);
-            return;
+        match self.selected {
+            Some(id) => self.new_session(id, window, cx),
+            None => self.new_session_in_home(window, cx),
         }
+    }
 
+    /// Starts a new session in the person's home folder, opening it as a
+    /// project when it is not open, as the sidebar's New Session does.
+    fn new_session_in_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.opens_projects() {
             return;
         }
@@ -810,6 +813,13 @@ impl Shell {
 
         self.leave_settings(window, cx);
         self.open_listed(home, Opening::New, window, cx);
+    }
+
+    /// Pins a project to the top of the sidebar, or takes its pin away, and
+    /// keeps that for the next start.
+    fn set_pinned(&mut self, root: &str, pinned: bool, cx: &mut Context<Self>) {
+        self.preferred.preferences.set_pinned(root, pinned);
+        self.save_preferences(cx);
     }
 
     /// Asks for a new title for a session of a project, which shows it.
@@ -1404,7 +1414,7 @@ impl Shell {
             .collect();
 
         let said = match sidebar_shown && !listed.is_empty() {
-            true => "Open the folder of a project to work in it, or a recent one in the sidebar.",
+            true => "Open the folder of a project to work in it, or one in the sidebar.",
             false => "Open the folder of a project to work in it.",
         };
 
@@ -1425,7 +1435,7 @@ impl Shell {
                         .w(rems_from_px(440.))
                         .pt_4()
                         .gap_1()
-                        .child(muted("Recent", cx))
+                        .child(muted("Projects", cx))
                         .children(listed),
                 )
             })

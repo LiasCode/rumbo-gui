@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-labelledby="title desc">
   <title id="title">The rumbo-gui window</title>
-  <desc id="desc">The window has a toolbar along the top with arrows to go back and forward, the project and session shown, the commands, and the settings. The sidebar lists the projects open in the window, each with its sessions, a working one marked, and under Recent the other projects rumbo holds. The conversation of the session shown has the task, the model's answer as Markdown, and tool calls that open to show their arguments and result. Below it, the composer takes a task, or tells a run in progress something, and shows the model, how full the context is, and the tokens spent and cached, in thousands and millions.</desc>
+  <desc id="desc">The window has a toolbar along the top with arrows to go back and forward, the project and session shown, the commands, and the settings. The sidebar has a search on top, then New Session and a button to open a project, and below them every project, the pinned first, each with its sessions and a working one marked. The conversation of the session shown has the task, the model's answer as Markdown, and tool calls that open to show their arguments and result. Below it, the composer takes a task, or tells a run in progress something, and shows the model, how full the context is, and the tokens spent and cached, in thousands and millions.</desc>
   <style>
     text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -64,22 +64,24 @@
   <!-- Sidebar -->
   <rect class="side" x="25" y="61" width="180" height="474"/>
   <line class="rule" x1="205" y1="61" x2="205" y2="535"/>
-  <rect class="chip" x="37" y="72" width="128" height="24" rx="6"/>
-  <text class="small" x="66" y="88">New Session</text>
-  <rect class="chip" x="169" y="72" width="24" height="24" rx="6"/>
-  <path d="M175 80 h4 l2 2 h6 v8 h-12 z" fill="none" stroke="#59636e" stroke-width="1.2"/>
+  <rect class="field" x="37" y="72" width="156" height="24" rx="6"/>
+  <circle cx="50" cy="83" r="3.5" fill="none" stroke="#59636e" stroke-width="1.2"/>
+  <line x1="52.5" y1="85.5" x2="55.5" y2="88.5" stroke="#59636e" stroke-width="1.2"/>
+  <text class="small" x="62" y="88">Search sessions</text>
+  <rect class="chip" x="37" y="104" width="128" height="24" rx="6"/>
+  <text class="small" x="66" y="120">New Session</text>
+  <rect class="chip" x="169" y="104" width="24" height="24" rx="6"/>
+  <path d="M175 112 h4 l2 2 h6 v8 h-12 z" fill="none" stroke="#59636e" stroke-width="1.2"/>
 
-  <text class="caps" x="41" y="122">OPEN</text>
-  <text class="ui" x="41" y="144">▾ alpha</text>
-  <rect class="active" x="37" y="153" width="160" height="22" rx="5"/>
-  <text class="ui" x="61" y="168">fix the failing test</text>
-  <text class="ui" x="61" y="192">add a --json flag</text>
-  <circle class="busy" cx="184" cy="188" r="3.5"/>
-  <text class="ui" x="61" y="216">rename the module</text>
-
-  <text class="caps" x="41" y="252">RECENT</text>
-  <text class="ui" x="41" y="274">▸ beta</text>
-  <text class="ui" x="41" y="298">▸ notes</text>
+  <text class="caps" x="41" y="154">PROJECTS</text>
+  <text class="ui" x="41" y="176">▾ alpha</text>
+  <rect class="active" x="37" y="185" width="160" height="22" rx="5"/>
+  <text class="ui" x="61" y="200">fix the failing test</text>
+  <text class="ui" x="61" y="224">add a --json flag</text>
+  <circle class="busy" cx="184" cy="220" r="3.5"/>
+  <text class="ui" x="61" y="248">rename the module</text>
+  <text class="ui" x="41" y="272">▸ beta</text>
+  <text class="ui" x="41" y="296">▸ notes</text>
 
   <!-- Conversation -->
   <rect class="bubble" x="474" y="76" width="172" height="30" rx="10"/>
@@ -111,12 +113,13 @@
   <text class="note" x="700" y="54">Back and forward, where you are,</text>
   <text class="note" x="700" y="70">the commands (Ctrl-P), and the settings.</text>
 
-  <path class="wire" d="M197 164 C214 138 214 116 240 116 L690 116"/>
+  <path class="wire" d="M197 196 C214 150 214 116 240 116 L690 116"/>
   <circle class="dot" cx="690" cy="116" r="3"/>
   <text class="note-head" x="700" y="124">Sidebar</text>
-  <text class="note" x="700" y="142">Every project and its sessions.</text>
-  <text class="note" x="700" y="158">Each open one has its own rumbo;</text>
-  <text class="note" x="700" y="174">a Recent one opens when chosen.</text>
+  <text class="note" x="700" y="142">Search, a new session in your home,</text>
+  <text class="note" x="700" y="158">and every project, the pinned first.</text>
+  <text class="note" x="700" y="174">Each open one has its own rumbo;</text>
+  <text class="note" x="700" y="190">the others open when chosen.</text>
 
   <path class="wire" d="M470 200 C560 200 640 214 690 214"/>
   <circle class="dot" cx="690" cy="214" r="3"/>

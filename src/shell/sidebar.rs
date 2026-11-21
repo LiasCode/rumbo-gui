@@ -1,14 +1,17 @@
-//! The projects beside the work, each with its sessions: those open in the
-//! window, whose host lists their sessions and marks the one shown and those
-//! working, and the others rumbo holds, which open in a host of their own
-//! when the person chooses one of their sessions, or opens one from its
-//! menu. Pressing a project only shows or hides its sessions. A search
-//! narrows both to the sessions and projects whose names, or what the host
-//! says of them, hold what was typed.
+//! Every project beside the work, in one list, each with its sessions:
+//! those open in the window, whose host lists their sessions and marks the
+//! one shown and those working, and the others rumbo holds, which open in a
+//! host of their own when the person chooses one of their sessions, or
+//! opens one from its menu. The projects the person pinned come first, in
+//! the order they were pinned, then the rest, most recently used first.
+//! Pressing a project only shows or hides its sessions. A search, at the
+//! top, narrows the list to the sessions and projects whose names, or what
+//! the host says of them, hold what was typed; under it, New Session starts
+//! one in the person's home folder, and the folder button opens a project.
 
 use gpui::{
-    App, ClipboardItem, Context, ElementId, IntoElement, ParentElement as _, Styled as _, Window,
-    div,
+    AnyElement, App, ClipboardItem, Context, ElementId, IntoElement, ParentElement as _,
+    Styled as _, WeakEntity, Window, div,
 };
 use ui::{
     ActiveTheme as _, Button, Icon, IconName, Input, MenuItem, Sidebar, SidebarGroup, SidebarItem,
@@ -60,6 +63,83 @@ fn row_id(kind: &str, key: &str) -> ElementId {
     ElementId::Name(format!("{kind}-{key}").into())
 }
 
+/// An id for a project's row. While a search narrows the list, the row is
+/// another one, open from the start so what was found shows, and the row
+/// as it was comes back once the search is cleared.
+fn project_row_id(key: &str, query: &str) -> ElementId {
+    match query.is_empty() {
+        true => row_id("project", key),
+        false => row_id("project-found", key),
+    }
+}
+
+/// Projects by their folder, the pinned first, in the order they were
+/// pinned, then the others in the order they came.
+fn pinned_first<T>(projects: Vec<(String, T)>, pinned: &[String]) -> Vec<(String, T)> {
+    let (mut first, rest): (Vec<_>, Vec<_>) = projects
+        .into_iter()
+        .partition(|(root, _)| pinned.contains(root));
+
+    first.sort_by_key(|(root, _)| pinned.iter().position(|kept| kept == root));
+    first.extend(rest);
+    first
+}
+
+/// A project's folder, which pins it, and whether it is pinned.
+#[derive(Clone)]
+struct Pin {
+    root: String,
+    pinned: bool,
+}
+
+impl Pin {
+    /// The item of a project's menu that pins it to the top, or takes its
+    /// pin away.
+    fn menu_item(&self, shell: WeakEntity<Shell>) -> MenuItem {
+        let (root, pinned) = (self.root.clone(), self.pinned);
+        let (label, icon) = match pinned {
+            true => ("Unpin", IconName::PinOff),
+            false => ("Pin to Top", IconName::Pin),
+        };
+
+        MenuItem::new(label).icon(icon).on_click(move |_, cx| {
+            let _ = shell.update(cx, |this, cx| this.set_pinned(&root, !pinned, cx));
+        })
+    }
+
+    /// The mark of a pinned project, which takes its pin away when pressed.
+    fn mark(&self, shell: WeakEntity<Shell>) -> Option<Button> {
+        let root = self.root.clone();
+
+        self.pinned.then(|| {
+            Button::new(row_id("unpin", &root))
+                .ghost()
+                .xsmall()
+                .icon(IconName::Pin)
+                .tooltip("Pinned to the top; press to unpin")
+                .on_click(move |_, _, cx| {
+                    let _ = shell.update(cx, |this, cx| this.set_pinned(&root, false, cx));
+                })
+        })
+    }
+}
+
+/// What stands at the end of a project's row: how its host stands, and its
+/// pin; nothing when there is neither.
+fn project_suffix(status: Option<AnyElement>, pin: Option<Button>) -> Option<AnyElement> {
+    if status.is_none() && pin.is_none() {
+        return None;
+    }
+
+    Some(
+        h_flex()
+            .gap_1()
+            .children(status)
+            .children(pin)
+            .into_any_element(),
+    )
+}
+
 impl Shell {
     pub(super) fn sidebar_width(&self) -> f32 {
         self.preferred
@@ -72,34 +152,21 @@ impl Shell {
     pub(super) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let opens_projects = self.opens_projects();
         let query = self.search.read(cx).value().to_string();
+        let projects = self.project_rows(&query, cx);
 
-        let open: Vec<SidebarItem> = self
-            .projects
-            .iter()
-            .filter_map(|project| self.project_item(project, &query, cx))
-            .collect();
-
-        let recent = self.recent_items(&query, cx);
-
-        // With no project shown, a new session starts in the person's home.
-        let in_home = self.selected.is_none();
         let new_session = Button::new("sidebar-new-session")
             .outline()
             .small()
             .flex_1()
             .icon(IconName::SquarePen)
             .label("New Session")
-            .disabled(match in_home {
-                true => !opens_projects,
-                false => self.selected_workspace().is_none(),
+            .disabled(!opens_projects)
+            .tooltip(if opens_projects {
+                "Start a new session in your home folder"
+            } else {
+                "This window belongs to the rumbo that started it, which works in one project"
             })
-            .tooltip(match in_home {
-                true => "Start a new session in your home folder (Ctrl-N)",
-                false => "Start the next task in a new session (Ctrl-N)",
-            })
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.new_session_shown(&super::NewSession, window, cx)
-            }));
+            .on_click(cx.listener(|this, _, window, cx| this.new_session_in_home(window, cx)));
 
         let open_project = Button::new("open-project")
             .outline()
@@ -117,17 +184,17 @@ impl Shell {
             .w_full()
             .gap_2()
             .child(
+                Input::new(&self.search)
+                    .small()
+                    .cleanable(true)
+                    .prefix(Icon::new(IconName::Search).xsmall()),
+            )
+            .child(
                 h_flex()
                     .w_full()
                     .gap_2()
                     .child(new_session)
                     .child(open_project),
-            )
-            .child(
-                Input::new(&self.search)
-                    .small()
-                    .cleanable(true)
-                    .prefix(Icon::new(IconName::Search).xsmall()),
             );
 
         // The divider beside it draws the line between it and the work.
@@ -136,58 +203,98 @@ impl Shell {
             .border_r_0()
             .header(header);
 
-        if !open.is_empty() {
-            sidebar = sidebar.child(SidebarGroup::new("Projects").children(open));
-        }
-
-        if !recent.is_empty() {
-            sidebar = sidebar.child(SidebarGroup::new("Recent").children(recent));
+        if !projects.is_empty() {
+            sidebar = sidebar.child(SidebarGroup::new("Projects").children(projects));
         }
 
         sidebar
     }
 
-    /// The projects rumbo holds that are not open here, most recently used
-    /// first, or why they could not be listed.
-    fn recent_items(&self, query: &str, cx: &mut Context<Self>) -> Vec<SidebarItem> {
-        let Some(catalog) = &self.catalog else {
-            return Vec::new();
-        };
-
-        let catalog = catalog.read(cx);
-
-        if let Some(problem) = catalog.problem() {
-            let first = problem.lines().next().unwrap_or_default();
-
-            return vec![
-                SidebarItem::new("recent-problem", format!("Not listed: {first}")).disabled(true),
-            ];
+    /// Every project, open in the window or held by rumbo: the pinned first,
+    /// then those just opened, which rumbo lists once they have a session,
+    /// then the rest as rumbo lists them, most recently used first. Last,
+    /// why rumbo's could not be listed, when they could not.
+    fn project_rows(&self, query: &str, cx: &Context<Self>) -> Vec<SidebarItem> {
+        enum Row<'a> {
+            Open(&'a Project),
+            Held(&'a Value),
         }
 
-        let open: Vec<String> = self
+        let catalog = self.catalog.as_ref().map(|catalog| catalog.read(cx));
+        let opened: Vec<(&Project, Option<String>)> = self
             .projects
             .iter()
-            .filter_map(|project| self.root_of(project, cx))
+            .map(|project| (project, self.root_of(project, cx)))
             .collect();
 
-        catalog
-            .projects()
+        let mut rows: Vec<(String, Row)> = opened
             .iter()
-            .filter(|listed| !open.contains(&listed.value))
-            .filter_map(|listed| {
-                self.recent_item(listed, catalog.sessions(&listed.value), query, cx)
+            .rev()
+            .filter(|(_, root)| root.is_none())
+            .map(|(project, _)| (project.dir.display().to_string(), Row::Open(project)))
+            .collect();
+
+        let problem = catalog.and_then(|catalog| catalog.problem());
+
+        for listed in catalog
+            .map(|catalog| catalog.projects())
+            .unwrap_or_default()
+        {
+            let open = opened
+                .iter()
+                .find(|(_, root)| root.as_deref() == Some(listed.value.as_str()));
+
+            rows.push((
+                listed.value.clone(),
+                match open {
+                    Some((project, _)) => Row::Open(project),
+                    None => Row::Held(listed),
+                },
+            ));
+        }
+
+        let pinned = &self.preferred.preferences.pinned;
+        let mut items: Vec<SidebarItem> = pinned_first(rows, pinned)
+            .into_iter()
+            .filter_map(|(root, row)| {
+                let pin = Pin {
+                    pinned: pinned.contains(&root),
+                    root,
+                };
+
+                match row {
+                    Row::Open(project) => self.project_item(project, query, &pin, cx),
+                    Row::Held(listed) => {
+                        let sessions = catalog
+                            .map(|catalog| catalog.sessions(&listed.value))
+                            .unwrap_or_default();
+
+                        self.held_item(listed, sessions, query, &pin, cx)
+                    }
+                }
             })
-            .collect()
+            .collect();
+
+        if let Some(problem) = problem {
+            let first = problem.lines().next().unwrap_or_default();
+
+            items.push(
+                SidebarItem::new("projects-problem", format!("Not listed: {first}")).disabled(true),
+            );
+        }
+
+        items
     }
 
-    /// A project rumbo holds, with its sessions, which opens with the one
-    /// chosen, or with its latest. None when the search leaves out the
-    /// project and every session of it.
-    fn recent_item(
+    /// A project rumbo holds that is not open here, with its sessions, which
+    /// opens with the one chosen, or with its latest. None when the search
+    /// leaves out the project and every session of it.
+    fn held_item(
         &self,
         listed: &Value,
         sessions: &[Value],
         query: &str,
+        pin: &Pin,
         cx: &Context<Self>,
     ) -> Option<SidebarItem> {
         let root = listed.value.clone();
@@ -254,11 +361,13 @@ impl Shell {
         let menu_opening = opened(Opening::Latest);
         let menu_starting = opened(Opening::New);
         let said = listed.description.clone();
+        let menu_pin = pin.clone();
+        let menu_shell = shell.clone();
 
         // Pressed, it opens in its latest session only when the search
         // leaves none of its sessions to show or hide. A new session in it
         // starts from its menu.
-        let item = SidebarItem::new(row_id("recent", &root), label)
+        let mut item = SidebarItem::new(project_row_id(&root, query), label)
             .icon(IconName::FolderClosed)
             .default_open(!query.is_empty())
             .on_click(opened(Opening::Latest))
@@ -277,9 +386,14 @@ impl Shell {
                         .icon(IconName::SquarePen)
                         .on_click(move |window, cx| starting(window, cx)),
                 );
+                items.push(menu_pin.menu_item(menu_shell.clone()));
                 items
             })
             .children(rows);
+
+        if let Some(suffix) = project_suffix(None, pin.mark(shell)) {
+            item = item.suffix(suffix);
+        }
 
         Some(item)
     }
@@ -290,7 +404,8 @@ impl Shell {
         &self,
         project: &Project,
         query: &str,
-        cx: &mut Context<Self>,
+        pin: &Pin,
+        cx: &Context<Self>,
     ) -> Option<SidebarItem> {
         let id = project.id;
         let shown = self.selected == Some(id) && self.settings.is_none();
@@ -308,7 +423,8 @@ impl Shell {
         // Pressed, it shows the project only while it lists no session, as
         // while its host starts; otherwise it shows or hides them.
         let selecting = shell.clone();
-        let item = SidebarItem::new(("project", id), name)
+        let menu_pin = pin.clone();
+        let item = SidebarItem::new(project_row_id(&id.to_string(), query), name)
             .icon(IconName::FolderOpen)
             .default_open(true)
             .on_click(move |window, cx| {
@@ -334,6 +450,7 @@ impl Shell {
                             .on_click(move |_, cx| {
                                 let _ = editing.update(cx, |this, cx| this.open_in_editor(id, cx));
                             }),
+                        menu_pin.menu_item(shell.clone()),
                         MenuItem::separator(),
                         MenuItem::new("Close Project")
                             .icon(IconName::Close)
@@ -345,21 +462,26 @@ impl Shell {
                 }
             });
 
+        let status = match &project.state {
+            State::Working { .. } => None,
+            State::Starting => Some(Spinner::new().xsmall().into_any_element()),
+            State::Failed(_) => Some(
+                Icon::new(IconName::CircleAlert)
+                    .xsmall()
+                    .color(cx.theme().colors.danger)
+                    .into_any_element(),
+            ),
+        };
+
+        let item = match project_suffix(status, pin.mark(shell.clone())) {
+            Some(suffix) => item.suffix(suffix),
+            None => item,
+        };
+
         let workspace = match &project.state {
             State::Working { workspace, .. } => workspace.read(cx),
-
-            State::Starting => {
-                return project_matches.then(|| item.suffix(Spinner::new().xsmall()));
-            }
-
-            State::Failed(_) => {
-                let danger = cx.theme().colors.danger;
-
-                return project_matches.then(|| {
-                    item.active(shown)
-                        .suffix(Icon::new(IconName::CircleAlert).xsmall().color(danger))
-                });
-            }
+            State::Starting => return project_matches.then_some(item),
+            State::Failed(_) => return project_matches.then(|| item.active(shown)),
         };
 
         let current = workspace.current().to_string();
@@ -502,6 +624,24 @@ mod tests {
         assert!(matches("json done", &session));
         assert!(matches("4cf0", &session));
         assert!(!matches("json failed", &session));
+    }
+
+    #[test]
+    fn puts_the_pinned_first_in_the_order_they_were_pinned() {
+        let projects = vec![
+            ("/work/alpha".to_string(), 1),
+            ("/work/beta".to_string(), 2),
+            ("/work/gamma".to_string(), 3),
+            ("/work/delta".to_string(), 4),
+        ];
+        let pinned = ["/work/gamma".to_string(), "/work/alpha".to_string()];
+
+        let ordered: Vec<i32> = pinned_first(projects, &pinned)
+            .into_iter()
+            .map(|(_, project)| project)
+            .collect();
+
+        assert_eq!(ordered, [3, 1, 2, 4]);
     }
 
     #[test]

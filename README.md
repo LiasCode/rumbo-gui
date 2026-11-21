@@ -16,7 +16,8 @@ conversation, and rumbo's settings, without a terminal.
   rumbo, and the settings show them and change them through rumbo, which
   checks a change before it keeps it. The window keeps only
   its preferences (theme, conversation width, the sidebar, the editor, and
-  whether to say when a run ends elsewhere, and from the desktop), in
+  whether to say when a run ends elsewhere, and from the desktop, and the
+  projects pinned), in
   `rumbo-gui/preferences.json` under `~/.config` (or `$XDG_CONFIG_HOME`).
 - **The files are yours.** rumbo keeps the conversation, not the files, so
   the Changes panel shows what Git sees changed in the project's folder,
@@ -28,6 +29,8 @@ conversation, and rumbo's settings, without a terminal.
 
 - **Work in sessions.** Search them, open one with Ctrl-K or Ctrl-1 … 9,
   rename, branch, compact, export as Markdown, or delete it from its menu.
+  Every project is in the sidebar; pin the ones you use most to its top.
+  New Session there starts one in your home folder.
 - **Go back and forward.** As in a browser, between the sessions, projects,
   and settings you went to, with the arrows in the toolbar, Alt-Left and
   Alt-Right, or the mouse's back and forward buttons.
@@ -58,9 +61,10 @@ install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
 rumbo must be installed apart: a version later than 0.5, whose
 configuration is in `config.yaml` and whose host offers `config`,
 `system-set`, `session-set`, and `provider-set`. With an earlier one, the
-window still works, without the settings it does not offer. The Recent
-projects need a rumbo whose host offers `projects`; without it, the sidebar
-lists only the projects open in the window.
+window still works, without the settings it does not offer. The projects
+rumbo holds, besides those open in the window, need a rumbo whose host
+offers `projects`; without it, the sidebar lists only the projects open in
+the window.
 
 ## Use
 

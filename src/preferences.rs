@@ -115,6 +115,9 @@ pub struct Preferences {
     /// How big the interface is drawn, in percent of its own size; none
     /// draws it at its own.
     pub zoom: Option<u32>,
+    /// The projects pinned to the top of the sidebar, by their folder, in
+    /// the order they were pinned.
+    pub pinned: Vec<String>,
 }
 
 impl Preferences {
@@ -129,6 +132,16 @@ impl Preferences {
     /// How many times its own size the interface is drawn.
     pub fn scale(&self) -> f32 {
         self.zoom() as f32 / OWN_ZOOM as f32
+    }
+
+    /// Pins a project to the top of the sidebar, after those pinned before
+    /// it, or takes its pin away.
+    pub fn set_pinned(&mut self, root: &str, pinned: bool) {
+        self.pinned.retain(|kept| kept != root);
+
+        if pinned {
+            self.pinned.push(root.to_string());
+        }
     }
 
     /// Draws the interface at `zoom` percent; at its own size, nothing is
@@ -251,6 +264,20 @@ mod tests {
                 .unwrap()
                 .contains(r#""theme": "dark""#)
         );
+    }
+
+    #[test]
+    fn pins_projects_in_the_order_they_are_pinned() {
+        let mut preferences = Preferences::default();
+
+        preferences.set_pinned("/work/alpha", true);
+        preferences.set_pinned("/work/beta", true);
+        preferences.set_pinned("/work/alpha", true);
+        assert_eq!(preferences.pinned, ["/work/beta", "/work/alpha"]);
+
+        preferences.set_pinned("/work/beta", false);
+        preferences.set_pinned("/work/gamma", false);
+        assert_eq!(preferences.pinned, ["/work/alpha"]);
     }
 
     #[test]

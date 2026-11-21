@@ -69,10 +69,14 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   host the window starts in the person's home only to list them. It runs
   nothing, follows no function, and is asked again when the window comes
   to the front or a project is closed.
-- **sidebar** (`src/shell/sidebar.rs`) lists the projects and their
-  sessions, narrowed by a search, with what the host offers to do with
-  each session in its menu. It can be dragged wider and put away; the
-  window keeps both.
+- **sidebar** (`src/shell/sidebar.rs`) lists every project in one list,
+  those open in the window and those rumbo holds, each with its sessions,
+  narrowed by the search at its top, with what the host offers to do with
+  each session in its menu. The projects the person pins come first, in
+  the order they pinned them; the rest follow, most recently used first.
+  Its New Session starts one in the person's home folder, whatever project
+  is shown. It can be dragged wider and put away; the window keeps both,
+  and the pins.
 - **settings** (`src/shell/settings.rs`) show the window's preferences and
   keys, and rumbo's configuration. rumbo keeps it the same for every
   project, so it is asked of the host of the project shown: what is set and
@@ -200,8 +204,8 @@ one is looked at before a view uses it.
 
 A host works in the sessions of one project, but lists those of any: its
 `projects` lists the projects that have sessions, by their root, and its
-`sessions` the sessions of any of them. So the sidebar shows two kinds of
-project. Those open in the window have a host of their own, whose
+`sessions` the sessions of any of them. So the sidebar's one list holds
+two kinds of project. Those open in the window have a host of their own, whose
 workspace lists their sessions and marks those working. The others rumbo
 holds come from the catalog, and opening one, or one of its sessions,
 starts its host: with `-s` for a session, with `-c` for the project, and
