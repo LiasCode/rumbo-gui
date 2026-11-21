@@ -88,8 +88,10 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 - **workspace** (`src/workspace/`) is one project attached to its host:
   the sessions the host lists, the conversation of the one shown, the
   session's menu and the buttons of the panels, which the toolbar shows,
-  the composer, a panel beside them, the status bar, which says what the
-  keys do while nothing else needs saying, and the command palette. The
+  the composer, with how full the model's context is and the tokens
+  spent, a panel beside them, and the command palette. How a run stands
+  shows in what the composer says it is for, and anything else the
+  workspace has to say, such as what went wrong, in a notification. The
   shell lists the sessions and opens them through it. It keeps a view of
   each session it has shown, and sends each event to the view of the
   session it belongs to: the session of the run it names, by the id of the

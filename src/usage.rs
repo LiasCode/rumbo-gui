@@ -36,11 +36,11 @@ impl Spent {
     pub fn context(&self) -> Option<String> {
         match (self.context, self.window) {
             (0, _) => None,
-            (context, 0) => Some(format!("context {context} tokens")),
+            (context, 0) => Some(format!("context {} tokens", short(context))),
             (context, window) => Some(format!(
-                "context {}% of {}k",
+                "context {}% of {}",
                 context * 100 / window,
-                window / 1000
+                short(window)
             )),
         }
     }
@@ -55,11 +55,48 @@ impl Spent {
 
         let input = self.total.input + self.total.cache_write;
         let cached = match self.cached_share() {
-            Some(share) => format!("{} cached ({share}%)", self.total.cache_read),
-            None => format!("{} cached", self.total.cache_read),
+            Some(share) => format!("{} cached ({share}%)", short(self.total.cache_read)),
+            None => format!("{} cached", short(self.total.cache_read)),
         };
 
-        Some(format!("{input} in · {cached} · {} out", self.total.output))
+        Some(format!(
+            "{} in · {cached} · {} out",
+            short(input),
+            short(self.total.output)
+        ))
+    }
+
+    /// The context and the tokens as they are counted, to the last one, for
+    /// a person who wants more than `context` and `tokens` round to.
+    pub fn exactly(&self) -> Option<String> {
+        let context = match (self.context, self.window) {
+            (0, _) => None,
+            (context, 0) => Some(format!("Context: {} tokens", grouped(context))),
+            (context, window) => Some(format!(
+                "Context: {} of {} tokens",
+                grouped(context),
+                grouped(window)
+            )),
+        };
+
+        let tokens = (self.total != Usage::default()).then(|| {
+            let cached = match self.cached_share() {
+                Some(share) => format!("{} ({share}%)", grouped(self.total.cache_read)),
+                None => grouped(self.total.cache_read),
+            };
+
+            format!(
+                "In: {} · Cached: {cached} · Out: {}",
+                grouped(self.total.input + self.total.cache_write),
+                grouped(self.total.output)
+            )
+        });
+
+        match (context, tokens) {
+            (None, None) => None,
+            (Some(said), None) | (None, Some(said)) => Some(said),
+            (Some(context), Some(tokens)) => Some(format!("{context}\n{tokens}")),
+        }
     }
 
     /// The share of all input the provider read from its cache, as `status`
@@ -69,6 +106,51 @@ impl Spent {
 
         (all > 0).then(|| self.total.cache_read * 100 / all)
     }
+}
+
+/// A count of tokens as it is read at a glance: as it is under a thousand,
+/// else in thousands (K) or millions (M), with a decimal while it is short.
+pub fn short(count: i64) -> String {
+    if count < 1_000 {
+        return count.to_string();
+    }
+
+    let thousands = scaled(count as f64 / 1e3);
+
+    // What rounds up to a thousand thousands is a million.
+    if count < 1_000_000 && thousands != "1000" {
+        return format!("{thousands}K");
+    }
+
+    format!("{}M", scaled(count as f64 / 1e6))
+}
+
+/// A number with one decimal under a hundred, none from there, and no
+/// decimal that is zero.
+fn scaled(value: f64) -> String {
+    if value < 99.95 {
+        let tenths = format!("{value:.1}");
+
+        return tenths.strip_suffix(".0").unwrap_or(&tenths).to_string();
+    }
+
+    format!("{value:.0}")
+}
+
+/// A count with its thousands set apart, as 1,234,567.
+fn grouped(count: i64) -> String {
+    let digits = count.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            grouped.push(',');
+        }
+
+        grouped.push(digit);
+    }
+
+    grouped
 }
 
 #[cfg(test)]
@@ -114,6 +196,10 @@ mod tests {
         );
         assert_eq!(spent.cached_share(), Some(45));
         assert_eq!(spent.context(), Some("context 210 tokens".into()));
+        assert_eq!(
+            spent.exactly().as_deref(),
+            Some("Context: 210 tokens\nIn: 110 · Cached: 90 (45%) · Out: 10")
+        );
     }
 
     #[test]
@@ -123,6 +209,55 @@ mod tests {
         spent.turn(&turn(1, 1, 0, 0, 50_000, 200_000));
         spent.turn(&turn(1, 1, 0, 0, 0, 0));
 
-        assert_eq!(spent.context(), Some("context 25% of 200k".into()));
+        assert_eq!(spent.context(), Some("context 25% of 200K".into()));
+    }
+
+    #[test]
+    fn says_large_counts_in_thousands_and_millions() {
+        let mut spent = Spent::default();
+
+        assert_eq!(spent.exactly(), None);
+
+        spent.turn(&turn(1_234_567, 45_600, 2_000_000, 0, 150_000, 1_000_000));
+
+        assert_eq!(
+            spent.tokens().as_deref(),
+            Some("1.2M in · 2M cached (61%) · 45.6K out")
+        );
+        assert_eq!(spent.context(), Some("context 15% of 1M".into()));
+        assert_eq!(
+            spent.exactly().as_deref(),
+            Some(
+                "Context: 150,000 of 1,000,000 tokens\n\
+                 In: 1,234,567 · Cached: 2,000,000 (61%) · Out: 45,600"
+            )
+        );
+    }
+
+    #[test]
+    fn rounds_a_count_to_what_reads_at_a_glance() {
+        let said = [
+            (0, "0"),
+            (999, "999"),
+            (1_000, "1K"),
+            (1_234, "1.2K"),
+            (12_345, "12.3K"),
+            (99_960, "100K"),
+            (123_456, "123K"),
+            (999_499, "999K"),
+            (999_950, "1M"),
+            (1_234_567, "1.2M"),
+            (45_000_000, "45M"),
+            (123_456_789, "123M"),
+        ];
+
+        for (count, short_said) in said {
+            assert_eq!(short(count), short_said, "{count}");
+        }
+
+        assert_eq!(grouped(0), "0");
+        assert_eq!(grouped(999), "999");
+        assert_eq!(grouped(1_000), "1,000");
+        assert_eq!(grouped(1_234_567), "1,234,567");
     }
 }

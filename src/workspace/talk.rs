@@ -10,7 +10,7 @@ use gpui::{
     App, AppContext as _, Context, Focusable as _, ParentElement as _, Styled as _, Window, div,
 };
 use serde_json::json;
-use ui::{ActiveTheme as _, Input, InputState, rems_from_px, v_flex};
+use ui::{ActiveTheme as _, Input, InputState, Toast, rems_from_px, v_flex};
 
 use super::Workspace;
 use crate::protocol::{self, AskParams, CODE_INTERNAL, CODE_INVALID_PARAMS, CancelParams};
@@ -34,13 +34,14 @@ impl Workspace {
             invoke: talking.invoke,
         };
 
-        if let Err(error) = self.host.connection.notify(protocol::METHOD_CANCEL, cancel) {
-            self.notice = Some(format!("The cancel could not reach the host: {error}"));
-        } else {
-            self.notice = Some(format!("Giving up {}", talking.name));
-        }
+        let said = match self.host.connection.notify(protocol::METHOD_CANCEL, cancel) {
+            Err(error) => {
+                Toast::new(format!("The cancel could not reach the host: {error}")).danger()
+            }
+            Ok(()) => Toast::new(format!("Giving up {}", talking.name)),
+        };
 
-        cx.notify();
+        self.toast(said, cx);
     }
 
     /// Asks the person what a function of the provider asks, and answers

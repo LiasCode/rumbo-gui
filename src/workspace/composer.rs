@@ -1,15 +1,18 @@
 //! The composer: a card at the foot of the conversation where the person
 //! writes a task, or, while a run works, something for it to read, with the
 //! images pasted into it; with the model the session uses, which opens the
-//! picker, and the buttons that send and cancel.
+//! picker, how full the model's context is and the tokens spent, and the
+//! buttons that send and cancel. Once the host is gone, it says why, and
+//! starts it again.
 
 use gpui::{
     AnyElement, ClipboardEntry, Context, InteractiveElement as _, IntoElement, ParentElement as _,
-    Styled as _, div, prelude::FluentBuilder as _,
+    StatefulInteractiveElement as _, Styled as _, div, prelude::FluentBuilder as _,
 };
 use ui::input_actions::{MoveDown, MoveUp, Paste};
 use ui::{
-    ActiveTheme as _, Button, IconName, Sizable as _, Textarea, h_flex, rems_from_px, v_flex,
+    ActiveTheme as _, Button, IconName, Sizable as _, Textarea, Toast, Tooltip, h_flex,
+    rems_from_px, v_flex,
 };
 
 use super::{CancelRun, Workspace, WorkspaceEvent};
@@ -26,11 +29,22 @@ impl Workspace {
             .pt_1()
             .gap_1();
 
-        if self.ended.is_some() {
+        let muted = cx.theme().colors.muted_foreground;
+
+        if let Some(ended) = &self.ended {
             let session = self.current.clone();
 
             return column
                 .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .max_w_full()
+                        .text_sm()
+                        .text_center()
+                        .text_color(muted)
+                        .child(ended.clone()),
+                )
                 .child(
                     Button::new("start-again")
                         .track_focus(&self.start_again_focus)
@@ -72,13 +86,25 @@ impl Workspace {
             .tooltip("Cancel the run (Escape)")
             .on_click(cx.listener(|this, _, window, cx| this.cancel(&CancelRun, window, cx)));
 
+        // It stays pressed while the provider is asked what can be chosen.
         let model = Button::new("model")
             .ghost()
             .xsmall()
             .icon(IconName::Cpu)
             .label(self.model_name())
+            .selected(self.picking)
             .tooltip("The model and the options of this session")
             .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx)));
+
+        // Rounded to read at a glance; its tooltip has every token.
+        let usage = self.views.get(&self.current).and_then(|view| {
+            let shown: Vec<String> = [view.spent.context(), view.spent.tokens()]
+                .into_iter()
+                .flatten()
+                .collect();
+
+            Some((shown.join(" · "), view.spent.exactly()?))
+        });
 
         let card = v_flex()
             .w_full()
@@ -117,6 +143,19 @@ impl Workspace {
                     .gap_1()
                     .items_center()
                     .child(model)
+                    .when_some(usage, |row, (shown, exactly)| {
+                        row.child(
+                            div()
+                                .id("usage")
+                                .min_w_0()
+                                .px_1()
+                                .truncate()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(shown)
+                                .tooltip(move |_, cx| Tooltip::new(exactly.clone()).build(cx)),
+                        )
+                    })
                     .child(div().flex_1())
                     .when(working, |row| row.child(cancel))
                     .child(send),
@@ -186,8 +225,9 @@ impl Workspace {
             .partition(|image| picture::media_type(image).is_some());
 
         if taken.is_empty() && !refused.is_empty() {
-            self.notice =
-                Some("The clipboard's image is not a PNG, JPEG, GIF, or WebP image".into());
+            let said = "The clipboard's image is not a PNG, JPEG, GIF, or WebP image";
+
+            self.toast(Toast::new(said).danger(), cx);
         }
 
         self.pasted.extend(taken.into_iter().map(Picture::new));

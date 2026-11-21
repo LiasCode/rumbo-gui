@@ -37,7 +37,6 @@ impl Workspace {
         }
 
         self.picking = true;
-        self.notice = Some("Asking the provider what can be chosen".into());
         self.request(protocol::METHOD_DESCRIBE, Json::Null, Pending::Picker);
         cx.notify();
     }
@@ -51,7 +50,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.picking = false;
-        self.notice = None;
+        cx.notify();
 
         let using = self.host_function(protocol::FUNCTION_USE).cloned();
         let options = self.host_function(protocol::FUNCTION_SESSION_SET).is_some();
@@ -110,9 +109,11 @@ impl Workspace {
             };
 
         if fields.is_empty() {
-            self.notice = Some(problem.unwrap_or_else(|| {
+            let said = problem.unwrap_or_else(|| {
                 "Neither the host nor the provider offer anything to choose".into()
-            }));
+            });
+
+            self.toast(Toast::new(said).danger(), cx);
             return;
         }
 
@@ -266,7 +267,7 @@ impl Workspace {
                 }
             };
 
-            self.call_host(name, Some(params), Feedback::Notice, cx);
+            self.call_host(name, Some(params), Feedback::Toast, cx);
         }
     }
 }

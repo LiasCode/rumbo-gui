@@ -1,6 +1,6 @@
 //! One project of the window, attached to a host of its own: its sessions,
-//! the conversation of the one shown, the composer, and the status bar. The
-//! window around it lists the sessions and opens them through it.
+//! the conversation of the one shown, and the composer. The window around
+//! it lists the sessions and opens them through it.
 //!
 //! The workspace shows the host's current session. Runs started in other
 //! sessions go on in the background, and their events go to the session
@@ -26,8 +26,7 @@ use gpui::{
 use serde_json::{Value as Json, json};
 use ui::{
     ActiveTheme as _, Button, CommandPaletteState, Dialogs, Icon, IconName, InputEvent, InputState,
-    MessageList, MessageListState, Sizable as _, Spinner, StatusBar, Toast, Toasts, h_flex,
-    rems_from_px, v_flex,
+    MessageList, MessageListState, Sizable as _, Toast, Toasts, h_flex, rems_from_px, v_flex,
 };
 
 use crate::commands::{self, Command};
@@ -51,11 +50,6 @@ const KEY_CONTEXT: &str = "Workspace";
 /// What the composer says Enter will do, with and without a run.
 const TASK_HINT: &str = "Give rumbo a task";
 const STEER_HINT: &str = "Tell the run something; it reads it before its next request";
-
-/// What the status bar says the keys do, while nothing else needs saying,
-/// with and without a run.
-const READY_HINT: &str = "Enter sends · Shift-Enter starts a line · Ctrl-V pastes an image · Up brings back what was asked";
-const WORKING_HINT: &str = "Working · Enter tells the run · Escape cancels it";
 
 /// The keys of the workspace. Escape reaches it after the composer, which
 /// lets it through when it has nothing of its own to dismiss.
@@ -162,10 +156,8 @@ enum Pending {
 pub enum Feedback {
     /// In the conversation, as a command from the palette answers.
     Conversation,
-    /// In the status bar, as the picker's changes say they were made.
-    Notice,
-    /// In a notification, as the settings' changes say they were made,
-    /// since the conversation is not in view.
+    /// In a notification, as the settings' and the picker's changes say
+    /// they were made, which the conversation does not record.
     Toast,
     /// Nowhere unless it fails, as opening a session from the sidebar,
     /// which shows the session instead.
@@ -244,8 +236,6 @@ pub struct Workspace {
     /// The provider's function in progress, called from this window.
     talking: Option<talk::Talking>,
     history: History,
-    /// A passing word for the person, shown in the status bar.
-    notice: Option<String>,
     /// Why the host is gone, once it is.
     ended: Option<String>,
     /// Sessions whose run ended while another was shown, until they are.
@@ -334,7 +324,6 @@ impl Workspace {
             forms: 0,
             talking: None,
             history: History::default(),
-            notice: None,
             ended: None,
             unseen: HashSet::new(),
             revisiting: false,
@@ -578,7 +567,7 @@ impl Workspace {
 
     /// Asks a function of the host for the workspace itself, and goes on
     /// once it has answered, attached to what it left current. A failure
-    /// shows in the status bar.
+    /// shows in a notification.
     fn then_host(
         &mut self,
         name: &str,
@@ -587,8 +576,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.ended.is_some() || self.host_function(name).is_none() {
-            self.notice = Some(format!("This host does not offer {name}"));
-            cx.notify();
+            self.toast(
+                Toast::new(format!("This host does not offer {name}")).danger(),
+                cx,
+            );
             return false;
         }
 
@@ -841,10 +832,7 @@ impl Workspace {
                 Some(id)
             }
 
-            Err(error) => {
-                self.notice = Some(format!("The host could not be reached: {error}"));
-                None
-            }
+            Err(_) => None,
         }
     }
 
@@ -882,6 +870,7 @@ impl Workspace {
                 };
 
                 self.request(protocol::METHOD_STEER, params, pending);
+                self.set_hint(cx);
             }
 
             None => self.start(
@@ -947,7 +936,6 @@ impl Workspace {
 
         self.runs.insert(id, current.clone());
         self.started.insert(id, std::time::Instant::now());
-        self.notice = None;
         self.show(&current, change, cx);
         self.set_hint(cx);
         cx.notify();
@@ -970,12 +958,12 @@ impl Workspace {
             .connection
             .notify(protocol::METHOD_CANCEL, CancelParams { run, invoke: 0 })
         {
-            self.notice = Some(format!("The cancel could not reach the host: {error}"));
-        } else {
-            self.notice = Some("Cancelling".into());
-        }
+            let said = format!("The cancel could not reach the host: {error}");
 
-        cx.notify();
+            self.toast(Toast::new(said).danger(), cx);
+        } else {
+            self.toast(Toast::new("Cancelling the run"), cx);
+        }
     }
 
     /// Calls a function of the host or of the provider for the person.
@@ -1014,6 +1002,7 @@ impl Workspace {
                 invoke,
                 name: command.function.name.clone(),
             });
+            self.set_hint(cx);
         }
 
         cx.notify();
@@ -1029,8 +1018,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(function) = self.host_function(name).cloned() else {
-            self.notice = Some(format!("This host does not offer {name}"));
-            cx.notify();
+            self.toast(
+                Toast::new(format!("This host does not offer {name}")).danger(),
+                cx,
+            );
             return;
         };
 
@@ -1105,14 +1096,24 @@ impl Workspace {
         }
     }
 
-    /// Records whether the shown session has a run in progress in the
-    /// composer, which says what Enter does now.
+    /// Says in the composer how the session shown stands, and so what Enter
+    /// does now: a provider's function waits, a run works, with what was
+    /// told it still waiting for its next turn, or nothing does.
     fn set_hint(&mut self, cx: &mut Context<Self>) {
         let working = self
             .views
             .get(&self.current)
             .is_some_and(|view| view.run.is_some());
-        let hint = if working { STEER_HINT } else { TASK_HINT };
+
+        let hint = match (&self.talking, working, self.steers_waiting()) {
+            (Some(talking), _, _) => format!("Waiting for {}; Escape gives it up", talking.name),
+            (None, true, 0) => STEER_HINT.into(),
+            (None, true, 1) => "1 message waits for the run's next turn; tell it more".into(),
+            (None, true, waiting) => {
+                format!("{waiting} messages wait for the run's next turn; tell it more")
+            }
+            (None, false, _) => TASK_HINT.into(),
+        };
 
         self.composer
             .update(cx, |state, cx| state.set_placeholder(hint, cx));
@@ -1198,8 +1199,9 @@ impl Workspace {
                 let told: HistoryResult = match answer {
                     Ok(result) => serde_json::from_value(result).unwrap_or_default(),
                     Err(error) => {
-                        self.notice =
-                            Some(format!("The session's history could not be read: {error}"));
+                        let said = format!("The session's history could not be read: {error}");
+
+                        self.toast(Toast::new(said).danger(), cx);
                         return;
                     }
                 };
@@ -1285,7 +1287,7 @@ impl Workspace {
                     then(self, result, window, cx);
                 }
 
-                Err(error) => self.notice = Some(error.message),
+                Err(error) => self.toast(Toast::new(error.message).danger(), cx),
             },
 
             Pending::Revisit => {
@@ -1299,7 +1301,7 @@ impl Workspace {
                         self.refresh_sessions();
                     }
 
-                    Err(error) => self.notice = Some(error.message),
+                    Err(error) => self.toast(Toast::new(error.message).danger(), cx),
                 }
 
                 // Whatever the host answered, the place arrived at is the
@@ -1358,7 +1360,6 @@ impl Workspace {
         self.show(&key, change, cx);
 
         if key == self.current {
-            self.notice = None;
             self.set_hint(cx);
         } else {
             let title = self
@@ -1390,6 +1391,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // One message fewer waits for the run.
+        self.set_hint(cx);
+
         match answer {
             Ok(_) => {
                 let key = self
@@ -1410,11 +1414,16 @@ impl Workspace {
             Err(error) if self.composer.read(cx).value().is_empty() && self.pasted.is_empty() => {
                 self.fill(text, window, cx);
                 self.pasted = images;
-                self.notice = Some(format!("{}; Enter sends it as a new task", error.message));
+
+                let said = format!("{}; Enter sends it as a new task", error.message);
+
+                self.toast(Toast::new(said).danger(), cx);
             }
 
             Err(error) => {
-                self.notice = Some(format!("{}: {text}", error.message));
+                let said = format!("{}: {text}", error.message);
+
+                self.toast(Toast::new(said).danger(), cx);
             }
         }
     }
@@ -1460,7 +1469,7 @@ impl Workspace {
                 .is_some_and(|talking| talking.name == name)
         {
             self.talking = None;
-            self.notice = None;
+            self.set_hint(cx);
         }
 
         let (text, failed) = match (answer, source) {
@@ -1483,12 +1492,13 @@ impl Workspace {
         }
 
         match feedback {
-            Feedback::Toast if failed => {
+            Feedback::Toast | Feedback::Quiet if failed => {
                 self.toast(Toast::new(text).danger(), cx);
                 return;
             }
 
-            // The first line says what was done.
+            // The first line says what was done; the rest is what it
+            // applies to now.
             Feedback::Toast => {
                 if let Some(line) = text.lines().next().filter(|line| !line.is_empty()) {
                     self.toast(Toast::new(commands::capitalized(line)), cx);
@@ -1497,23 +1507,7 @@ impl Workspace {
                 return;
             }
 
-            Feedback::Quiet | Feedback::Notice if failed => {
-                self.notice = Some(text);
-                return;
-            }
-
             Feedback::Quiet => return,
-
-            // The first line says what was done; the rest is what it
-            // applies to now.
-            Feedback::Notice => {
-                self.notice = text
-                    .lines()
-                    .next()
-                    .filter(|line| !line.is_empty())
-                    .map(commands::capitalized);
-                return;
-            }
 
             Feedback::Conversation if text.is_empty() => return,
 
@@ -1653,7 +1647,6 @@ impl Workspace {
             format!("The host ended: {said}")
         });
 
-        self.notice = None;
         self.pending.clear();
         self.start_again_focus.focus(window, cx);
 
@@ -1718,15 +1711,6 @@ impl Workspace {
         self.pending
             .values()
             .filter(|pending| matches!(pending, Pending::Steer { run, .. } if self.runs.get(run) == Some(&self.current)))
-            .count()
-    }
-
-    /// How many runs of this window work in sessions other than the one
-    /// shown.
-    fn working_elsewhere(&self) -> usize {
-        self.runs
-            .values()
-            .filter(|key| **key != self.current)
             .count()
     }
 
@@ -1830,51 +1814,6 @@ impl Workspace {
             format!("{} · {}", self.provider, self.model)
         }
     }
-
-    fn render_status(&self) -> impl IntoElement {
-        let view = self.views.get(&self.current);
-        let working = view.is_some_and(|view| view.run.is_some());
-        let waiting = self.steers_waiting();
-        let elsewhere = self.working_elsewhere();
-
-        let state = match (&self.ended, &self.notice, &self.talking) {
-            (Some(ended), _, _) => ended.clone(),
-            (None, Some(notice), _) => notice.clone(),
-            (None, None, Some(talking)) => {
-                format!("Waiting for {}; Escape gives it up", talking.name)
-            }
-            _ if working && waiting == 1 => "Working; 1 message waits for the next turn".into(),
-            _ if working && waiting > 1 => {
-                format!("Working; {waiting} messages wait for the next turn")
-            }
-            _ if working => WORKING_HINT.into(),
-            _ => READY_HINT.into(),
-        };
-
-        let mut bar = StatusBar::new().start(
-            h_flex()
-                .min_w_0()
-                .gap_1()
-                .when(working, |row| row.child(Spinner::new().xsmall()))
-                .child(div().min_w_0().truncate().child(state)),
-        );
-
-        if elsewhere > 0 {
-            bar = bar.end(format!("{elsewhere} working in other sessions"));
-        }
-
-        if let Some(view) = view {
-            if let Some(context) = view.spent.context() {
-                bar = bar.end(context);
-            }
-
-            if let Some(tokens) = view.spent.tokens() {
-                bar = bar.end(tokens);
-            }
-        }
-
-        bar
-    }
 }
 
 impl Render for Workspace {
@@ -1910,7 +1849,6 @@ impl Render for Workspace {
                         row.child(self.render_panel(panel, cx))
                     }),
             )
-            .child(self.render_status())
     }
 }
 

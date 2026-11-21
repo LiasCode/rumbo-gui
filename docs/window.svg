@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-labelledby="title desc">
   <title id="title">The rumbo-gui window</title>
-  <desc id="desc">The window has a toolbar along the top with arrows to go back and forward, the project and session shown, the commands, and the settings. The sidebar lists the projects open in the window, each with its sessions, a working one marked, and under Recent the other projects rumbo holds. The conversation of the session shown has the task, the model's answer as Markdown, and tool calls that open to show their arguments and result. Below it, the composer takes a task, or tells a run in progress something. The status bar shows what is happening, or what the keys do, how full the context is, and the tokens spent.</desc>
+  <desc id="desc">The window has a toolbar along the top with arrows to go back and forward, the project and session shown, the commands, and the settings. The sidebar lists the projects open in the window, each with its sessions, a working one marked, and under Recent the other projects rumbo holds. The conversation of the session shown has the task, the model's answer as Markdown, and tool calls that open to show their arguments and result. Below it, the composer takes a task, or tells a run in progress something, and shows the model, how full the context is, and the tokens spent and cached, in thousands and millions.</desc>
   <style>
     text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -96,16 +96,13 @@
   <text class="ui" x="224" y="270">time. It passes now.</text>
 
   <!-- Composer -->
-  <line class="rule" x1="205" y1="420" x2="663" y2="420"/>
-  <rect class="field" x="220" y="434" width="384" height="40" rx="10"/>
-  <text class="small" x="236" y="459">Give rumbo a task</text>
-  <rect class="send" x="614" y="436" width="36" height="36" rx="9"/>
-  <text class="send-ink" x="626" y="459" font-size="15">↑</text>
-
-  <!-- Status bar -->
-  <line class="rule" x1="205" y1="490" x2="663" y2="490"/>
-  <text class="small" x="220" y="517">Enter sends · Shift-Enter starts a line</text>
-  <text class="small" x="476" y="517">context 23% · 12k in</text>
+  <rect class="field" x="220" y="436" width="430" height="86" rx="12"/>
+  <text class="small" x="236" y="462">Give rumbo a task</text>
+  <rect class="chip" x="230" y="490" width="152" height="22" rx="6"/>
+  <text class="small" x="240" y="505">anthropic · claude-opus</text>
+  <text class="small" x="392" y="505">context 23% of 200K · 12.3K in</text>
+  <rect class="send" x="612" y="486" width="30" height="30" rx="15"/>
+  <text class="send-ink" x="622" y="506" font-size="14">↑</text>
 
   <!-- Notes -->
   <path class="wire" d="M620 33 C640 12 676 14 690 30"/>
@@ -127,16 +124,16 @@
   <text class="note" x="700" y="238">The answer as Markdown; a tool</text>
   <text class="note" x="700" y="254">call opens to show what it got.</text>
 
-  <path class="wire" d="M604 454 C640 454 660 330 690 330"/>
+  <path class="wire" d="M650 458 C670 458 668 330 690 330"/>
   <circle class="dot" cx="690" cy="330" r="3"/>
   <text class="note-head" x="700" y="336">Composer</text>
   <text class="note" x="700" y="354">Enter sends a task; during a run,</text>
   <text class="note" x="700" y="370">it tells the run something.</text>
 
-  <path class="wire" d="M634 514 C662 514 672 440 690 440"/>
+  <path class="wire" d="M560 512 C600 528 672 440 690 440"/>
   <circle class="dot" cx="690" cy="440" r="3"/>
-  <text class="note-head" x="700" y="446">Status bar</text>
-  <text class="note" x="700" y="464">What the keys do, or how the run</text>
-  <text class="note" x="700" y="480">stands; the context and the tokens</text>
-  <text class="note" x="700" y="496">spent.</text>
+  <text class="note-head" x="700" y="446">Context and tokens</text>
+  <text class="note" x="700" y="464">How full the context is, and the</text>
+  <text class="note" x="700" y="480">tokens spent and cached, in K and M;</text>
+  <text class="note" x="700" y="496">every token in its tooltip.</text>
 </svg>
