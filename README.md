@@ -4,7 +4,7 @@ A desktop window for [rumbo](https://github.com/LiasCode/rumbo), the agent
 harness: every project and session in one place, each session as a
 conversation, and rumbo's settings, without a terminal.
 
-![The window: a toolbar with the session shown, the commands, and the settings; a sidebar with every project and its sessions; the conversation of the session shown, with tool calls; the composer; and a status bar with what the keys do, the context, and the tokens.](docs/window.svg)
+![The window: a toolbar with back and forward, the session shown, the commands, and the settings; a sidebar with every project and its sessions; the conversation of the session shown, with tool calls; the composer; and a status bar with what the keys do, the context, and the tokens.](docs/window.svg)
 
 ## How it works
 
@@ -28,6 +28,9 @@ conversation, and rumbo's settings, without a terminal.
 
 - **Work in sessions.** Search them, open one with Ctrl-K or Ctrl-1 … 9,
   rename, branch, compact, export as Markdown, or delete it from its menu.
+- **Go back and forward.** As in a browser, between the sessions, projects,
+  and settings you went to, with the arrows in the toolbar, Alt-Left and
+  Alt-Right, or the mouse's back and forward buttons.
 - **Follow a run.** The model's answer as Markdown, each tool call with
   what it changed in a file, and how long the run took; tell it something
   while it works, or cancel it.
@@ -76,6 +79,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Ctrl-K, Ctrl-P | Commands, and the project's sessions to show one |
 | Ctrl-N | New session |
 | Ctrl-1 … Ctrl-9 | The project's sessions, most recently used first |
+| Alt-Left, Alt-Right | Back and forward between what was shown |
 | Ctrl-B | Show or put away the sidebar |
 | Ctrl-F | Search the sessions |
 | Ctrl-Shift-G | What changed in the project's folder, as Git sees it |

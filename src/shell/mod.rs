@@ -14,8 +14,9 @@ use std::time::Duration;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, FocusHandle,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, PathPromptOptions,
-    Render, Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, NavigationDirection,
+    ParentElement as _, PathPromptOptions, Render, Styled as _, Subscription, Task, Window,
+    actions, div, prelude::FluentBuilder as _, px,
 };
 use ui::{
     ActiveTheme as _, Button, DialogLayer, Dialogs, IconName, InputEvent, InputState, PanelSize,
@@ -27,6 +28,7 @@ use crate::config::{self, Config};
 use crate::editor;
 use crate::environment::Environment;
 use crate::host::{Descriptors, Host};
+use crate::navigation::Navigation;
 use crate::preferences::{self, Preferences, Theme as Colors};
 use crate::workspace::{Workspace, WorkspaceEvent};
 
@@ -44,6 +46,8 @@ actions!(
         ToggleSidebar,
         OpenInEditor,
         FocusSearch,
+        GoBack,
+        GoForward,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -82,6 +86,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-b", ToggleSidebar, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-shift-e", OpenInEditor, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-f", FocusSearch, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-left", GoBack, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-right", GoForward, Some(KEY_CONTEXT)),
         // Plus is a key of its own on some keyboards and Shift-= on others,
         // and both it and minus are on the keypad too.
         KeyBinding::new("ctrl-+", ZoomIn, Some(KEY_CONTEXT)),
@@ -105,7 +111,7 @@ pub fn bind_keys(cx: &mut App) {
 
 /// The window's keys, for the person to read: the keys, and what they do.
 /// They are bound in `bind_keys` here and in the workspace's.
-pub const SHORTCUTS: [(&str, &str); 17] = [
+pub const SHORTCUTS: [(&str, &str); 18] = [
     ("Enter", "Send the task, or tell the run in progress"),
     ("Shift-Enter", "Start a new line"),
     ("Up / Down", "Bring back what was asked in the project"),
@@ -115,6 +121,10 @@ pub const SHORTCUTS: [(&str, &str); 17] = [
     (
         "Ctrl-1 … Ctrl-9",
         "Show the project's sessions, most recent first",
+    ),
+    (
+        "Alt-Left / Alt-Right",
+        "Go back or forward between what was shown",
     ),
     ("Ctrl-B", "Show or put away the sidebar"),
     ("Ctrl-Shift-G", "Changes in the project's folder"),
@@ -147,6 +157,18 @@ pub struct Preferred {
 }
 
 type ProjectId = u64;
+
+/// A place the window shows, to go back and forward between.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Place {
+    /// A session of a project open in the window: empty for a new session,
+    /// and while the project's host starts.
+    Session {
+        project: ProjectId,
+        session: String,
+    },
+    Settings,
+}
 
 /// How a project the window does not have open is opened.
 #[derive(Clone)]
@@ -203,6 +225,8 @@ pub struct Shell {
     toasts: Entity<Toasts>,
     /// Keeps the sidebar's width once it stops changing.
     keeping_width: Option<Task<()>>,
+    /// The places shown, to go back and forward between.
+    places: Navigation<Place>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -256,6 +280,7 @@ impl Shell {
             dialogs: cx.new(|_| Dialogs::new()),
             toasts: cx.new(|_| Toasts::new()),
             keeping_width: None,
+            places: Navigation::default(),
             _subscriptions: vec![appearance, activation, searching, focus_lost],
         };
 
@@ -409,6 +434,7 @@ impl Shell {
         });
 
         self.selected = Some(id);
+        self.record(cx);
         self.start(id, window, cx);
     }
 
@@ -460,6 +486,7 @@ impl Shell {
             state: State::Starting,
         });
         self.selected = Some(id);
+        self.record(cx);
 
         cx.spawn_in(window, async move |this, cx| {
             let attached = cx
@@ -516,6 +543,20 @@ impl Shell {
                 workspace: workspace.clone(),
                 _subscriptions: subscriptions,
             };
+        }
+
+        // The place of a project whose host was starting is the session the
+        // host shows now.
+        let starting = Place::Session {
+            project: id,
+            session: String::new(),
+        };
+
+        if self.places.current() == Some(&starting) {
+            self.places.replace(Place::Session {
+                project: id,
+                session: workspace.read(cx).current().to_string(),
+            });
         }
 
         if self.selected == Some(id) && self.settings.is_none() {
@@ -580,7 +621,31 @@ impl Shell {
 
                 self.ended_elsewhere(id, title, status, cx)
             }
+
+            WorkspaceEvent::Shown { session, went } => self.shown(id, session, *went, cx),
         }
+    }
+
+    /// Takes in the session a project shows now. Only the project shown,
+    /// with no settings over it, shows a place.
+    fn shown(&mut self, id: ProjectId, session: &str, went: bool, cx: &mut Context<Self>) {
+        if self.selected != Some(id) || self.settings.is_some() {
+            return;
+        }
+
+        let place = Place::Session {
+            project: id,
+            session: session.to_string(),
+        };
+
+        if went {
+            self.places.visit(place);
+        } else if matches!(self.places.current(), Some(Place::Session { project, .. }) if *project == id)
+        {
+            self.places.replace(place);
+        }
+
+        cx.notify();
     }
 
     /// Says that a run ended in a session that is not shown, unless the
@@ -620,10 +685,17 @@ impl Shell {
     }
 
     /// Shows a project: the session its host has current, or why it has
-    /// none.
+    /// none, as a place the person went to.
     fn select(&mut self, id: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_project(id, window, cx);
+        self.record(cx);
+    }
+
+    /// Shows a project without recording a place: going on to one of its
+    /// sessions records it then, and going back or forward records none.
+    fn show_project(&mut self, id: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
         self.selected = Some(id);
-        self.close_settings(&CloseSettings, window, cx);
+        self.leave_settings(window, cx);
 
         match self.workspace_of(id) {
             Some(workspace) => workspace.update(cx, |workspace, cx| workspace.focus(window, cx)),
@@ -642,19 +714,43 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.select(id, window, cx);
+        self.show_project(id, window, cx);
 
-        if let Some(workspace) = self.workspace_of(id) {
-            workspace.update(cx, |workspace, cx| workspace.open_session(&session, cx));
+        // The workspace says when it shows another session, which records
+        // the place.
+        let Some(workspace) = self.workspace_of(id) else {
+            self.record(cx);
+            return;
+        };
+
+        let shown = workspace.read(cx);
+        let follows = shown.current() != session
+            && !shown.has_ended()
+            && shown.offers(crate::protocol::FUNCTION_OPEN);
+
+        match follows {
+            true => workspace.update(cx, |workspace, cx| workspace.open_session(&session, cx)),
+            false => self.record(cx),
         }
     }
 
     /// Makes the next task of a project start a new session.
     fn new_session(&mut self, id: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
-        self.select(id, window, cx);
+        self.show_project(id, window, cx);
 
-        if let Some(workspace) = self.workspace_of(id) {
-            workspace.update(cx, |workspace, cx| workspace.new_session(cx));
+        let Some(workspace) = self.workspace_of(id) else {
+            self.record(cx);
+            return;
+        };
+
+        let shown = workspace.read(cx);
+        let follows = !shown.current().is_empty()
+            && !shown.has_ended()
+            && shown.offers(crate::protocol::FUNCTION_NEW);
+
+        match follows {
+            true => workspace.update(cx, |workspace, cx| workspace.new_session(cx)),
+            false => self.record(cx),
         }
     }
 
@@ -673,9 +769,14 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.select(id, window, cx);
+        self.show_project(id, window, cx);
 
+        // Renaming another session shows it first, which records the place.
         if let Some(workspace) = self.workspace_of(id) {
+            if workspace.read(cx).current() == session {
+                self.record(cx);
+            }
+
             workspace.update(cx, |workspace, cx| workspace.rename(&session, window, cx));
         }
     }
@@ -865,7 +966,9 @@ impl Shell {
                 Some(next) => self.select(next, window, cx),
 
                 None => {
+                    // Nothing is left to go back or forward to.
                     self.selected = None;
+                    self.places = Navigation::default();
                     self.action_focus.focus(window, cx);
                 }
             }
@@ -938,8 +1041,15 @@ impl Shell {
         workspace.update(cx, |workspace, cx| workspace.open_palette(window, cx));
     }
 
-    /// Shows the settings in place of the work.
+    /// Shows the settings in place of the work, as a place the person went
+    /// to.
     fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_settings(window, cx);
+        self.record(cx);
+    }
+
+    /// Shows the settings without recording a place.
+    fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.is_some() {
             return;
         }
@@ -967,14 +1077,110 @@ impl Shell {
         cx.notify();
     }
 
-    /// Goes back from the settings to the work.
+    /// Goes back from the settings to the work, as a place the person went
+    /// to.
     fn close_settings(&mut self, _: &CloseSettings, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.is_none() {
+            return;
+        }
+
+        self.leave_settings(window, cx);
+        self.record(cx);
+    }
+
+    /// Puts the settings away without recording a place.
+    fn leave_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.take().is_none() {
             return;
         }
 
         self.focus_work(window, cx);
         self.set_title(window, cx);
+        cx.notify();
+    }
+
+    /// The place shown, once there is one.
+    fn shown_place(&self, cx: &App) -> Option<Place> {
+        if self.settings.is_some() {
+            return Some(Place::Settings);
+        }
+
+        let project = self.selected?;
+        let session = self
+            .workspace_of(project)
+            .map(|workspace| workspace.read(cx).current().to_string())
+            .unwrap_or_default();
+
+        Some(Place::Session { project, session })
+    }
+
+    /// Records the place shown as one the person went to.
+    fn record(&mut self, cx: &App) {
+        if let Some(place) = self.shown_place(cx) {
+            self.places.visit(place);
+        }
+    }
+
+    /// Whether a place can still be shown: its project is open, and its
+    /// session is listed, or is new, or the host lists none.
+    fn can_show(&self, place: &Place, cx: &App) -> bool {
+        let Place::Session { project, session } = place else {
+            return true;
+        };
+
+        if self.project(*project).is_none() {
+            return false;
+        }
+
+        let Some(workspace) = self.workspace_of(*project) else {
+            return true;
+        };
+
+        let workspace = workspace.read(cx);
+        let listed = workspace.sessions();
+
+        session.is_empty()
+            || session == workspace.current()
+            || listed.is_empty()
+            || listed.iter().any(|listed| listed.value == *session)
+    }
+
+    fn go_back(&mut self, _: &GoBack, window: &mut Window, cx: &mut Context<Self>) {
+        let mut places = std::mem::take(&mut self.places);
+        let place = places.back(|place| self.can_show(place, cx));
+
+        self.places = places;
+
+        if let Some(place) = place {
+            self.arrive(place, window, cx);
+        }
+    }
+
+    fn go_forward(&mut self, _: &GoForward, window: &mut Window, cx: &mut Context<Self>) {
+        let mut places = std::mem::take(&mut self.places);
+        let place = places.forward(|place| self.can_show(place, cx));
+
+        self.places = places;
+
+        if let Some(place) = place {
+            self.arrive(place, window, cx);
+        }
+    }
+
+    /// Shows a place gone back or forward to, which records none.
+    fn arrive(&mut self, place: Place, window: &mut Window, cx: &mut Context<Self>) {
+        match place {
+            Place::Settings => self.show_settings(window, cx),
+
+            Place::Session { project, session } => {
+                self.show_project(project, window, cx);
+
+                if let Some(workspace) = self.workspace_of(project) {
+                    workspace.update(cx, |workspace, cx| workspace.revisit(&session, cx));
+                }
+            }
+        }
+
         cx.notify();
     }
 
@@ -1265,6 +1471,17 @@ impl Render for Shell {
                 .on_action(cx.listener(Self::toggle_sidebar))
                 .on_action(cx.listener(Self::open_shown_in_editor))
                 .on_action(cx.listener(Self::focus_search))
+                .on_action(cx.listener(Self::go_back))
+                .on_action(cx.listener(Self::go_forward))
+                // The mouse's back and forward buttons, as in a browser.
+                .on_mouse_down(
+                    MouseButton::Navigate(NavigationDirection::Back),
+                    cx.listener(|this, _, window, cx| this.go_back(&GoBack, window, cx)),
+                )
+                .on_mouse_down(
+                    MouseButton::Navigate(NavigationDirection::Forward),
+                    cx.listener(|this, _, window, cx| this.go_forward(&GoForward, window, cx)),
+                )
                 .on_action(cx.listener(Self::zoom_in))
                 .on_action(cx.listener(Self::zoom_out))
                 .on_action(cx.listener(Self::zoom_reset))

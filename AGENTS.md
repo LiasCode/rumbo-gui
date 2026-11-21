@@ -18,8 +18,9 @@ must not do. Both live in the rumbo repository.
   order it was sent. Do not split answers from events.
 - **Logic out of views.** What the window shows is built from events in
   plain modules that are tested without GPUI (`conversation`, `usage`,
-  `history`, `commands`, `choices`). A view draws them and sends requests;
-  a form says which lists it needs, and the workspace asks for them.
+  `history`, `commands`, `choices`, `navigation`). A view draws them and
+  sends requests; a form says which lists it needs, and the workspace asks
+  for them.
 - **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
   Whatever opens first can get those numbers.
 - **Known by name only where the window gives it a place.** The sidebar
@@ -94,8 +95,10 @@ The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, a tool call opened, a steer during a run,
 an image pasted with Ctrl-V into a task and into a steer, one taken away,
 and one sent alone, Escape to cancel, Up and Down in the composer, bringing back what was asked
-in another session, a session opened with its history, a run left working
-in another session, a command from Ctrl-P with a form and one with a
+in another session, a session opened with its history, going back and
+forward between sessions, projects, a new session, and the settings, with
+the toolbar's arrows and with Alt-Left and Alt-Right, and past a session
+deleted, a run left working in another session, a command from Ctrl-P with a form and one with a
 confirmation, a parameter whose values depend on the one before (the models
 `use` lists for the provider chosen), the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given

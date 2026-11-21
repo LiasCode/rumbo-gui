@@ -1,6 +1,7 @@
 //! The toolbar along the top of the window, which is also its title bar:
-//! where the window is, what can be done with the session shown, and the
-//! commands and the settings, which act on the project shown.
+//! going back and forward between what was shown, where the window is, what
+//! can be done with the session shown, and the commands and the settings,
+//! which act on the project shown.
 
 use gpui::{
     AnyElement, Context, IntoElement, ParentElement as _, Styled as _, div,
@@ -11,12 +12,33 @@ use ui::{
     rems_from_px,
 };
 
-use super::{CloseSettings, OpenPalette, OpenSettings, Shell, State, ToggleSidebar, folder_name};
+use super::{
+    CloseSettings, GoBack, GoForward, OpenPalette, OpenSettings, Shell, State, ToggleSidebar,
+    folder_name,
+};
 
 impl Shell {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let settings_shown = self.settings.is_some();
         let has_commands = self.selected_workspace().is_some();
+        let can_go_back = self.places.can_go_back(|place| self.can_show(place, cx));
+        let can_go_forward = self.places.can_go_forward(|place| self.can_show(place, cx));
+
+        let back = Button::new("go-back")
+            .ghost()
+            .small()
+            .icon(IconName::ChevronLeft)
+            .disabled(!can_go_back)
+            .tooltip("Back (Alt-Left)")
+            .on_click(cx.listener(|this, _, window, cx| this.go_back(&GoBack, window, cx)));
+
+        let forward = Button::new("go-forward")
+            .ghost()
+            .small()
+            .icon(IconName::ChevronRight)
+            .disabled(!can_go_forward)
+            .tooltip("Forward (Alt-Right)")
+            .on_click(cx.listener(|this, _, window, cx| this.go_forward(&GoForward, window, cx)));
 
         let commands = Button::new("commands")
             .ghost()
@@ -88,6 +110,8 @@ impl Shell {
                                     })),
                             )
                         })
+                        .child(back)
+                        .child(forward)
                         .child(div().min_w_0().pl_1().child(self.render_place(cx))),
                 )
                 .child(

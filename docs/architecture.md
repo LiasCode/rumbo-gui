@@ -20,7 +20,7 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 ## Parts
 
 ```
- main ── config, preferences ── shell ─────────────── settings, catalog
+ main ── config, preferences ── shell ─────────────── settings, catalog, navigation (pure; tested)
                                  │  │  one workspace per project
                                  │  └───────────────── workspace ── conversation, usage, history,
                                  │ starts or attaches   │             commands, choices (pure; tested)
@@ -49,6 +49,16 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   instead, and works only in its project. Ctrl-+ and Ctrl-- draw the whole
   window bigger or smaller, and Ctrl-0 at its own size, by the window's
   rem size, which the preferences keep.
+- **navigation** (`src/navigation.rs`) keeps the places the window showed,
+  as a browser keeps the pages: a session of a project, a new session
+  included, or the settings. The toolbar's arrows, Alt-Left and Alt-Right,
+  and the mouse's back and forward buttons move between them, passing over
+  a place that is gone, such as a closed project or a deleted session.
+  Going somewhere is a place; going back or forward is not, and neither is
+  a new session getting its id from its first run, which stays the same
+  place. A workspace says which is which when it shows another session,
+  since only it knows why the host made it current. The places last as
+  long as the window, and start again once no project is open.
 - **catalog** (`src/shell/catalog.rs`) is what rumbo holds in every project:
   the projects that have sessions, and the sessions of each, asked of a
   host the window starts in the person's home only to list them. It runs

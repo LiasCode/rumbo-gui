@@ -99,6 +99,13 @@ pub enum WorkspaceEvent {
         title: String,
         status: String,
     },
+    /// The session shown is now another: a place the person went to when
+    /// `went`, or else the place shown under its own name, as when going
+    /// back or forward arrives, or a new session's first run names it.
+    Shown {
+        session: String,
+        went: bool,
+    },
 }
 
 /// What is done with the answer of a function of the host asked for by the
@@ -146,6 +153,8 @@ enum Pending {
     /// A function of the host the workspace asked for itself, to go on
     /// once it has answered.
     Then(Then),
+    /// A session shown again, as going back or forward does.
+    Revisit,
 }
 
 /// Where the answer of a function called for the person shows.
@@ -241,6 +250,9 @@ pub struct Workspace {
     ended: Option<String>,
     /// Sessions whose run ended while another was shown, until they are.
     unseen: HashSet<String>,
+    /// Whether the session shown is changing because going back or forward
+    /// asked for it, which is no new place.
+    revisiting: bool,
     /// What shows beside the conversation, if anything.
     panel: Option<Panel>,
     panels: panel::Panels,
@@ -325,6 +337,7 @@ impl Workspace {
             notice: None,
             ended: None,
             unseen: HashSet::new(),
+            revisiting: false,
             panel: None,
             panels: panel::Panels::new(cx),
             width: crate::preferences::Width::default().pixels(),
@@ -406,9 +419,13 @@ impl Workspace {
 
         self.view(&session, cx);
         self.unseen.remove(&session);
-        self.current = session;
+        self.current = session.clone();
         self.set_hint(cx);
         self.refresh_panel(cx);
+        cx.emit(WorkspaceEvent::Shown {
+            session,
+            went: !self.revisiting,
+        });
         cx.notify();
     }
 
@@ -455,6 +472,11 @@ impl Workspace {
     /// How many runs of this window work in the project.
     pub fn working(&self) -> usize {
         self.runs.len()
+    }
+
+    /// Whether the host is gone; the window can start it again.
+    pub fn has_ended(&self) -> bool {
+        self.ended.is_some()
     }
 
     /// Whether a run ended in the session while another was shown, and the
@@ -516,6 +538,42 @@ impl Workspace {
         }
 
         self.call_host(protocol::FUNCTION_NEW, None, Feedback::Quiet, cx);
+    }
+
+    /// Shows a session again, empty for a new one, as going back or forward
+    /// does: what it shows is told as the place arrived at, not as a new
+    /// one. A session that cannot be shown leaves the one shown as it is,
+    /// and is told as the place arrived at instead.
+    pub fn revisit(&mut self, session: &str, cx: &mut Context<Self>) {
+        if session == self.current {
+            return;
+        }
+
+        let (name, params) = match session.is_empty() {
+            true => (protocol::FUNCTION_NEW, None),
+            false => (protocol::FUNCTION_OPEN, Some(json!({ "session": session }))),
+        };
+
+        let asked = self.ended.is_none()
+            && self.host_function(name).is_some()
+            && self
+                .request(
+                    protocol::METHOD_INVOKE,
+                    InvokeParams {
+                        name: name.into(),
+                        params,
+                        target: protocol::TARGET_HOST,
+                    },
+                    Pending::Revisit,
+                )
+                .is_some();
+
+        if !asked {
+            cx.emit(WorkspaceEvent::Shown {
+                session: self.current.clone(),
+                went: false,
+            });
+        }
     }
 
     /// Asks a function of the host for the workspace itself, and goes on
@@ -1229,6 +1287,28 @@ impl Workspace {
 
                 Err(error) => self.notice = Some(error.message),
             },
+
+            Pending::Revisit => {
+                match answer {
+                    Ok(result) => {
+                        let result: HostResult = serde_json::from_value(result).unwrap_or_default();
+
+                        self.revisiting = true;
+                        self.attached(result.state, window, cx);
+                        self.revisiting = false;
+                        self.refresh_sessions();
+                    }
+
+                    Err(error) => self.notice = Some(error.message),
+                }
+
+                // Whatever the host answered, the place arrived at is the
+                // session shown now.
+                cx.emit(WorkspaceEvent::Shown {
+                    session: self.current.clone(),
+                    went: false,
+                });
+            }
         }
     }
 
@@ -1259,7 +1339,7 @@ impl Workspace {
 
         // A run that ended before saying anything names its session here.
         let key = if key.is_empty() && !session.is_empty() {
-            self.name_session(&session);
+            self.name_session(&session, cx);
             session
         } else {
             key
@@ -1515,7 +1595,7 @@ impl Workspace {
             if key.is_empty() && !event.session.is_empty() {
                 let shown = self.current.is_empty();
 
-                self.name_session(&event.session);
+                self.name_session(&event.session, cx);
 
                 if shown {
                     self.set_hint(cx);
@@ -1537,7 +1617,7 @@ impl Workspace {
     }
 
     /// Gives the new session its id, once a run has made it.
-    fn name_session(&mut self, session: &str) {
+    fn name_session(&mut self, session: &str, cx: &mut Context<Self>) {
         if let Some(view) = self.views.remove("") {
             self.views.insert(session.to_string(), view);
         }
@@ -1548,6 +1628,10 @@ impl Workspace {
 
         if self.current.is_empty() {
             self.current = session.to_string();
+            cx.emit(WorkspaceEvent::Shown {
+                session: session.to_string(),
+                went: false,
+            });
         }
 
         self.refresh_sessions();
