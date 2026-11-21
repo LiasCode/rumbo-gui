@@ -4,6 +4,7 @@
 //! finish ended. It is written from what the window shows.
 
 use crate::conversation::{Item, Kind, Source, first_line};
+use crate::picture::{self, Picture};
 
 /// How much of a tool's result is kept; the rest is said to be left out.
 const RESULT_LINES: usize = 20;
@@ -16,14 +17,16 @@ pub fn markdown(title: &str, items: &[Item]) -> String {
         out.push('\n');
 
         match &item.kind {
-            Kind::Task(text) => {
+            Kind::Task(text, images) => {
                 out.push_str("## Task\n\n");
                 out.push_str(&quoted(text));
+                out.push_str(&given(images));
             }
 
-            Kind::Steer(text) => {
+            Kind::Steer(text, images) => {
                 out.push_str("**Told the run:**\n\n");
                 out.push_str(&quoted(text));
+                out.push_str(&given(images));
             }
 
             Kind::Reply(text) => {
@@ -134,6 +137,29 @@ fn shortened(text: &str) -> String {
     )
 }
 
+/// The images a person gave, which a document names, not shows.
+fn given(images: &[Picture]) -> String {
+    if images.is_empty() {
+        return String::new();
+    }
+
+    let names: Vec<String> = images
+        .iter()
+        .enumerate()
+        .map(|(index, image)| {
+            let kind = picture::media_type(&image.image).unwrap_or("image");
+
+            format!(
+                "[image {}: {}]",
+                index + 1,
+                kind.trim_start_matches("image/")
+            )
+        })
+        .collect();
+
+    format!("\n*{}*\n", names.join("  "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,7 +172,7 @@ mod tests {
     #[test]
     fn writes_the_tasks_answers_and_tool_calls_in_order() {
         let items = [
-            item(Kind::Task("Add a flag\nto export".into())),
+            item(Kind::Task("Add a flag\nto export".into(), vec![])),
             item(Kind::Tool(Tool {
                 name: "bash".into(),
                 summary: "bash ls".into(),
@@ -165,6 +191,20 @@ mod tests {
         assert_eq!(
             markdown("Flags", &items),
             "# Flags\n\n## Task\n\n> Add a flag\n> to export\n\n**bash ls**\n\n```\na.txt\nb.txt\n```\n\nDone, see `a.txt`.\n\n_Cancelled._\n"
+        );
+    }
+
+    #[test]
+    fn names_the_images_a_person_gave() {
+        let png = Picture::new(gpui::Image::from_bytes(
+            gpui::ImageFormat::Png,
+            b"png".to_vec(),
+        ));
+        let items = [item(Kind::Task("What is this?".into(), vec![png]))];
+
+        assert_eq!(
+            markdown("Pictures", &items),
+            "# Pictures\n\n## Task\n\n> What is this?\n\n*[image 1: png]*\n"
         );
     }
 

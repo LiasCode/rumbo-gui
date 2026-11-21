@@ -92,7 +92,8 @@ an agent's harness does: run the tests there with
 
 The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, a tool call opened, a steer during a run,
-Escape to cancel, Up and Down in the composer, bringing back what was asked
+an image pasted with Ctrl-V into a task and into a steer, one taken away,
+and one sent alone, Escape to cancel, Up and Down in the composer, bringing back what was asked
 in another session, a session opened with its history, a run left working
 in another session, a command from Ctrl-P with a form and one with a
 confirmation, a parameter whose values depend on the one before (the models
@@ -164,6 +165,12 @@ screenshots only while its workspace is the one shown, since a hidden window
 does not draw. Never move the pointer or click: what is under it may be
 another program by then. Run a terminal check in a tmux server of its own,
 `tmux -L name`, never the person's.
+
+The clipboard is the person's too: never copy to it to test pasting. A
+Sway started with `WLR_BACKENDS=headless` has a clipboard and a screen of
+its own, which nothing of the person's shares: `wl-copy` an image into it,
+run the window in it, and drive it there with rumbo's computer tool, with
+`WAYLAND_DISPLAY` and `SWAYSOCK` naming that Sway.
 
 Open Project… asks the desktop's folder dialog, which takes `/` and a path
 typed, and Return; it completes a folder that holds a single folder into

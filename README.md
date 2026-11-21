@@ -31,6 +31,9 @@ conversation, and rumbo's settings, without a terminal.
 - **Follow a run.** The model's answer as Markdown, each tool call with
   what it changed in a file, and how long the run took; tell it something
   while it works, or cancel it.
+- **Show the model a picture.** Ctrl-V pastes the image in the clipboard
+  into the composer, and it goes with the task, or with what you tell a
+  run; the conversation shows it where you gave it.
 - **Change your mind.** Edit a message, or ask it again, in a branch that
   starts before it; the session you were in stays as it was.
 - **Review the work.** The Changes panel shows the diff of the project's

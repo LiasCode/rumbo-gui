@@ -1,18 +1,19 @@
 //! The composer: a card at the foot of the conversation where the person
-//! writes a task, or, while a run works, something for it to read; with the
-//! model the session uses, which opens the picker, and the buttons that
-//! send and cancel.
+//! writes a task, or, while a run works, something for it to read, with the
+//! images pasted into it; with the model the session uses, which opens the
+//! picker, and the buttons that send and cancel.
 
 use gpui::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _,
-    div, prelude::FluentBuilder as _,
+    AnyElement, ClipboardEntry, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    Styled as _, div, prelude::FluentBuilder as _,
 };
-use ui::input_actions::{MoveDown, MoveUp};
+use ui::input_actions::{MoveDown, MoveUp, Paste};
 use ui::{
     ActiveTheme as _, Button, IconName, Sizable as _, Textarea, h_flex, rems_from_px, v_flex,
 };
 
 use super::{CancelRun, Workspace, WorkspaceEvent};
+use crate::picture::{self, Picture};
 
 impl Workspace {
     pub(super) fn render_composer(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -81,9 +82,9 @@ impl Workspace {
             .on_click(cx.listener(|this, _, _, cx| this.open_picker(cx)));
 
         let hint = if working {
-            "Enter tells the run · Escape cancels it"
+            "Enter tells the run · Escape cancels it · Ctrl-V pastes an image"
         } else {
-            "Enter sends · Shift-Enter starts a line · Up brings back what was asked"
+            "Enter sends · Shift-Enter starts a line · Ctrl-V pastes an image · Up brings back what was asked"
         };
 
         let card = v_flex()
@@ -107,6 +108,16 @@ impl Workspace {
                     cx.stop_propagation();
                 }
             }))
+            // An image in the clipboard is pasted here; text is left for the
+            // field to paste.
+            .capture_action(cx.listener(|this, _: &Paste, _, cx| {
+                if this.paste_images(cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            .when(!self.pasted.is_empty(), |card| {
+                card.child(self.render_pasted(cx))
+            })
             .child(Textarea::new(&self.composer).bare(true))
             .child(
                 h_flex()
@@ -129,5 +140,76 @@ impl Workspace {
                     .child(hint),
             )
             .into_any_element()
+    }
+
+    /// The images pasted into the composer, each with a button that takes it
+    /// away.
+    fn render_pasted(&self, cx: &mut Context<Self>) -> AnyElement {
+        let border = cx.theme().colors.border;
+
+        h_flex()
+            .flex_wrap()
+            .gap_2()
+            .pt_1()
+            .children(self.pasted.iter().enumerate().map(|(index, image)| {
+                h_flex()
+                    .items_start()
+                    .gap_0p5()
+                    .child(image.shown(128., 64.).border_1().border_color(border))
+                    .child(
+                        Button::new(("unpaste", index))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .tooltip("Take the image away")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if index < this.pasted.len() {
+                                    this.pasted.remove(index);
+                                }
+
+                                // Back to the composer, so Enter sends
+                                // instead of pressing the next button.
+                                this.focus(window, cx);
+                                cx.notify();
+                            })),
+                    )
+            }))
+            .into_any_element()
+    }
+
+    /// Takes the images in the clipboard into the composer, and says whether
+    /// it held any. A model takes PNG, JPEG, GIF, and WebP; another image is
+    /// refused, with a word why.
+    fn paste_images(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(item) = cx.read_from_clipboard() else {
+            return false;
+        };
+
+        let images: Vec<_> = item
+            .entries()
+            .iter()
+            .filter_map(|entry| match entry {
+                ClipboardEntry::Image(image) => Some(image.clone()),
+                _ => None,
+            })
+            .collect();
+
+        if images.is_empty() {
+            return false;
+        }
+
+        let (taken, refused): (Vec<_>, Vec<_>) = images
+            .into_iter()
+            .partition(|image| picture::media_type(image).is_some());
+
+        if taken.is_empty() && !refused.is_empty() {
+            self.notice =
+                Some("The clipboard's image is not a PNG, JPEG, GIF, or WebP image".into());
+        }
+
+        self.pasted.extend(taken.into_iter().map(Picture::new));
+        cx.notify();
+
+        true
     }
 }

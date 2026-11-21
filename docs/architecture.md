@@ -82,7 +82,10 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   session it names. A run in a new session learns the session's id from its
   first event. A session shown for the first time asks the host for its
   history, which comes before anything that happens in it after. The
-  composer starts with what the host recalls of the project's sessions. The
+  composer starts with what the host recalls of the project's sessions,
+  and keeps the images pasted into it, which go with what is sent next;
+  **picture** (`src/picture.rs`) carries them between the clipboard, the
+  protocol, and the conversation, which shows them. The
   model and the options belong to the session, which keeps them: the picker
   changes them with the host's `use` and `session-set`, and every run
   gets what its session has. The workspace follows the provider's function

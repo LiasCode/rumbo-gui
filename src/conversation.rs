@@ -5,6 +5,7 @@
 
 use serde_json::Value as Json;
 
+use crate::picture::{self, Picture};
 use crate::protocol::{self, Event};
 
 /// Identifies an item for as long as the conversation lives, whatever its
@@ -43,10 +44,12 @@ pub struct Tool {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
-    /// An objective the person gave, which starts a run.
-    Task(String),
-    /// What the person told a run while it worked, once the run had it.
-    Steer(String),
+    /// An objective the person gave, which starts a run, and the images
+    /// given with it.
+    Task(String, Vec<Picture>),
+    /// What the person told a run while it worked, once the run had it,
+    /// and the images given with it.
+    Steer(String, Vec<Picture>),
     /// The model's visible answer, which grows while it streams.
     Reply(String),
     Tool(Tool),
@@ -133,10 +136,16 @@ impl Conversation {
             // A new objective starts a new run, so the one before is over.
             protocol::EVENT_OBJECTIVE => {
                 self.settle();
-                self.push(Kind::Task(event.text.clone()))
+                self.push(Kind::Task(
+                    event.text.clone(),
+                    picture::from_all(&event.images),
+                ))
             }
 
-            protocol::EVENT_STEER => self.push(Kind::Steer(event.text.clone())),
+            protocol::EVENT_STEER => self.push(Kind::Steer(
+                event.text.clone(),
+                picture::from_all(&event.images),
+            )),
 
             protocol::EVENT_ENDED => self.end(&event.status, &event.text),
 
@@ -177,7 +186,7 @@ impl Conversation {
                         .items
                         .iter()
                         .rev()
-                        .take_while(|item| !matches!(item.kind, Kind::Task(_)))
+                        .take_while(|item| !matches!(item.kind, Kind::Task(..)))
                         .filter(|item| matches!(item.kind, Kind::Tool(_)))
                         .count();
 
@@ -216,12 +225,12 @@ impl Conversation {
         let mut number = 0;
 
         for item in &self.items {
-            if matches!(item.kind, Kind::Task(_)) {
+            if matches!(item.kind, Kind::Task(..)) {
                 number += 1;
             }
 
             if item.id == id {
-                return matches!(item.kind, Kind::Task(_)).then_some(number);
+                return matches!(item.kind, Kind::Task(..)).then_some(number);
             }
         }
 
@@ -398,7 +407,7 @@ mod tests {
         let mut conversation = Conversation::default();
 
         assert_eq!(
-            conversation.push(Kind::Task("say hi".into())),
+            conversation.push(Kind::Task("say hi".into(), vec![])),
             Change::Appended
         );
         assert_eq!(
@@ -423,7 +432,7 @@ mod tests {
         assert_eq!(
             kinds(&conversation),
             [
-                Kind::Task("say hi".into()),
+                Kind::Task("say hi".into(), vec![]),
                 Kind::Reply("Hi there".into()),
                 Kind::Context(vec!["environment".into()]),
                 Kind::Reply("Again".into()),
@@ -543,7 +552,7 @@ mod tests {
     fn tells_a_history_before_what_happens_now() {
         let mut conversation = Conversation::default();
 
-        conversation.push(Kind::Task("now".into()));
+        conversation.push(Kind::Task("now".into(), vec![]));
 
         let history = [
             event(json!({"type": "objective", "text": "before"})),
@@ -558,10 +567,10 @@ mod tests {
 
         let kinds = kinds(&conversation);
 
-        assert_eq!(kinds[0], Kind::Task("before".into()));
+        assert_eq!(kinds[0], Kind::Task("before".into(), vec![]));
         assert!(matches!(&kinds[1], Kind::Tool(tool) if tool.failed && tool.result.is_none()));
-        assert_eq!(kinds[2], Kind::Steer("faster".into()));
-        assert_eq!(kinds[3], Kind::Task("again".into()));
+        assert_eq!(kinds[2], Kind::Steer("faster".into(), vec![]));
+        assert_eq!(kinds[3], Kind::Task("again".into(), vec![]));
         assert_eq!(
             kinds[5],
             Kind::Stopped {
@@ -569,7 +578,7 @@ mod tests {
                 reason: "no credit".into()
             }
         );
-        assert_eq!(kinds[6], Kind::Task("now".into()));
+        assert_eq!(kinds[6], Kind::Task("now".into(), vec![]));
 
         let mut ids: Vec<ItemId> = conversation.items().iter().map(|item| item.id).collect();
         ids.sort();
@@ -638,10 +647,10 @@ mod tests {
     fn says_how_long_a_followed_run_took_and_the_tools_it_called() {
         let mut conversation = Conversation::default();
 
-        conversation.push(Kind::Task("first".into()));
+        conversation.push(Kind::Task("first".into(), vec![]));
         conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
         conversation.end_after("done", "", Some(3));
-        conversation.push(Kind::Task("second".into()));
+        conversation.push(Kind::Task("second".into(), vec![]));
         conversation.apply(&event(json!({"type": "tool_started", "name": "read"})));
         conversation.apply(&event(json!({"type": "tool_started", "name": "bash"})));
 
@@ -663,10 +672,10 @@ mod tests {
     fn numbers_the_tasks_as_the_host_numbers_branch_points() {
         let mut conversation = Conversation::default();
 
-        conversation.push(Kind::Task("first".into()));
+        conversation.push(Kind::Task("first".into(), vec![]));
         conversation.apply(&event(json!({"type": "text", "text": "ok"})));
-        conversation.push(Kind::Steer("faster".into()));
-        conversation.push(Kind::Task("second".into()));
+        conversation.push(Kind::Steer("faster".into(), vec![]));
+        conversation.push(Kind::Task("second".into(), vec![]));
 
         let ids: Vec<ItemId> = conversation.items().iter().map(|item| item.id).collect();
 
@@ -674,5 +683,28 @@ mod tests {
         assert_eq!(conversation.task_number(ids[1]), None);
         assert_eq!(conversation.task_number(ids[2]), None);
         assert_eq!(conversation.task_number(ids[3]), Some(2));
+    }
+
+    #[test]
+    fn a_history_gives_back_the_images_a_person_gave() {
+        let png = protocol::Image {
+            media_type: "image/png".into(),
+            data: "cG5n".into(),
+        };
+        let mut conversation = Conversation::default();
+
+        conversation.earlier(&[
+            event(json!({"type": "objective", "text": "what is this?", "images": [png]})),
+            event(json!({"type": "steer", "text": "", "images": [png, png]})),
+        ]);
+
+        let kinds = kinds(&conversation);
+
+        assert!(
+            matches!(&kinds[0], Kind::Task(text, images) if text == "what is this?" && images.len() == 1)
+        );
+        assert!(
+            matches!(&kinds[1], Kind::Steer(text, images) if text.is_empty() && images.len() == 2)
+        );
     }
 }

@@ -13,6 +13,7 @@ mod export;
 mod git;
 mod history;
 mod host;
+mod picture;
 mod preferences;
 mod protocol;
 mod shell;

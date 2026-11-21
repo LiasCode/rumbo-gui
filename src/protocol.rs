@@ -112,14 +112,26 @@ pub struct InitializeResult {
     pub config: Json,
 }
 
-/// Starts a run on `objective`, or continues the session's last one. The
-/// run uses the model and the options its session keeps.
+/// Starts a run on `objective`, and the images given with it, or continues
+/// the session's last one. The run uses the model and the options its
+/// session keeps.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RunParams {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub objective: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
     #[serde(skip_serializing_if = "is_false")]
     pub resume: bool,
+}
+
+/// An image the person gave, as the protocol carries one: its media type,
+/// such as `image/png`, and the encoded file in base64.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Image {
+    pub media_type: String,
+    pub data: String,
 }
 
 /// How a run ended.
@@ -131,11 +143,13 @@ pub struct RunResult {
     pub session: String,
 }
 
-/// What the person tells a run while it works.
+/// What the person tells a run while it works, and the images given with it.
 #[derive(Debug, Clone, Serialize)]
 pub struct SteerParams {
     pub run: i64,
     pub text: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
 }
 
 /// Names the run to cancel by the id of its run request.
@@ -190,6 +204,8 @@ pub struct Event {
     pub window: i64,
     pub usage: Option<Usage>,
     pub status: String,
+    /// The images given with an objective or a steer, in a history.
+    pub images: Vec<Image>,
 }
 
 /// A function of the host or of the provider, which a front end offers

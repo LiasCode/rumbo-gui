@@ -35,6 +35,7 @@ use crate::connection::Incoming;
 use crate::conversation::{Change, Conversation, ItemId, Kind, Source};
 use crate::history::History;
 use crate::host::Host;
+use crate::picture::{self, Picture};
 use crate::protocol::{
     self, CancelParams, DescribeResult, Event, Function, HistoryParams, HistoryResult, HostResult,
     HostState, InvokeParams, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
@@ -110,6 +111,7 @@ enum Pending {
     Steer {
         run: i64,
         text: String,
+        images: Vec<Picture>,
     },
     /// The history of a session, for its view.
     History(String),
@@ -216,6 +218,9 @@ pub struct Workspace {
     /// What the provider can be asked, or why that is not known.
     provider_functions: Result<Vec<Function>, String>,
     composer: Entity<InputState>,
+    /// The images pasted into the composer, which go with what is sent
+    /// next.
+    pasted: Vec<Picture>,
     palette: Entity<CommandPaletteState>,
     /// The picker waits for what the provider offers.
     picking: bool,
@@ -305,6 +310,7 @@ impl Workspace {
             host_functions: initialize.functions,
             provider_functions: Ok(Vec::new()),
             composer,
+            pasted: Vec::new(),
             palette,
             picking: false,
             form: None,
@@ -347,6 +353,7 @@ impl Workspace {
                     ..RunParams::default()
                 },
                 objective,
+                Vec::new(),
                 window,
                 cx,
             );
@@ -650,7 +657,7 @@ impl Workspace {
     pub fn branch(
         &mut self,
         point: Option<usize>,
-        again: Option<(String, bool)>,
+        again: Option<(String, Vec<Picture>, bool)>,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -666,18 +673,21 @@ impl Workspace {
                 );
 
                 match again {
-                    Some((text, true)) => this.start(
+                    Some((text, images, true)) => this.start(
                         RunParams {
                             objective: text.clone(),
+                            images: images.iter().map(picture::to_protocol).collect(),
                             ..RunParams::default()
                         },
                         text,
+                        images,
                         window,
                         cx,
                     ),
 
-                    Some((text, false)) => {
+                    Some((text, images, false)) => {
                         this.fill(text, window, cx);
+                        this.pasted = images;
                         this.focus(window, cx);
                     }
 
@@ -785,14 +795,19 @@ impl Workspace {
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.composer.read(cx).value().trim().to_string();
 
-        if text.is_empty() || self.ended.is_some() {
+        if (text.is_empty() && self.pasted.is_empty()) || self.ended.is_some() {
             return;
         }
 
-        self.history.remember(&text);
+        if !text.is_empty() {
+            self.history.remember(&text);
+        }
+
         self.composer
             .update(cx, |state, cx| state.set_value("", window, cx));
 
+        let images = std::mem::take(&mut self.pasted);
+        let sent = images.iter().map(picture::to_protocol).collect();
         let current = self.current.clone();
 
         match self.view(&current, cx).run {
@@ -800,17 +815,25 @@ impl Workspace {
                 let pending = Pending::Steer {
                     run,
                     text: text.clone(),
+                    images,
+                };
+                let params = SteerParams {
+                    run,
+                    text,
+                    images: sent,
                 };
 
-                self.request(protocol::METHOD_STEER, SteerParams { run, text }, pending);
+                self.request(protocol::METHOD_STEER, params, pending);
             }
 
             None => self.start(
                 RunParams {
                     objective: text.clone(),
+                    images: sent,
                     ..RunParams::default()
                 },
                 text,
+                images,
                 window,
                 cx,
             ),
@@ -844,10 +867,11 @@ impl Workspace {
         &mut self,
         params: RunParams,
         label: String,
+        images: Vec<Picture>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.start_as(params, Kind::Task(label), window, cx);
+        self.start_as(params, Kind::Task(label, images), window, cx);
     }
 
     /// Starts a run, showing `shown` for what started it.
@@ -1108,7 +1132,9 @@ impl Workspace {
         match pending {
             Pending::Run => self.run_ended(id, answer, window, cx),
 
-            Pending::Steer { run, text } => self.steered(run, text, answer, window, cx),
+            Pending::Steer { run, text, images } => {
+                self.steered(run, text, images, answer, window, cx)
+            }
 
             Pending::History(session) => {
                 let told: HistoryResult = match answer {
@@ -1279,6 +1305,7 @@ impl Workspace {
         &mut self,
         run: i64,
         text: String,
+        images: Vec<Picture>,
         answer: Result<Json, RpcError>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1290,15 +1317,19 @@ impl Workspace {
                     .get(&run)
                     .cloned()
                     .unwrap_or_else(|| self.current.clone());
-                let change = self.view(&key, cx).conversation.push(Kind::Steer(text));
+                let change = self
+                    .view(&key, cx)
+                    .conversation
+                    .push(Kind::Steer(text, images));
 
                 self.show(&key, change, cx);
             }
 
             // The run never reads it, so it goes back to be sent again,
             // unless something new is being typed.
-            Err(error) if self.composer.read(cx).value().is_empty() => {
+            Err(error) if self.composer.read(cx).value().is_empty() && self.pasted.is_empty() => {
                 self.fill(text, window, cx);
+                self.pasted = images;
                 self.notice = Some(format!("{}; Enter sends it as a new task", error.message));
             }
 

@@ -15,6 +15,7 @@ use ui::{
 
 use super::Workspace;
 use crate::conversation::{Item, Kind, Line, Source, Tool};
+use crate::picture::Picture;
 use crate::protocol;
 
 /// The most lines of a change shown under its call; the rest are counted.
@@ -50,24 +51,25 @@ pub(super) fn render_row(
     let muted = colors.muted_foreground;
 
     match &item.kind {
-        Kind::Task(text) => {
+        Kind::Task(text, images) => {
             let number = view.conversation.task_number(item.id);
             let can_branch = this.host_function(protocol::FUNCTION_BRANCH).is_some()
                 && this.ended.is_none()
                 && !key.is_empty();
 
-            row.child(said_by_person(text, None))
+            row.child(said_by_person(text, images, None))
                 .child(task_actions(
                     workspace.clone(),
                     item.id,
                     text,
+                    images,
                     number.filter(|_| can_branch),
                 ))
                 .into_any_element()
         }
 
-        Kind::Steer(text) => row
-            .child(said_by_person(text, Some("Told the run")))
+        Kind::Steer(text, images) => row
+            .child(said_by_person(text, images, Some("Told the run")))
             .into_any_element(),
 
         Kind::Reply(text) => {
@@ -254,12 +256,13 @@ fn task_actions(
     workspace: WeakEntity<Workspace>,
     id: u64,
     text: &str,
+    images: &[Picture],
     point: Option<usize>,
 ) -> impl IntoElement {
     let group = SharedString::from(format!("task-{id}"));
     let editing = workspace.clone();
-    let edited = text.to_string();
-    let retried = text.to_string();
+    let edited = (text.to_string(), images.to_vec());
+    let retried = edited.clone();
 
     h_flex()
         .id(("task-actions", id))
@@ -280,10 +283,10 @@ fn task_actions(
                     .icon(IconName::Pencil)
                     .tooltip("Change it, in a branch that starts before it")
                     .on_click(move |_, window, cx| {
-                        let text = edited.clone();
+                        let (text, images) = edited.clone();
 
                         let _ = editing.update(cx, |this, cx| {
-                            this.branch(Some(point), Some((text, false)), window, cx)
+                            this.branch(Some(point), Some((text, images, false)), window, cx)
                         });
                     }),
             )
@@ -294,24 +297,37 @@ fn task_actions(
                     .icon(IconName::RotateCcw)
                     .tooltip("Ask it again, in a branch that starts before it")
                     .on_click(move |_, window, cx| {
-                        let text = retried.clone();
+                        let (text, images) = retried.clone();
 
                         let _ = workspace.update(cx, |this, cx| {
-                            this.branch(Some(point), Some((text, true)), window, cx)
+                            this.branch(Some(point), Some((text, images, true)), window, cx)
                         });
                     }),
             )
         })
 }
 
-fn said_by_person(text: &str, caption: Option<&'static str>) -> impl IntoElement {
+fn said_by_person(
+    text: &str,
+    images: &[Picture],
+    caption: Option<&'static str>,
+) -> impl IntoElement {
     let message = Message::new();
 
     match caption {
         Some(caption) => message.caption(caption),
         None => message,
     }
-    .child(text.to_string())
+    .when(!text.is_empty(), |message| message.child(text.to_string()))
+    .when(!images.is_empty(), |message| {
+        message.child(
+            h_flex()
+                .flex_wrap()
+                .gap_2()
+                .when(!text.is_empty(), |row| row.pt_2())
+                .children(images.iter().map(|image| image.shown(320., 240.))),
+        )
+    })
 }
 
 /// The icon a tool is shown with, by what it does.
