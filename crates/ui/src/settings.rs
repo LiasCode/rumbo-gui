@@ -9,7 +9,7 @@ use gpui::{
     AnyElement, App, AppContext as _, ElementId, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Refineable as _, RenderOnce, ScrollHandle, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, Subscription, Window, div,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 
 use crate::button::Button;
@@ -18,7 +18,7 @@ use crate::icon::{Icon, IconName};
 use crate::input::Input;
 use crate::root::{h_flex, v_flex};
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::text::{InputEvent, InputState};
 use crate::theme::ActiveTheme as _;
 
@@ -256,7 +256,7 @@ impl RenderOnce for Settings {
 
         let pages = v_flex()
             .flex_none()
-            .w(px(220.))
+            .w(rems_from_px(220.))
             .h_full()
             .p_3()
             .gap_1()
@@ -349,7 +349,7 @@ impl RenderOnce for Settings {
                             .child(
                                 v_flex()
                                     .w_full()
-                                    .max_w(px(760.))
+                                    .max_w(rems_from_px(760.))
                                     .mx_auto()
                                     .p_6()
                                     .gap_6()

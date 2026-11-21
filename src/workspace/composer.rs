@@ -5,10 +5,12 @@
 
 use gpui::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _,
-    div, prelude::FluentBuilder as _, px,
+    div, prelude::FluentBuilder as _,
 };
 use ui::input_actions::{MoveDown, MoveUp};
-use ui::{ActiveTheme as _, Button, IconName, Sizable as _, Textarea, h_flex, v_flex};
+use ui::{
+    ActiveTheme as _, Button, IconName, Sizable as _, Textarea, h_flex, rems_from_px, v_flex,
+};
 
 use super::{CancelRun, Workspace, WorkspaceEvent};
 
@@ -16,7 +18,7 @@ impl Workspace {
     pub(super) fn render_composer(&self, cx: &mut Context<Self>) -> AnyElement {
         let column = v_flex()
             .w_full()
-            .max_w(px(self.width))
+            .max_w(rems_from_px(self.width))
             .mx_auto()
             .px_4()
             .pb_3()

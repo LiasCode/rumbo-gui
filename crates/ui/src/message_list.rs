@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, FollowMode, IntoElement, ListAlignment, ListState,
-    ParentElement as _, Pixels, RenderOnce, Styled as _, Window, div, linear_color_stop,
+    ParentElement as _, Pixels, Rems, RenderOnce, Styled as _, Window, div, linear_color_stop,
     linear_gradient, list, prelude::FluentBuilder as _, px,
 };
 
@@ -15,14 +15,14 @@ use crate::button::Button;
 use crate::child_id;
 use crate::icon::IconName;
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 /// How far past the view rows are drawn, so scrolling finds them ready.
 const OVERDRAW: Pixels = px(1000.);
 
 /// How tall the fade at the foot is.
-const FADE: Pixels = px(24.);
+const FADE: Rems = rems_from_px(24.);
 
 /// The rows of a conversation, and where it is scrolled. Each view of a
 /// conversation keeps one, so each keeps its place.

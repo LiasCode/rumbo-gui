@@ -91,7 +91,7 @@ pub use scroll::{Measure, ScrollSource, Scrollbar};
 pub use select::{Select, SelectEvent, SelectItem, SelectState};
 pub use settings::{Settings, SettingsGroup, SettingsItem, SettingsPage};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem};
-pub use size::{Sizable, Size};
+pub use size::{Sizable, Size, rems_from_px, set_zoom};
 pub use skeleton::Skeleton;
 pub use slider::Slider;
 pub use spinner::Spinner;

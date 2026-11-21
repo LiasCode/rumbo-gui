@@ -24,8 +24,8 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, App, ElementId, Entity, FontWeight, ImageAssetLoader, ImageCacheError,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Refineable as _, RenderImage,
-    RenderOnce, Resource, Rgba, SMOOTH_SVG_SCALE_FACTOR, ScrollHandle, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Refineable as _, Rems,
+    RenderImage, RenderOnce, Resource, Rgba, SMOOTH_SVG_SCALE_FACTOR, ScrollHandle, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, StyledText, Window, canvas, div, img,
     prelude::FluentBuilder as _, px,
 };
@@ -36,7 +36,7 @@ use crate::icon::{Icon, IconName};
 use crate::list::{List, ListItem, ListMarker};
 use crate::root::{h_flex, v_flex};
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{self, Sizable as _, rems_from_px};
 use crate::theme::{ActiveTheme as _, ThemeMode};
 use blocks::{Align, Block, Inline, Marks};
 use image::Source;
@@ -45,8 +45,8 @@ use selectable::SelectableText;
 pub(crate) use selectable::bind_keys;
 
 /// The size of a paragraph's words, and of a formula on its own line.
-const TEXT: Pixels = px(14.);
-const DISPLAY: Pixels = px(16.);
+const TEXT: Rems = rems_from_px(14.);
+const DISPLAY: Rems = rems_from_px(16.);
 
 /// What is drawn once for a text and kept while it shows it, by what it is
 /// drawn from: code's colors, and the pictures of formulas, diagrams, and
@@ -206,6 +206,17 @@ impl Drawer<'_> {
         self.parsed.read(self.cx).width
     }
 
+    /// A picture at the window's size, as an image or a diagram grows and
+    /// shrinks with the words around it. A formula is drawn at its words'
+    /// size already.
+    fn zoomed(&self, picture: Picture) -> Picture {
+        Picture {
+            width: size::scaled(f32::from(picture.width), self.window),
+            height: size::scaled(f32::from(picture.height), self.window),
+            ..picture
+        }
+    }
+
     /// What was drawn from `key`, drawn now with `make` the first time.
     fn drawn(&mut self, key: Key, make: impl FnOnce(&mut App) -> Drawn) -> Drawn {
         let known = self.parsed.update(self.cx, |parsed, _| {
@@ -264,7 +275,7 @@ impl Drawer<'_> {
 
     /// A block's words: as words that can be selected, or laid out one by
     /// one around the formulas among them.
-    fn words(&mut self, path: &str, words: &Inline, size: Pixels) -> AnyElement {
+    fn words(&mut self, path: &str, words: &Inline, size: Rems) -> AnyElement {
         if words.has_math() {
             return self.flow(path, words, size);
         }
@@ -283,9 +294,10 @@ impl Drawer<'_> {
     /// Words and the formulas among them, wrapped as words wrap. Each
     /// formula is set off so that its baseline and the words' stand at the
     /// same height when both are centered in a line.
-    fn flow(&mut self, path: &str, words: &Inline, size: Pixels) -> AnyElement {
+    fn flow(&mut self, path: &str, words: &Inline, size: Rems) -> AnyElement {
         let colors = self.cx.theme().colors;
         let mono = self.cx.theme().mono_family.clone();
+        let size = size.to_pixels(self.window.rem_size());
 
         // How far below the middle of a line of words their baseline is.
         let font = self.window.text_style().font();
@@ -469,7 +481,7 @@ impl Drawer<'_> {
             div()
                 .p_3()
                 .font_family(mono)
-                .text_size(px(13.))
+                .text_size(rems_from_px(13.))
                 .whitespace_nowrap()
                 .child(words),
         )
@@ -510,7 +522,7 @@ impl Drawer<'_> {
                 .debug_selector(|| "diagram".into())
                 .w_full()
                 .justify_center()
-                .child(picture(&drawn, self.fit()))
+                .child(picture(&self.zoomed(drawn), self.fit()))
                 .into_any_element(),
 
             // While a diagram streams in, and when it is wrong, its source
@@ -524,7 +536,9 @@ impl Drawer<'_> {
     }
 
     fn display_math(&mut self, path: &str, tex: &str) -> AnyElement {
-        match self.formula(tex, DISPLAY, true) {
+        let size = DISPLAY.to_pixels(self.window.rem_size());
+
+        match self.formula(tex, size, true) {
             Ok(formula) => {
                 let wide = self.fit().is_some_and(|fit| formula.width > fit);
                 let drawn = picture(&formula, None);
@@ -592,7 +606,7 @@ impl Drawer<'_> {
         match read {
             Some(Ok(read)) => v_flex()
                 .gap_1()
-                .child(picture(&read, self.fit()).rounded(radius))
+                .child(picture(&self.zoomed(read), self.fit()).rounded(radius))
                 .when(!alt.is_empty(), |image| {
                     image.child(
                         div()
@@ -690,10 +704,10 @@ impl Drawer<'_> {
 
             Block::Heading(depth, words) => {
                 let (size, line) = match depth {
-                    1 => (px(20.), px(28.)),
-                    2 => (px(18.), px(26.)),
-                    3 => (px(16.), px(24.)),
-                    _ => (px(14.), px(20.)),
+                    1 => (rems_from_px(20.), rems_from_px(28.)),
+                    2 => (rems_from_px(18.), rems_from_px(26.)),
+                    3 => (rems_from_px(16.), rems_from_px(24.)),
+                    _ => (rems_from_px(14.), rems_from_px(20.)),
                 };
 
                 div()
@@ -859,7 +873,7 @@ impl RenderOnce for Markdown {
             .w_full()
             .gap_3()
             .text_size(TEXT)
-            .line_height(px(20.))
+            .line_height(rems_from_px(20.))
             .children(children)
             .child(measure);
 

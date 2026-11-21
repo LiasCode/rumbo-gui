@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt as _, App, ElementId, IntoElement, ParentElement as _, Refineable as _,
-    RenderOnce, SharedString, StyleRefinement, Styled, Window, div, ease_out_quint,
-    prelude::FluentBuilder as _, px,
+    Rems, RenderOnce, SharedString, StyleRefinement, Styled, Window, div, ease_out_quint,
+    prelude::FluentBuilder as _,
 };
 
 use crate::check_row::{self, Words};
 use crate::focus;
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::{ActiveTheme as _, ThemeMode};
 use crate::{ChangeHandler, child_id};
 
@@ -115,8 +115,8 @@ impl RenderOnce for Switch {
         let colors = theme.colors;
 
         let (width, height, knob) = match self.size {
-            Size::XSmall | Size::Small => (px(28.), px(16.), px(12.)),
-            Size::Medium | Size::Large => (px(32.), px(18.), px(14.)),
+            Size::XSmall | Size::Small => (rems_from_px(28.), rems_from_px(16.), rems_from_px(12.)),
+            Size::Medium | Size::Large => (rems_from_px(32.), rems_from_px(18.), rems_from_px(14.)),
         };
         let inset = (height - knob) / 2.;
         let travel = width - knob - inset * 2.;
@@ -162,7 +162,7 @@ impl RenderOnce for Switch {
         };
 
         // Its middle lines up with the label's first line.
-        let lead = ((self.size.line_height() - height) / 2.).max(px(0.));
+        let lead = Rems((self.size.line_height() - height).0.max(0.) / 2.);
 
         let control = div()
             .relative()

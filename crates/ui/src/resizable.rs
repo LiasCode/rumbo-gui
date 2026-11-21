@@ -16,6 +16,7 @@ use gpui::{
 
 use crate::drag::{self, Hold};
 use crate::focus;
+use crate::size::rems_from_px;
 use crate::theme::ActiveTheme as _;
 use crate::{ChangeHandler, child_id};
 
@@ -449,8 +450,8 @@ impl RenderOnce for Resizable {
                     .rounded_full()
                     .bg(colors.muted_foreground)
                     .map(|mark| match axis {
-                        Axis::Horizontal => mark.w(px(3.)).h(px(32.)),
-                        Axis::Vertical => mark.h(px(3.)).w(px(32.)),
+                        Axis::Horizontal => mark.w(rems_from_px(3.)).h(rems_from_px(32.)),
+                        Axis::Vertical => mark.h(rems_from_px(3.)).w(rems_from_px(32.)),
                     })
                     .map(|mark| match held || ringed {
                         true => mark.opacity(0.9),

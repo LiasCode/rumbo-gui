@@ -8,11 +8,12 @@ use std::rc::Rc;
 
 use gpui::{
     App, Context, Focusable as _, ParentElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 use serde_json::Value as Json;
 use ui::{
-    ActiveTheme as _, CommandGroup, CommandIndex, CommandItem, CommandPalette, Toast, v_flex,
+    ActiveTheme as _, CommandGroup, CommandIndex, CommandItem, CommandPalette, Toast, rems_from_px,
+    v_flex,
 };
 
 use super::form::Field;
@@ -143,7 +144,7 @@ impl Workspace {
 
                     dialog
                         .title("Commands")
-                        .width(px(480.))
+                        .width(rems_from_px(480.))
                         .initial_focus(state.focus_handle(cx))
                         .child(
                             CommandPalette::new(&state).on_confirm(move |index, window, cx| {
@@ -248,7 +249,7 @@ impl Workspace {
 
                     dialog
                         .title(command.function.name.clone())
-                        .width(px(440.))
+                        .width(rems_from_px(440.))
                         .child(
                             v_flex()
                                 .gap_3()

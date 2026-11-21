@@ -8,16 +8,16 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Refineable as _,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Refineable as _, Rems,
     RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Subscription, Window, actions, div, prelude::FluentBuilder as _, px,
+    Styled, Subscription, Window, actions, div, prelude::FluentBuilder as _,
 };
 
 use crate::icon::{Icon, IconName};
 use crate::input::Input;
 use crate::root::v_flex;
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::text::{InputEvent, InputState};
 use crate::theme::ActiveTheme as _;
 
@@ -26,7 +26,7 @@ actions!(command_palette, [MarkPrevious, MarkNext]);
 const CONTEXT: &str = "CommandPalette";
 
 /// The most the list shows before it scrolls.
-const LIST_HEIGHT: Pixels = px(360.);
+const LIST_HEIGHT: Rems = rems_from_px(360.);
 
 pub(crate) fn bind_keys(cx: &mut App) {
     let context = Some(CONTEXT);

@@ -8,11 +8,11 @@
 
 use gpui::{
     App, ClipboardItem, Context, ElementId, IntoElement, ParentElement as _, Styled as _, Window,
-    div, px,
+    div,
 };
 use ui::{
     ActiveTheme as _, Button, Icon, IconName, Input, MenuItem, Sidebar, SidebarGroup, SidebarItem,
-    Sizable as _, Spinner, h_flex, v_flex,
+    Sizable as _, Spinner, h_flex, rems_from_px, v_flex,
 };
 
 use super::{Opening, Project, Shell, State, folder_name};
@@ -430,7 +430,7 @@ impl Shell {
             if workspace.is_working(&session_id) {
                 row = row.suffix(Spinner::new().xsmall());
             } else if workspace.has_unseen(&session_id) {
-                row = row.suffix(div().size(px(7.)).rounded_full().bg(mark));
+                row = row.suffix(div().size(rems_from_px(7.)).rounded_full().bg(mark));
             }
 
             let said = session.description.clone();

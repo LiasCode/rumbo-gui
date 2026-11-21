@@ -4,7 +4,7 @@ use gpui::{
 };
 use ui::{
     ActiveTheme as _, Button, Checkbox, FloatingWindow, Input, InputState, Label, Select,
-    SelectState, v_flex,
+    SelectState, rems_from_px, v_flex,
 };
 
 use super::{Demos, note, row, section, told};
@@ -88,7 +88,7 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
     if demo.beside {
         sections.push(
             FloatingWindow::new("beside", "Session details")
-                .width(px(360.))
+                .width(rems_from_px(360.))
                 .on_close(closer(cx, |demo| demo.beside = false))
                 .child(div().text_color(muted).child(
                     "The work behind stays usable: this window does not dim it, and the pointer reaches it.",

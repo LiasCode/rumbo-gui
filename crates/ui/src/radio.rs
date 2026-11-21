@@ -9,14 +9,14 @@ use std::rc::Rc;
 use gpui::{
     App, ElementId, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _,
     Refineable as _, RenderOnce, SharedString, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Window, actions, div, prelude::FluentBuilder as _, px,
+    Styled, Window, actions, div, prelude::FluentBuilder as _,
 };
 
 use crate::check_row::{self, Words};
 use crate::focus;
 use crate::root::h_flex;
 use crate::roving::{self, Step};
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use crate::{ChangeHandler, child_id};
 
@@ -161,8 +161,8 @@ impl RenderOnce for RadioGroup {
         let current = selected.or_else(|| roving::moved(None, &enabled, Step::First));
 
         let (side, dot) = match size {
-            Size::XSmall | Size::Small => (px(14.), px(6.)),
-            Size::Medium | Size::Large => (px(16.), px(8.)),
+            Size::XSmall | Size::Small => (rems_from_px(14.), rems_from_px(6.)),
+            Size::Medium | Size::Large => (rems_from_px(16.), rems_from_px(8.)),
         };
 
         // Its middle lines up with the label's first line.

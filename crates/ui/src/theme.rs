@@ -3,10 +3,11 @@
 //! with these components, so its look stayed when it moved to them.
 
 use gpui::{
-    App, BoxShadow, Global, Hsla, Pixels, SharedString, WindowAppearance, point, px, rgb, rgba,
+    App, BoxShadow, Global, Hsla, Rems, SharedString, WindowAppearance, point, px, rgb, rgba,
 };
 
 use crate::fonts::Typeface;
+use crate::size::rems_from_px;
 
 /// Light or dark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,9 +89,9 @@ pub struct Theme {
     pub mode: ThemeMode,
     pub colors: ThemeColors,
     /// The corners of controls.
-    pub radius: Pixels,
+    pub radius: Rems,
     /// The corners of surfaces that float.
-    pub radius_lg: Pixels,
+    pub radius_lg: Rems,
     pub typeface: Typeface,
     /// The family code is drawn in: one the machine has, found once.
     pub mono_family: SharedString,
@@ -152,8 +153,8 @@ impl Theme {
                 link: hex(NEUTRAL_950),
                 link_hover: hex(NEUTRAL_700),
             },
-            radius: px(6.),
-            radius_lg: px(8.),
+            radius: rems_from_px(6.),
+            radius_lg: rems_from_px(8.),
             typeface: Typeface::default(),
             mono_family: crate::fonts::FALLBACK.into(),
         }
@@ -201,8 +202,8 @@ impl Theme {
                 link: hex(NEUTRAL_50),
                 link_hover: hex(NEUTRAL_300),
             },
-            radius: px(6.),
-            radius_lg: px(8.),
+            radius: rems_from_px(6.),
+            radius_lg: rems_from_px(8.),
             typeface: Typeface::default(),
             mono_family: crate::fonts::FALLBACK.into(),
         }

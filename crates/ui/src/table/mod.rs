@@ -11,7 +11,7 @@ mod order;
 use gpui::{
     App, Context, CursorStyle, Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
     FontWeight, InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels,
-    Refineable as _, RenderOnce, ScrollHandle, ScrollStrategy, SharedString,
+    Refineable as _, Rems, RenderOnce, ScrollHandle, ScrollStrategy, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, UniformListScrollHandle, Window,
     actions, div, prelude::FluentBuilder as _, px, uniform_list,
 };
@@ -24,7 +24,7 @@ use crate::focus;
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 actions!(
@@ -44,10 +44,10 @@ actions!(
 const CONTEXT: &str = "Table";
 
 /// How tall a row is, and the titles.
-const ROW: Pixels = px(36.);
+const ROW: Rems = rems_from_px(36.);
 
 /// The room between a cell's edge and its text.
-const PADDING: Pixels = px(8.);
+const PADDING: Rems = rems_from_px(8.);
 
 /// How wide the strip the pointer takes the edge of a column in is.
 const EDGE: Pixels = px(8.);
@@ -301,9 +301,9 @@ impl TableState {
         cx.notify();
     }
 
-    fn step(&mut self, step: Move, cx: &mut Context<Self>) {
+    fn step(&mut self, step: Move, window: &Window, cx: &mut Context<Self>) {
         let shown = self.scroll.0.borrow().base_handle.bounds().size.height;
-        let page = (shown / ROW).floor() as usize;
+        let page = (shown / ROW.to_pixels(window.rem_size())).floor() as usize;
 
         if let Some(place) = order::moved(self.selected_place(), self.order.len(), page, step) {
             self.choose(place, cx);
@@ -316,28 +316,28 @@ impl TableState {
         }
     }
 
-    fn previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::Previous, cx);
+    fn previous(&mut self, _: &SelectPrevious, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::Previous, window, cx);
     }
 
-    fn next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::Next, cx);
+    fn next(&mut self, _: &SelectNext, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::Next, window, cx);
     }
 
-    fn page_up(&mut self, _: &SelectPageUp, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::PageUp, cx);
+    fn page_up(&mut self, _: &SelectPageUp, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::PageUp, window, cx);
     }
 
-    fn page_down(&mut self, _: &SelectPageDown, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::PageDown, cx);
+    fn page_down(&mut self, _: &SelectPageDown, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::PageDown, window, cx);
     }
 
-    fn first(&mut self, _: &SelectFirst, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::First, cx);
+    fn first(&mut self, _: &SelectFirst, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::First, window, cx);
     }
 
-    fn last(&mut self, _: &SelectLast, _: &mut Window, cx: &mut Context<Self>) {
-        self.step(Move::Last, cx);
+    fn last(&mut self, _: &SelectLast, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(Move::Last, window, cx);
     }
 
     fn open_selected(&mut self, _: &Open, window: &mut Window, cx: &mut Context<Self>) {
@@ -489,7 +489,7 @@ impl RenderOnce for Table {
                     h_flex()
                         .id(("table-title", index))
                         .min_w_0()
-                        .h(px(28.))
+                        .h(rems_from_px(28.))
                         .px(PADDING)
                         .map(|title| match column.end {
                             true => title.mr(-PADDING),

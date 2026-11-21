@@ -12,7 +12,7 @@ use gpui::{
 
 use crate::icon::{Icon, IconName};
 use crate::root::{h_flex, v_flex};
-use crate::size::{Sizable, Size};
+use crate::size::{self, Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 /// What marks each item of a list.
@@ -260,8 +260,8 @@ impl RenderOnce for List {
         // or as a box.
         let column = match marker {
             ListMarker::None => None,
-            ListMarker::Bullet | ListMarker::Dash => Some(px(12.)),
-            ListMarker::Task => Some(px(16.)),
+            ListMarker::Bullet | ListMarker::Dash => Some(size::scaled(12., window)),
+            ListMarker::Task => Some(size::scaled(16., window)),
             _ => {
                 let style = window.text_style();
                 let widest = marks
@@ -272,7 +272,12 @@ impl RenderOnce for List {
 
                         window
                             .text_system()
-                            .shape_line(mark.clone().into(), size.text(), &[run], None)
+                            .shape_line(
+                                mark.clone().into(),
+                                size.text().to_pixels(window.rem_size()),
+                                &[run],
+                                None,
+                            )
                             .width
                     })
                     .fold(Pixels::ZERO, Pixels::max);
@@ -282,8 +287,8 @@ impl RenderOnce for List {
         };
 
         let gap = match size {
-            Size::XSmall | Size::Small => px(4.),
-            Size::Medium | Size::Large => px(6.),
+            Size::XSmall | Size::Small => rems_from_px(4.),
+            Size::Medium | Size::Large => rems_from_px(6.),
         };
 
         let depth = self.depth;
@@ -303,32 +308,38 @@ impl RenderOnce for List {
 
                 match marker {
                     ListMarker::Bullet => cell.justify_center().child(match bullet(depth) {
-                        Bullet::Dot => div().size(px(6.)).rounded_full().bg(colors.foreground),
+                        Bullet::Dot => div()
+                            .size(rems_from_px(6.))
+                            .rounded_full()
+                            .bg(colors.foreground),
                         Bullet::Ring => div()
-                            .size(px(6.))
+                            .size(rems_from_px(6.))
                             .rounded_full()
                             .border_1()
                             .border_color(colors.foreground),
-                        Bullet::Square => div().size(px(5.)).bg(colors.foreground),
+                        Bullet::Square => div().size(rems_from_px(5.)).bg(colors.foreground),
                     }),
 
-                    ListMarker::Dash => cell
-                        .justify_center()
-                        .child(div().w(px(8.)).h(px(1.5)).bg(colors.muted_foreground)),
+                    ListMarker::Dash => cell.justify_center().child(
+                        div()
+                            .w(rems_from_px(8.))
+                            .h(px(1.5))
+                            .bg(colors.muted_foreground),
+                    ),
 
                     ListMarker::Task => cell.child(
                         div()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .size(px(14.))
-                            .rounded(px(4.))
+                            .size(rems_from_px(14.))
+                            .rounded(rems_from_px(4.))
                             .border_1()
                             .map(|tick| match done {
                                 true => tick.bg(colors.primary).border_color(colors.primary).child(
                                     Icon::new(IconName::Check)
                                         .color(colors.primary_foreground)
-                                        .size(px(10.)),
+                                        .size(rems_from_px(10.)),
                                 ),
                                 false => tick.border_color(colors.input),
                             }),

@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt as _, App, ClickEvent, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, RenderOnce, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Rems, RenderOnce, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, deferred, div, ease_out_quint,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 
 use queue::Queue;
@@ -24,7 +24,7 @@ pub use queue::ToastId;
 use crate::button::{Button, ClickHandler};
 use crate::icon::{Icon, IconName};
 use crate::root::{h_flex, v_flex};
-use crate::size::{Sizable as _, Size};
+use crate::size::{Sizable as _, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use crate::tone::Tone;
 
@@ -34,10 +34,10 @@ const SHOWN: Duration = Duration::from_secs(5);
 /// How long a toast takes to come in.
 const ARRIVAL: Duration = Duration::from_millis(200);
 
-const WIDTH: Pixels = px(360.);
+const WIDTH: Rems = rems_from_px(360.);
 
 /// How far the toasts stand from the window's corner.
-const MARGIN: Pixels = px(16.);
+const MARGIN: Rems = rems_from_px(16.);
 
 /// Over every other surface that floats, a select's list included.
 const LAYER: usize = 4;

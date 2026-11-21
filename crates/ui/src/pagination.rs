@@ -7,13 +7,13 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, IntoElement, ParentElement as _, Refineable as _, RenderOnce, StyleRefinement,
-    Styled, Window, div, px,
+    Styled, Window, div,
 };
 
 use crate::button::Button;
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use crate::{ChangeHandler, child_id};
 
@@ -177,7 +177,7 @@ impl RenderOnce for Pagination {
                         .label(number.to_string())
                         .with_size(size)
                         .min_w(size.height())
-                        .px(px(6.));
+                        .px(rems_from_px(6.));
 
                     match number == page {
                         true => button.outline().into_any_element(),

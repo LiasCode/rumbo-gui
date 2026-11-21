@@ -16,7 +16,7 @@ use crate::focus;
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
 use crate::roving::{self, Step};
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use crate::{ChangeHandler, child_id};
 
@@ -158,9 +158,9 @@ impl RenderOnce for Tabs {
         let enabled: Rc<[bool]> = self.tabs.iter().map(|tab| !tab.disabled).collect();
 
         let padding = match size {
-            Size::XSmall => px(6.),
-            Size::Small => px(8.),
-            Size::Medium | Size::Large => px(12.),
+            Size::XSmall => rems_from_px(6.),
+            Size::Small => rems_from_px(8.),
+            Size::Medium | Size::Large => rems_from_px(12.),
         };
 
         let tabs = self.tabs.into_iter().enumerate().map(|(index, tab)| {
@@ -229,7 +229,10 @@ impl RenderOnce for Tabs {
             .text_size(size.text())
             .font_weight(FontWeight::MEDIUM)
             .map(|row| match pill {
-                true => row.p(px(3.)).rounded(theme.radius_lg).bg(colors.muted),
+                true => row
+                    .p(rems_from_px(3.))
+                    .rounded(theme.radius_lg)
+                    .bg(colors.muted),
 
                 // The line goes under the tabs, as a border would go over the
                 // mark of the one chosen.

@@ -53,6 +53,12 @@ must not do. Both live in the rumbo repository.
 - **The window draws with `crates/ui`.** Its views use GPUI and the
   components of `crates/ui`, and nothing else draws; what a view needs
   that no component has becomes one there.
+- **Lengths are in rems.** What a view or a component draws is measured
+  with `ui::rems_from_px` or GPUI's lengths in rems, such as `p_4`, so
+  that Ctrl-+ and Ctrl-- grow and shrink all of it; a length that meets
+  pixels the window measured is turned into pixels with the window's rem
+  size. Only what follows the pointer or is a hairline stays in `px`, such
+  as a scrollbar, a border, or a divider's grip.
 - **`crates/ui` draws with GPUI alone.** Its components know nothing of
   rumbo. A library may do a part's work for it, as syntect, latex-rust, and
   merman do for code, formulas, and diagrams, giving what GPUI draws; none
@@ -96,10 +102,12 @@ sessions under it, the projects rumbo holds listed with their sessions and
 one opened from that list, a new session started from the sidebar, a
 project closed and listed again, the window with a rumbo that has no
 `projects`, the settings with the theme and the conversation width changed
-and kept for the next start, the sidebar searched, dragged wider, and put
-away with Ctrl-B, a session renamed and one deleted from its menu, a
-message changed and one asked again in a branch, the changes panel on a
-folder with edits and on one outside Git, a reply with code, formulas
+and kept for the next start, the window made bigger and smaller with
+Ctrl-+ and Ctrl--, kept for the next start, and back with Ctrl-0, the
+sidebar searched, dragged wider, and put away with Ctrl-B, a session
+renamed and one deleted from its menu, a message changed and one asked
+again in a branch, the changes panel on a folder with edits and on one
+outside Git, a reply with code, formulas
 among words and on their own, a Mermaid diagram, and images from a file
 and from the web, the details panel, a session
 exported, the project opened in the editor, the notification of a run that
@@ -130,13 +138,20 @@ On Hyprland, `grim -g` takes a screenshot of the window's geometry from
 it. A list in a form opens with Enter once it has the keyboard, Tab moves
 between the fields and the buttons, a button takes Space, and Enter runs a
 dialog. The settings' pages are reached by typing in their search, which
-shows the first page that matches. So everything is driven without the
-mouse:
+Tab gives the keyboard and which shows the first page that matches. So
+everything is driven without the mouse:
 
 ```sh
 hyprctl dispatch 'hl.dsp.send_shortcut({mods = "", key = "Return", window = "class:^(rumbo-gui)$"})'
 hyprctl dispatch 'hl.dsp.window.close({window = "class:^(rumbo-gui)$"})'
 ```
+
+The desktop's keyboard has two layouts, and `send_shortcut` finds a key in
+the one in use while the window reads it in the first, so a symbol can
+arrive as another. Its `exclamdown` arrives as `=`, so Ctrl-= is `CTRL`
+with `exclamdown` and Ctrl-+ is `CTRL SHIFT` with it, while `minus` and
+`0` arrive as they are. Type a key in the composer first to see what it
+arrives as.
 
 The person may be using the desktop meanwhile, and may have a rumbo-gui
 of their own open. Open the window on a workspace of its own without moving

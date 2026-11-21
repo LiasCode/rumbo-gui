@@ -20,7 +20,7 @@ use gpui::{
 use ui::{
     ActiveTheme as _, Button, DialogLayer, Dialogs, IconName, InputEvent, InputState, PanelSize,
     Resizable, ResizablePanel, Sizable as _, Spinner, Theme, ThemeMode, Toast, Toaster, Toasts,
-    WindowFrame, h_flex, v_flex,
+    WindowFrame, h_flex, rems_from_px, v_flex,
 };
 
 use crate::config::{self, Config};
@@ -44,6 +44,9 @@ actions!(
         ToggleSidebar,
         OpenInEditor,
         FocusSearch,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
         Jump1,
         Jump2,
         Jump3,
@@ -79,6 +82,14 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-b", ToggleSidebar, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-shift-e", OpenInEditor, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-f", FocusSearch, Some(KEY_CONTEXT)),
+        // Plus is a key of its own on some keyboards and Shift-= on others,
+        // and both it and minus are on the keypad too.
+        KeyBinding::new("ctrl-+", ZoomIn, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-=", ZoomIn, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-add", ZoomIn, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl--", ZoomOut, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-subtract", ZoomOut, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-0", ZoomReset, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-1", Jump1, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-2", Jump2, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-3", Jump3, Some(KEY_CONTEXT)),
@@ -94,7 +105,7 @@ pub fn bind_keys(cx: &mut App) {
 
 /// The window's keys, for the person to read: the keys, and what they do.
 /// They are bound in `bind_keys` here and in the workspace's.
-pub const SHORTCUTS: [(&str, &str); 15] = [
+pub const SHORTCUTS: [(&str, &str); 17] = [
     ("Enter", "Send the task, or tell the run in progress"),
     ("Shift-Enter", "Start a new line"),
     ("Up / Down", "Bring back what was asked in the project"),
@@ -111,6 +122,8 @@ pub const SHORTCUTS: [(&str, &str); 15] = [
     ("Ctrl-Shift-E", "Open the project in the editor"),
     ("Ctrl-O", "Open a project"),
     ("Ctrl-F", "Search the sessions"),
+    ("Ctrl-+ / Ctrl--", "Make everything bigger or smaller"),
+    ("Ctrl-0", "Everything at its own size"),
     ("Ctrl-,", "Settings"),
     ("Escape, in the settings", "Back to the work"),
 ];
@@ -201,6 +214,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Self {
         apply_theme(preferred.preferences.theme, window, cx);
+        ui::set_zoom(window, preferred.preferences.scale());
 
         // A theme that follows the desktop changes when the desktop does.
         let appearance = cx.observe_window_appearance(window, |this, window, cx| {
@@ -715,6 +729,43 @@ impl Shell {
         self.save_preferences(cx);
     }
 
+    fn zoom_in(&mut self, _: &ZoomIn, window: &mut Window, cx: &mut Context<Self>) {
+        let zoom = preferences::zoom_in(self.preferred.preferences.zoom());
+
+        self.set_zoom(zoom, window, cx);
+    }
+
+    fn zoom_out(&mut self, _: &ZoomOut, window: &mut Window, cx: &mut Context<Self>) {
+        let zoom = preferences::zoom_out(self.preferred.preferences.zoom());
+
+        self.set_zoom(zoom, window, cx);
+    }
+
+    fn zoom_reset(&mut self, _: &ZoomReset, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_zoom(preferences::OWN_ZOOM, window, cx);
+    }
+
+    /// Draws everything at `zoom` percent of its own size, and keeps it for
+    /// the next start.
+    fn set_zoom(&mut self, zoom: u32, window: &mut Window, cx: &mut Context<Self>) {
+        if zoom == self.preferred.preferences.zoom() {
+            return;
+        }
+
+        self.preferred.preferences.set_zoom(zoom);
+        ui::set_zoom(window, self.preferred.preferences.scale());
+
+        // The settings keep what they show, and would give the old size back
+        // with the next preference changed there.
+        if let Some((settings, _)) = &self.settings {
+            let preferences = self.preferred.preferences.clone();
+
+            settings.update(cx, |view, cx| view.set_preferences(preferences, cx));
+        }
+
+        self.save_preferences(cx);
+    }
+
     /// Keeps the preferences for the next start, saying when they could not
     /// be kept.
     fn save_preferences(&mut self, cx: &mut Context<Self>) {
@@ -740,7 +791,9 @@ impl Shell {
             return;
         }
 
-        let width = f32::from(size.size).clamp(sidebar::MIN_WIDTH, sidebar::MAX_WIDTH);
+        // It is kept at the interface's own size, as it grows with it.
+        let width = (f32::from(size.size) / self.preferred.preferences.scale())
+            .clamp(sidebar::MIN_WIDTH, sidebar::MAX_WIDTH);
 
         self.preferred.preferences.sidebar_width = Some(width.round() as u32);
         self.keeping_width = Some(cx.spawn(async move |this, cx| {
@@ -951,6 +1004,10 @@ impl Shell {
             apply_theme(preferences.theme, window, cx);
         }
 
+        if preferences.zoom() != self.preferred.preferences.zoom() {
+            ui::set_zoom(window, preferences.scale());
+        }
+
         let width = preferences.width.pixels();
 
         for project in &self.projects {
@@ -1100,7 +1157,7 @@ impl Shell {
             .when(!listed.is_empty(), |screen| {
                 screen.child(
                     v_flex()
-                        .w(px(440.))
+                        .w(rems_from_px(440.))
                         .pt_4()
                         .gap_1()
                         .child(muted("Recent", cx))
@@ -1169,13 +1226,14 @@ impl Render for Shell {
         let sidebar_shown = self.settings.is_none() && !self.preferred.preferences.sidebar_hidden;
 
         let mut body = Resizable::horizontal("body");
+        let scale = self.preferred.preferences.scale();
 
         if sidebar_shown {
             body = body.child(
                 ResizablePanel::new("sidebar")
-                    .size(px(self.sidebar_width()))
-                    .min(px(sidebar::MIN_WIDTH))
-                    .max(px(sidebar::MAX_WIDTH))
+                    .size(px(self.sidebar_width() * scale))
+                    .min(px(sidebar::MIN_WIDTH * scale))
+                    .max(px(sidebar::MAX_WIDTH * scale))
                     .child(self.render_sidebar(cx)),
             );
         }
@@ -1183,7 +1241,7 @@ impl Render for Shell {
         let body = body
             .child(
                 ResizablePanel::new("main")
-                    .min(px(MAIN_MIN_WIDTH))
+                    .min(px(MAIN_MIN_WIDTH * scale))
                     .child(self.render_main(cx)),
             )
             .on_resize(cx.listener(|this, size: &PanelSize, _, cx| this.resize_sidebar(size, cx)));
@@ -1200,6 +1258,9 @@ impl Render for Shell {
                 .on_action(cx.listener(Self::toggle_sidebar))
                 .on_action(cx.listener(Self::open_shown_in_editor))
                 .on_action(cx.listener(Self::focus_search))
+                .on_action(cx.listener(Self::zoom_in))
+                .on_action(cx.listener(Self::zoom_out))
+                .on_action(cx.listener(Self::zoom_reset))
                 .on_action(cx.listener(|this, _: &Jump1, window, cx| this.jump(1, window, cx)))
                 .on_action(cx.listener(|this, _: &Jump2, window, cx| this.jump(2, window, cx)))
                 .on_action(cx.listener(|this, _: &Jump3, window, cx| this.jump(3, window, cx)))

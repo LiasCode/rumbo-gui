@@ -7,12 +7,13 @@ use std::rc::Rc;
 
 use gpui::{
     App, CursorStyle, ElementId, InteractiveElement as _, IntoElement, KeyBinding,
-    ParentElement as _, Pixels, Refineable as _, RenderOnce, StyleRefinement, Styled, Window,
-    actions, div, prelude::FluentBuilder as _, px, relative,
+    ParentElement as _, Pixels, Refineable as _, Rems, RenderOnce, StyleRefinement, Styled, Window,
+    actions, div, prelude::FluentBuilder as _, relative,
 };
 
 use crate::drag;
 use crate::focus;
+use crate::size::rems_from_px;
 use crate::theme::ActiveTheme as _;
 use crate::{ChangeHandler, child_id};
 
@@ -32,8 +33,8 @@ actions!(
 const CONTEXT: &str = "Slider";
 
 /// How wide the thumb is, and how thick the track.
-const THUMB: Pixels = px(16.);
-const TRACK: Pixels = px(6.);
+const THUMB: Rems = rems_from_px(16.);
+const TRACK: Rems = rems_from_px(6.);
 
 /// How many steps Page Up and Page Down move it.
 const PAGE: f32 = 10.;
@@ -111,12 +112,12 @@ impl Scale {
 
 /// How far along a track the pointer at `at` puts the thumb, for a track
 /// `length` long that starts at 0: the thumb's middle goes no closer to an
-/// end than half the thumb.
-fn fraction_at(at: Pixels, length: Pixels) -> f32 {
-    let travel = length - THUMB;
+/// end than half the `thumb`.
+fn fraction_at(at: Pixels, length: Pixels, thumb: Pixels) -> f32 {
+    let travel = length - thumb;
 
     match travel > Pixels::ZERO {
-        true => ((at - THUMB / 2.) / travel).clamp(0., 1.),
+        true => ((at - thumb / 2.) / travel).clamp(0., 1.),
         false => 0.,
     }
 }
@@ -198,9 +199,10 @@ impl RenderOnce for Slider {
         let scale = self.scale;
         let value = scale.snap(self.value);
         let fraction = scale.fraction(value);
+        let side = THUMB.to_pixels(window.rem_size());
 
         // The track, and what is filled of it up to the thumb's middle.
-        let inset = (THUMB - TRACK) / 2.;
+        let inset = (side - TRACK.to_pixels(window.rem_size())) / 2.;
         let track = div()
             .absolute()
             .left_0()
@@ -214,7 +216,7 @@ impl RenderOnce for Slider {
             .absolute()
             .top(inset)
             .h(TRACK)
-            .left(-THUMB / 2.)
+            .left(-side / 2.)
             .right(relative(1. - fraction))
             .rounded_l_full()
             .bg(colors.primary);
@@ -223,8 +225,8 @@ impl RenderOnce for Slider {
             .absolute()
             .top_0()
             .left(relative(fraction))
-            .ml(-THUMB / 2.)
-            .size(THUMB)
+            .ml(-side / 2.)
+            .size(side)
             .rounded_full()
             .border_1()
             .border_color(colors.primary)
@@ -242,8 +244,8 @@ impl RenderOnce for Slider {
             .absolute()
             .top_0()
             .bottom_0()
-            .left(THUMB / 2.)
-            .right(THUMB / 2.)
+            .left(side / 2.)
+            .right(side / 2.)
             .child(fill)
             .child(thumb);
 
@@ -252,7 +254,7 @@ impl RenderOnce for Slider {
             .relative()
             .flex_none()
             .w_full()
-            .h(THUMB)
+            .h(side)
             .child(track)
             .child(travel);
 
@@ -299,14 +301,14 @@ impl RenderOnce for Slider {
                         hold,
                         CursorStyle::PointingHand,
                         move |at, bounds, window, cx| {
-                            let along = fraction_at(at.x - bounds.left(), bounds.size.width);
+                            let along = fraction_at(at.x - bounds.left(), bounds.size.width, side);
 
                             window.focus(&taken, cx);
                             pressed(scale.at(along), window, cx);
                             Some(())
                         },
                         move |_, at, bounds, window, cx| {
-                            let along = fraction_at(at.x - bounds.left(), bounds.size.width);
+                            let along = fraction_at(at.x - bounds.left(), bounds.size.width, side);
 
                             dragged(scale.at(along), window, cx);
                         },
@@ -323,7 +325,7 @@ impl RenderOnce for Slider {
 mod tests {
     use gpui::px;
 
-    use super::{Scale, THUMB, fraction_at};
+    use super::{Scale, fraction_at};
 
     fn scale(min: f32, max: f32, step: f32) -> Scale {
         Scale { min, max, step }
@@ -389,13 +391,14 @@ mod tests {
     #[test]
     fn keeps_the_thumb_inside_the_track() {
         let length = px(216.);
+        let thumb = px(16.);
 
-        assert_eq!(fraction_at(THUMB / 2., length), 0.);
-        assert_eq!(fraction_at(px(0.), length), 0.);
-        assert_eq!(fraction_at(px(108.), length), 0.5);
-        assert_eq!(fraction_at(length - THUMB / 2., length), 1.);
-        assert_eq!(fraction_at(px(500.), length), 1.);
-        assert_eq!(fraction_at(px(5.), THUMB), 0.);
+        assert_eq!(fraction_at(thumb / 2., length, thumb), 0.);
+        assert_eq!(fraction_at(px(0.), length, thumb), 0.);
+        assert_eq!(fraction_at(px(108.), length, thumb), 0.5);
+        assert_eq!(fraction_at(length - thumb / 2., length, thumb), 1.);
+        assert_eq!(fraction_at(px(500.), length, thumb), 1.);
+        assert_eq!(fraction_at(px(5.), thumb, thumb), 0.);
     }
 }
 

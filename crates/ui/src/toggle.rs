@@ -7,13 +7,13 @@ use std::rc::Rc;
 use gpui::{
     App, ElementId, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     Refineable as _, RenderOnce, SharedString, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Window, div, prelude::FluentBuilder as _, px,
+    Styled, Window, div, prelude::FluentBuilder as _,
 };
 
 use crate::ChangeHandler;
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use crate::tooltip::Tooltip;
 
@@ -159,10 +159,10 @@ impl RenderOnce for Toggle {
         };
 
         let padding = match size {
-            Size::XSmall => px(4.),
-            Size::Small => px(6.),
-            Size::Medium => px(8.),
-            Size::Large => px(10.),
+            Size::XSmall => rems_from_px(4.),
+            Size::Small => rems_from_px(6.),
+            Size::Medium => rems_from_px(8.),
+            Size::Large => rems_from_px(10.),
         };
 
         let mut toggle = div()
@@ -173,8 +173,8 @@ impl RenderOnce for Toggle {
             .items_center()
             .justify_center()
             .gap(match size {
-                Size::XSmall => px(4.),
-                _ => px(8.),
+                Size::XSmall => rems_from_px(4.),
+                _ => rems_from_px(8.),
             })
             .h(size.height())
             .min_w(size.height())

@@ -14,12 +14,12 @@ use std::path::PathBuf;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, EventEmitter, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
-    WeakEntity, Window, div, prelude::FluentBuilder as _, px,
+    WeakEntity, Window, div, prelude::FluentBuilder as _,
 };
 use serde_json::Value as Json;
 use ui::{
     ActiveTheme as _, Button, Input, InputEvent, InputState, Settings, SettingsGroup, SettingsItem,
-    SettingsPage, Sizable as _, Spinner, Switch, Toggle, ToggleGroup, h_flex, v_flex,
+    SettingsPage, Sizable as _, Spinner, Switch, Toggle, ToggleGroup, h_flex, rems_from_px, v_flex,
 };
 
 use super::SHORTCUTS;
@@ -104,6 +104,12 @@ impl SettingsView {
 
         view.refresh(cx);
         view
+    }
+
+    /// Takes what the window changed of the preferences while they show.
+    pub(super) fn set_preferences(&mut self, preferences: Preferences, cx: &mut Context<Self>) {
+        self.preferences = preferences;
+        cx.notify();
     }
 
     pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
@@ -325,7 +331,7 @@ impl SettingsView {
                     "The command that opens a project's folder, such as zed or code --new-window. Empty uses the first editor found on the PATH.",
                     cx,
                 ))
-                .child(div().w(px(240.)).flex_shrink_0().child(Input::new(&editor).small()))
+                .child(div().w(rems_from_px(240.)).flex_shrink_0().child(Input::new(&editor).small()))
         })
         .keywords(["editor", "open", "zed", "code", "cursor"]);
 

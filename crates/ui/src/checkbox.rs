@@ -10,7 +10,7 @@ use crate::ChangeHandler;
 use crate::check_row::{self, Words};
 use crate::focus;
 use crate::icon::{Icon, IconName};
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 #[derive(IntoElement)]
@@ -87,8 +87,8 @@ impl RenderOnce for Checkbox {
         let colors = theme.colors;
 
         let side = match self.size {
-            Size::XSmall | Size::Small => gpui::px(14.),
-            Size::Medium | Size::Large => gpui::px(16.),
+            Size::XSmall | Size::Small => rems_from_px(14.),
+            Size::Medium | Size::Large => rems_from_px(16.),
         };
 
         // Its top lines up with the label's first line.
@@ -101,7 +101,7 @@ impl RenderOnce for Checkbox {
             .justify_center()
             .mt(lead)
             .size(side)
-            .rounded(gpui::px(4.))
+            .rounded(rems_from_px(4.))
             .border_1()
             .map(|control| match self.checked {
                 true => control
@@ -110,7 +110,7 @@ impl RenderOnce for Checkbox {
                     .child(
                         Icon::new(IconName::Check)
                             .color(colors.primary_foreground)
-                            .size(side - gpui::px(4.)),
+                            .size(side - rems_from_px(4.)),
                     ),
                 false => control.bg(colors.background).border_color(colors.input),
             })

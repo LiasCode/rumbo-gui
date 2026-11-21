@@ -11,8 +11,8 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, ElementId, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Pixels,
-    Point, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _, Window, actions,
-    anchored, deferred, div, point, prelude::FluentBuilder as _, px,
+    Point, Rems, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    actions, anchored, deferred, div, point, prelude::FluentBuilder as _, px,
 };
 
 use crate::child_id;
@@ -21,7 +21,7 @@ use crate::overlay::{self, Dismiss};
 use crate::popover::{Placement, PopoverTrigger};
 use crate::root::{h_flex, v_flex};
 use crate::roving::{self, Step};
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 actions!(
@@ -34,7 +34,7 @@ const CONTEXT: &str = "Menu";
 const CONTEXT_MENU_CONTEXT: &str = "ContextMenu";
 
 /// How tall an item is.
-const ITEM: Pixels = px(32.);
+const ITEM: Rems = rems_from_px(32.);
 
 pub(crate) fn bind_keys(cx: &mut App) {
     let menu = Some(CONTEXT);
@@ -328,7 +328,7 @@ fn surface(
                             div()
                                 .flex()
                                 .flex_none()
-                                .size(px(16.))
+                                .size(rems_from_px(16.))
                                 .items_center()
                                 .justify_center()
                                 .when_some(mark, |slot, mark| {
@@ -394,8 +394,8 @@ fn surface(
 
     let list = v_flex()
         .id(child_id(id, "menu"))
-        .min_w(px(180.))
-        .max_w(px(320.))
+        .min_w(rems_from_px(180.))
+        .max_w(rems_from_px(320.))
         .p_1()
         .key_context(CONTEXT)
         .track_focus(&focus)

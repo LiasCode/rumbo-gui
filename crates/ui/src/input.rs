@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::icon::{Icon, IconName};
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::text::{self, InputState, TextElement};
 use crate::theme::ActiveTheme as _;
 
@@ -83,9 +83,9 @@ impl RenderOnce for Input {
         let state = self.state.clone();
 
         let padding = match size {
-            Size::XSmall => gpui::px(6.),
-            Size::Small => gpui::px(8.),
-            Size::Medium | Size::Large => gpui::px(12.),
+            Size::XSmall => rems_from_px(6.),
+            Size::Small => rems_from_px(8.),
+            Size::Medium | Size::Large => rems_from_px(12.),
         };
 
         let mut input = text::frame(&self.state, self.bare, window, cx)

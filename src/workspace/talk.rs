@@ -7,10 +7,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    App, AppContext as _, Context, Focusable as _, ParentElement as _, Styled as _, Window, div, px,
+    App, AppContext as _, Context, Focusable as _, ParentElement as _, Styled as _, Window, div,
 };
 use serde_json::json;
-use ui::{ActiveTheme as _, Input, InputState, v_flex};
+use ui::{ActiveTheme as _, Input, InputState, rems_from_px, v_flex};
 
 use super::Workspace;
 use crate::protocol::{self, AskParams, CODE_INTERNAL, CODE_INVALID_PARAMS, CancelParams};
@@ -127,7 +127,7 @@ impl Workspace {
 
                     dialog
                         .title(name.clone())
-                        .width(px(440.))
+                        .width(rems_from_px(440.))
                         .close_on_backdrop(false)
                         .initial_focus(shown.focus_handle(cx))
                         .child(

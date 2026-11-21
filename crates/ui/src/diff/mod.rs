@@ -11,8 +11,8 @@ use std::ops::Range;
 
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, FontWeight, InteractiveElement as _, IntoElement,
-    ListAlignment, ListOffset, ListState, ParentElement as _, Pixels, Refineable as _, RenderOnce,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div, list,
+    ListAlignment, ListOffset, ListState, ParentElement as _, Pixels, Refineable as _, Rems,
+    RenderOnce, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div, list,
     prelude::FluentBuilder as _, px,
 };
 
@@ -20,7 +20,7 @@ use crate::child_id;
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
 use crate::scroll::Scrollbar;
-use crate::size::{Sizable as _, Size};
+use crate::size::{Sizable as _, Size, rems_from_px};
 use crate::theme::ActiveTheme as _;
 use patch::{Row, rows};
 
@@ -30,8 +30,8 @@ pub use patch::{DiffFile, DiffLine, FileStatus, Hunk, LineKind};
 const OVERDRAW: Pixels = px(600.);
 
 /// The size the text of lines is drawn at, and the height of each.
-const CODE: Pixels = px(12.);
-const CODE_LINE: Pixels = px(18.);
+const CODE: Rems = rems_from_px(12.);
+const CODE_LINE: Rems = rems_from_px(18.);
 
 /// The files of a patch, which are folded, and where it is scrolled.
 pub struct DiffState {
@@ -155,7 +155,7 @@ impl Styled for Diff {
 fn number(number: Option<usize>, color: gpui::Hsla) -> impl IntoElement {
     div()
         .flex_none()
-        .w(px(44.))
+        .w(rems_from_px(44.))
         .pr_2()
         .text_right()
         .text_color(color)
@@ -210,7 +210,7 @@ fn row(id: &ElementId, state: &Entity<DiffState>, index: usize, cx: &mut App) ->
             h_flex()
                 .id(child_id(id, format!("file-{file_index}")))
                 .debug_selector(|| format!("diff-file-{file_index}"))
-                .h(px(32.))
+                .h(rems_from_px(32.))
                 .px_3()
                 .gap_2()
                 .bg(colors.muted)
@@ -235,7 +235,7 @@ fn row(id: &ElementId, state: &Entity<DiffState>, index: usize, cx: &mut App) ->
                 .child(
                     div()
                         .flex_none()
-                        .w(px(14.))
+                        .w(rems_from_px(14.))
                         .text_xs()
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(color)
@@ -299,7 +299,13 @@ fn row(id: &ElementId, state: &Entity<DiffState>, index: usize, cx: &mut App) ->
                 .when_some(ground, |line, ground| line.bg(ground))
                 .child(number(line.old, colors.muted_foreground))
                 .child(number(line.new, colors.muted_foreground))
-                .child(div().flex_none().w(px(16.)).text_color(mark).child(sign))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(rems_from_px(16.))
+                        .text_color(mark)
+                        .child(sign),
+                )
                 .child(div().flex_1().min_w_0().pr_3().child(text))
                 .into_any_element()
         }

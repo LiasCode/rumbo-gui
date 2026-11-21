@@ -8,24 +8,24 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Context, Decorations, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, Pixels, Refineable as _, RenderOnce, StatefulInteractiveElement as _,
+    ParentElement, Refineable as _, Rems, RenderOnce, StatefulInteractiveElement as _,
     StyleRefinement, Styled, TitlebarOptions, Window, WindowControlArea, WindowOptions, div, point,
     prelude::FluentBuilder as _, px,
 };
 
 use crate::icon::{Icon, IconName};
 use crate::root::h_flex;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 /// How tall the bar is.
-pub const TITLE_BAR_HEIGHT: Pixels = px(34.);
+pub const TITLE_BAR_HEIGHT: Rems = rems_from_px(34.);
 
 /// Room at its start: on macOS, for the window's own buttons there.
 #[cfg(target_os = "macos")]
-const LEADING: Pixels = px(80.);
+const LEADING: Rems = rems_from_px(80.);
 #[cfg(not(target_os = "macos"))]
-const LEADING: Pixels = px(12.);
+const LEADING: Rems = rems_from_px(12.);
 
 type CloseHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 

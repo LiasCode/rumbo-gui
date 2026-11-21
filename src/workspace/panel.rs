@@ -8,11 +8,11 @@ use std::path::PathBuf;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, ScrollHandle, StatefulInteractiveElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 use ui::{
     ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Scrollbar, Sizable as _,
-    Spinner, h_flex, v_flex,
+    Spinner, h_flex, rems_from_px, v_flex,
 };
 
 use super::{Panel, Workspace, WorkspaceEvent};
@@ -217,7 +217,7 @@ impl Workspace {
                 );
 
         v_flex()
-            .w(px(WIDTH))
+            .w(rems_from_px(WIDTH))
             .flex_shrink_0()
             .h_full()
             .border_l_1()
@@ -225,7 +225,7 @@ impl Workspace {
             .bg(cx.theme().colors.background)
             .child(
                 h_flex()
-                    .h(px(40.))
+                    .h(rems_from_px(40.))
                     .flex_shrink_0()
                     .px_3()
                     .gap_2()

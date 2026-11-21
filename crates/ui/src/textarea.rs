@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::scroll::Scrollbar;
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::text::{self, InputState, TextElement};
 
 #[derive(IntoElement)]
@@ -59,12 +59,12 @@ impl RenderOnce for Textarea {
             .flex_col()
             .w_full()
             .px(match size {
-                Size::XSmall | Size::Small => gpui::px(8.),
-                Size::Medium | Size::Large => gpui::px(12.),
+                Size::XSmall | Size::Small => rems_from_px(8.),
+                Size::Medium | Size::Large => rems_from_px(12.),
             })
             .py(match size {
-                Size::XSmall | Size::Small => gpui::px(4.),
-                Size::Medium | Size::Large => gpui::px(8.),
+                Size::XSmall | Size::Small => rems_from_px(4.),
+                Size::Medium | Size::Large => rems_from_px(8.),
             })
             .text_size(size.text())
             .line_height(size.line_height())

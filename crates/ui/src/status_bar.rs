@@ -3,10 +3,11 @@
 
 use gpui::{
     AnyElement, App, IntoElement, ParentElement as _, Refineable as _, RenderOnce, StyleRefinement,
-    Styled, Window, px,
+    Styled, Window,
 };
 
 use crate::root::h_flex;
+use crate::size::rems_from_px;
 use crate::theme::ActiveTheme as _;
 
 #[derive(IntoElement, Default)]
@@ -48,7 +49,7 @@ impl RenderOnce for StatusBar {
         let mut bar = h_flex()
             .flex_none()
             .w_full()
-            .h(px(28.))
+            .h(rems_from_px(28.))
             .px_2()
             .gap_2()
             .justify_between()

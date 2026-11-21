@@ -11,7 +11,7 @@ use gpui::{
 };
 
 use crate::icon::{Icon, IconName};
-use crate::size::{Sizable, Size};
+use crate::size::{Sizable, Size, rems_from_px};
 use crate::theme::{ActiveTheme as _, ThemeColors};
 use crate::tooltip::Tooltip;
 
@@ -259,8 +259,8 @@ impl RenderOnce for Button {
             .items_center()
             .justify_center()
             .gap(match size {
-                Size::XSmall => gpui::px(4.),
-                _ => gpui::px(8.),
+                Size::XSmall => rems_from_px(4.),
+                _ => rems_from_px(8.),
             })
             .h(size.height())
             .rounded(theme.radius)

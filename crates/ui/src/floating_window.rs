@@ -11,7 +11,7 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, FocusHandle, FontWeight,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Point,
-    Refineable as _, Render, RenderOnce, SharedString, StatefulInteractiveElement as _,
+    Refineable as _, Rems, Render, RenderOnce, SharedString, StatefulInteractiveElement as _,
     StyleRefinement, Styled, Window, anchored, deferred, div, point, prelude::FluentBuilder as _,
     px,
 };
@@ -21,12 +21,12 @@ use crate::child_id;
 use crate::icon::IconName;
 use crate::overlay::{self, Dismiss};
 use crate::root::{h_flex, v_flex};
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 /// How much of a window's top stays in the window, so its title can be
 /// taken again.
-const TITLE_HEIGHT: Pixels = px(40.);
+const TITLE_HEIGHT: Rems = rems_from_px(40.);
 
 /// What is dragged when a window's title is.
 struct Dragged {
@@ -61,7 +61,7 @@ type CloseHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub struct FloatingWindow {
     id: ElementId,
     title: SharedString,
-    width: Pixels,
+    width: Rems,
     modal: bool,
     close_on_backdrop: bool,
     children: Vec<AnyElement>,
@@ -77,7 +77,7 @@ impl FloatingWindow {
         FloatingWindow {
             id: id.into(),
             title: title.into(),
-            width: px(440.),
+            width: rems_from_px(440.),
             modal: false,
             close_on_backdrop: true,
             children: Vec::new(),
@@ -89,7 +89,7 @@ impl FloatingWindow {
         }
     }
 
-    pub fn width(mut self, width: Pixels) -> Self {
+    pub fn width(mut self, width: Rems) -> Self {
         self.width = width;
         self
     }
@@ -167,7 +167,10 @@ fn close(
 impl RenderOnce for FloatingWindow {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let viewport = window.viewport_size();
-        let width = self.width.min(viewport.width - px(16.));
+        let width = self
+            .width
+            .to_pixels(window.rem_size())
+            .min(viewport.width - px(16.));
 
         let initial = self.initial_focus.clone();
         let placed = window.use_keyed_state(child_id(&self.id, "placed"), cx, |window, cx| {
@@ -274,13 +277,14 @@ impl RenderOnce for FloatingWindow {
                 }
 
                 let viewport = window.viewport_size();
+                let title = TITLE_HEIGHT.to_pixels(window.rem_size());
                 let grab = moving.read(cx).grab;
                 let wanted = event.event.position - grab;
                 let kept = point(
                     wanted.x.clamp(px(0.), (viewport.width - width).max(px(0.))),
                     wanted
                         .y
-                        .clamp(px(0.), (viewport.height - TITLE_HEIGHT).max(px(0.))),
+                        .clamp(px(0.), (viewport.height - title).max(px(0.))),
                 );
 
                 moving.update(cx, |placed, cx| {

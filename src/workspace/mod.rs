@@ -21,12 +21,13 @@ use std::collections::{HashMap, HashSet};
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
-    Subscription, Task, Window, actions, div, prelude::FluentBuilder as _, px,
+    Subscription, Task, Window, actions, div, prelude::FluentBuilder as _,
 };
 use serde_json::{Value as Json, json};
 use ui::{
     ActiveTheme as _, Button, CommandPaletteState, Dialogs, Icon, IconName, InputEvent, InputState,
-    MessageList, MessageListState, Sizable as _, Spinner, StatusBar, Toast, Toasts, h_flex, v_flex,
+    MessageList, MessageListState, Sizable as _, Spinner, StatusBar, Toast, Toasts, h_flex,
+    rems_from_px, v_flex,
 };
 
 use crate::commands::{self, Command};
@@ -1637,7 +1638,7 @@ impl Workspace {
                 move |index, _, cx| {
                     div()
                         .w_full()
-                        .max_w(px(width))
+                        .max_w(rems_from_px(width))
                         .mx_auto()
                         .px_4()
                         .when(index == 0, |row| row.pt_4())
@@ -1692,7 +1693,7 @@ impl Workspace {
             )))
             .child(
                 v_flex()
-                    .w(px(self.width.min(520.)))
+                    .w(rems_from_px(self.width.min(520.)))
                     .pt_4()
                     .gap_2()
                     .when(self.history.latest(1).len() == 1, |column| {

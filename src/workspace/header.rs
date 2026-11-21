@@ -4,11 +4,11 @@
 
 use gpui::{
     App, ClipboardItem, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 use ui::{
     ActiveTheme as _, Button, DropdownMenu, IconName, MenuItem, Placement, Sizable as _, Spinner,
-    h_flex,
+    h_flex, rems_from_px,
 };
 
 use super::{Panel, Workspace};
@@ -42,7 +42,7 @@ impl Workspace {
         };
 
         h_flex()
-            .h(px(44.))
+            .h(rems_from_px(44.))
             .flex_shrink_0()
             .px_4()
             .gap_2()

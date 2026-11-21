@@ -12,7 +12,7 @@ use gpui::{
     AnyElement, App, ElementId, FontWeight, InteractiveElement as _, IntoElement, KeyBinding,
     MouseButton, ParentElement as _, Refineable as _, RenderOnce, ScrollHandle, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, Window, actions, div,
-    prelude::FluentBuilder as _, px,
+    prelude::FluentBuilder as _,
 };
 
 use crate::child_id;
@@ -20,7 +20,7 @@ use crate::icon::{Icon, IconName};
 use crate::menu::{ContextMenu, MenuItem};
 use crate::root::{h_flex, v_flex};
 use crate::scroll::Scrollbar;
-use crate::size::Sizable as _;
+use crate::size::{Sizable as _, rems_from_px};
 use crate::theme::ActiveTheme as _;
 
 actions!(sidebar, [Open, Close]);
@@ -147,7 +147,7 @@ impl SidebarItem {
                 .flex_none()
                 .items_center()
                 .justify_center()
-                .size(px(20.))
+                .size(rems_from_px(20.))
                 .rounded(radius)
                 .text_color(colors.muted_foreground)
                 .hover(move |style| style.bg(colors.sidebar_accent))
@@ -186,7 +186,7 @@ impl SidebarItem {
         let mut row = h_flex()
             .id(self.id.clone())
             .debug_selector(move || format!("sidebar-{named}"))
-            .h(px(28.))
+            .h(rems_from_px(28.))
             .w_full()
             .px_2()
             .gap_2()
@@ -267,8 +267,8 @@ impl SidebarItem {
                 item.child(
                     v_flex()
                         .gap_0p5()
-                        .ml(px(14.))
-                        .pl(px(10.))
+                        .ml(rems_from_px(14.))
+                        .pl(rems_from_px(10.))
                         .py_0p5()
                         .border_l_1()
                         .border_color(colors.border)
@@ -375,7 +375,7 @@ impl RenderOnce for Sidebar {
                     .gap_0p5()
                     .child(
                         div()
-                            .h(px(28.))
+                            .h(rems_from_px(28.))
                             .px_2()
                             .flex()
                             .items_center()
@@ -392,7 +392,7 @@ impl RenderOnce for Sidebar {
             .id(self.id.clone())
             .flex_none()
             .h_full()
-            .w(px(256.))
+            .w(rems_from_px(256.))
             .bg(colors.sidebar)
             .border_r_1()
             .border_color(colors.border)

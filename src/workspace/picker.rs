@@ -8,11 +8,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Context, Entity, ParentElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    App, Context, Entity, ParentElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use serde_json::{Value as Json, json};
-use ui::{ActiveTheme as _, Toast, v_flex};
+use ui::{ActiveTheme as _, Toast, rems_from_px, v_flex};
 
 use super::form::{Field, Form};
 use super::{Feedback, Pending, Workspace};
@@ -212,7 +211,7 @@ impl Workspace {
 
                     dialog
                         .title("Model and Options")
-                        .width(px(480.))
+                        .width(rems_from_px(480.))
                         .child(
                             v_flex()
                                 .gap_3()

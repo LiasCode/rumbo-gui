@@ -10,13 +10,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Context, Entity, FocusHandle, IntoElement, ParentElement, Pixels, RenderOnce,
-    SharedString, Styled as _, Window, div, px,
+    AnyElement, App, Context, Entity, FocusHandle, IntoElement, ParentElement, Rems, RenderOnce,
+    SharedString, Styled as _, Window, div,
 };
 
 use crate::button::Button;
 use crate::floating_window::FloatingWindow;
 use crate::root::h_flex;
+use crate::size::rems_from_px;
 
 /// What is called when a dialog's button is pressed: whether the dialog
 /// closes.
@@ -25,7 +26,7 @@ type Answer = Rc<dyn Fn(&mut Window, &mut App) -> bool>;
 /// What a dialog shows and does, built anew on each frame it shows.
 pub struct Dialog {
     title: SharedString,
-    width: Pixels,
+    width: Rems,
     children: Vec<AnyElement>,
     ok: Option<(SharedString, Answer)>,
     cancel: Option<(SharedString, Answer)>,
@@ -39,7 +40,7 @@ impl Dialog {
     fn new() -> Self {
         Dialog {
             title: SharedString::default(),
-            width: px(440.),
+            width: rems_from_px(440.),
             children: Vec::new(),
             ok: None,
             cancel: None,
@@ -55,7 +56,7 @@ impl Dialog {
         self
     }
 
-    pub fn width(mut self, width: Pixels) -> Self {
+    pub fn width(mut self, width: Rems) -> Self {
         self.width = width;
         self
     }

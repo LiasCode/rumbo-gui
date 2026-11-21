@@ -4,7 +4,7 @@ use gpui::{
 };
 use ui::{
     ActiveTheme as _, Button, CommandGroup, CommandIndex, CommandItem, CommandPalette,
-    CommandPaletteState, v_flex,
+    CommandPaletteState, rems_from_px, v_flex,
 };
 
 use super::{Demos, note, section, told};
@@ -93,7 +93,7 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
 
                         dialog
                             .title("Commands")
-                            .width(px(480.))
+                            .width(rems_from_px(480.))
                             .initial_focus(state.focus_handle(cx))
                             .child(CommandPalette::new(&state).on_confirm(
                                 move |index, window, cx| {

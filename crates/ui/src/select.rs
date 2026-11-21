@@ -7,7 +7,7 @@
 use gpui::{
     App, AppContext as _, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Refineable as _,
-    RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement as _, StyleRefinement,
+    Rems, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement as _, StyleRefinement,
     Styled, Subscription, Window, actions, anchored, deferred, div, point,
     prelude::FluentBuilder as _, px,
 };
@@ -17,7 +17,7 @@ use crate::input::Input;
 use crate::overlay::{self, Dismiss};
 use crate::root::{h_flex, v_flex};
 use crate::scroll::Scrollbar;
-use crate::size::{Sizable, Size};
+use crate::size::{self, Sizable, Size, rems_from_px};
 use crate::text::{InputEvent, InputState};
 use crate::theme::ActiveTheme as _;
 
@@ -27,7 +27,7 @@ actions!(select, [SelectPrevious, SelectNext, Confirm]);
 const TRIGGER_CONTEXT: &str = "Select";
 
 /// The most a list shows before it scrolls.
-const LIST_HEIGHT: Pixels = px(300.);
+const LIST_HEIGHT: Rems = rems_from_px(300.);
 
 pub(crate) fn bind_keys(cx: &mut App) {
     let list = Some(overlay::SELECT_CONTEXT);
@@ -379,9 +379,9 @@ impl RenderOnce for Select {
         };
 
         let padding = match size {
-            Size::XSmall => px(6.),
-            Size::Small => px(8.),
-            Size::Medium | Size::Large => px(12.),
+            Size::XSmall => rems_from_px(6.),
+            Size::Small => rems_from_px(8.),
+            Size::Medium | Size::Large => rems_from_px(12.),
         };
 
         let mut trigger = h_flex()
@@ -537,7 +537,7 @@ impl RenderOnce for Select {
         let closing = self.state.clone();
         let surface = overlay::surface(cx)
             .min_w(trigger_bounds.size.width)
-            .max_w(trigger_bounds.size.width.max(px(360.)))
+            .max_w(trigger_bounds.size.width.max(size::scaled(360., window)))
             .key_context(overlay::SELECT_CONTEXT)
             .when(!state.searchable, |surface| {
                 surface.track_focus(&state.list_focus)
