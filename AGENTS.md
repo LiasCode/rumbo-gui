@@ -172,6 +172,28 @@ its own, which nothing of the person's shares: `wl-copy` an image into it,
 run the window in it, and drive it there with rumbo's computer tool, with
 `WAYLAND_DISPLAY` and `SWAYSOCK` naming that Sway.
 
+Sway is installed, and its headless Sway is also where the window is used
+with the pointer: clicks, menus, hovers, and drags. rumbo's computer tool
+acts on the desktop of the rumbo that runs it, as that rumbo started: its
+`WAYLAND_DISPLAY`, and `HYPRLAND_INSTANCE_SIGNATURE` before `SWAYSOCK`. An
+agent whose rumbo the person started on their desktop, as their own
+rumbo-gui does, would see their screen and move their pointer with it, so
+it never uses its own computer tool there. It drives the Sway through
+another rumbo instead: one started with that Sway's `WAYLAND_DISPLAY` and
+`SWAYSOCK` and without `HYPRLAND_INSTANCE_SIGNATURE`, with `computer=on` in
+a scratch `RUMBO_CONFIG`, and with a provider of no model that turns each
+call it is handed into a computer tool call, in one run held open for all
+of them. Start that run before the window: a window started while the
+Sway has no keyboard panics in GPUI when the tool's virtual keyboard comes.
+`grim`, with the Sway's `WAYLAND_DISPLAY`, takes its screenshots at full
+size.
+
+```sh
+# sway.conf: output HEADLESS-1 resolution 1280x800
+env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DISPLAY \
+  WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 sway -c sway.conf
+```
+
 Open Project… asks the desktop's folder dialog, which takes `/` and a path
 typed, and Return; it completes a folder that holds a single folder into
 that one, so a scratch project with no subfolder, not even `.git`, is the
