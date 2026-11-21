@@ -20,6 +20,7 @@ mod usage;
 mod workspace;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gpui::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use ui::TitleBar;
@@ -70,8 +71,11 @@ fn main() {
         problem,
     };
 
+    // Images of the web in a reply are fetched with it, once the person
+    // asks to see them.
     gpui_platform::application()
         .with_assets(ui::Assets)
+        .with_http_client(Arc::new(ui::ImageClient::new(protocol::NAME)))
         .run(move |cx| {
             // Without the bundled typefaces the window draws in the
             // desktop's font, and works the same.

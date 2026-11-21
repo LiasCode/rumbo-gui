@@ -74,10 +74,10 @@ pub(super) fn render_row(
             let group = SharedString::from(format!("reply-{}", item.id));
 
             row.group(group.clone())
-                .child(Markdown::new(
-                    ("reply", item.id),
-                    SharedString::from(text.clone()),
-                ))
+                .child(
+                    Markdown::new(("reply", item.id), SharedString::from(text.clone()))
+                        .base(this.dir.clone()),
+                )
                 .child(
                     h_flex()
                         .pt_1()

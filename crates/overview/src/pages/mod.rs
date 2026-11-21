@@ -262,7 +262,7 @@ impl Page {
                 "Commands in groups, found by typing part of their name, and chosen with the keyboard."
             }
             Page::Markdown => {
-                "What a model writes, drawn: each block's words can be selected and copied."
+                "What a model writes, drawn: code colored by its syntax, formulas, diagrams, and images, and each block's words can be selected and copied."
             }
             Page::MessageList => {
                 "A long conversation, of which only the rows in view are drawn, that keeps to its end."

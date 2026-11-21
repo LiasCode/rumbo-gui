@@ -36,6 +36,7 @@ pub enum IconName {
     FolderOpen,
     GitBranch,
     GitCompare,
+    Image,
     Info,
     LoaderCircle,
     MessageSquare,
@@ -62,7 +63,7 @@ pub enum IconName {
 }
 
 impl IconName {
-    pub const ALL: [IconName; 50] = [
+    pub const ALL: [IconName; 51] = [
         IconName::ArrowDown,
         IconName::ArrowUp,
         IconName::BookOpen,
@@ -90,6 +91,7 @@ impl IconName {
         IconName::FolderOpen,
         IconName::GitBranch,
         IconName::GitCompare,
+        IconName::Image,
         IconName::Info,
         IconName::LoaderCircle,
         IconName::MessageSquare,
@@ -145,6 +147,7 @@ impl IconName {
             IconName::FolderOpen => "icons/folder-open.svg",
             IconName::GitBranch => "icons/git-branch.svg",
             IconName::GitCompare => "icons/git-compare.svg",
+            IconName::Image => "icons/image.svg",
             IconName::Info => "icons/info.svg",
             IconName::LoaderCircle => "icons/loader-circle.svg",
             IconName::MessageSquare => "icons/message-square.svg",

@@ -13,6 +13,8 @@
 
 mod pages;
 
+use std::sync::Arc;
+
 use gpui::{
     AnyElement, App, AppContext as _, Bounds, Context, Entity, FocusHandle, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Point, Render, ScrollHandle,
@@ -306,6 +308,7 @@ fn main() {
 
     gpui_platform::application()
         .with_assets(ui::Assets)
+        .with_http_client(Arc::new(ui::ImageClient::new("rumbo-ui-overview")))
         .run(move |cx: &mut App| {
             if let Err(error) = ui::init(cx) {
                 eprintln!("overview: the bundled typefaces did not load: {error}");

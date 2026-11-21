@@ -1,11 +1,13 @@
 //! What a markdown text says, as blocks of words with their marks, apart
 //! from drawing it: paragraphs, headings, lists of their own blocks, code,
-//! quotes, rules, and tables, as GitHub's flavor writes them.
+//! formulas, images, quotes, rules, and tables, as GitHub's flavor writes
+//! them, with math between dollars.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use markdown::mdast::{AlignKind, Node};
-use markdown::{ParseOptions, to_mdast};
+use markdown::{Constructs, ParseOptions, to_mdast};
 
 /// How a run of words is marked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -15,6 +17,10 @@ pub(crate) struct Marks {
     pub(crate) code: bool,
     pub(crate) delete: bool,
     pub(crate) link: bool,
+    /// A formula, whose words are its TeX.
+    pub(crate) math: bool,
+    /// The color of code's words, as 0xRRGGBB, where its syntax gives one.
+    pub(crate) color: Option<u32>,
 }
 
 impl Marks {
@@ -46,11 +52,23 @@ impl Inline {
 
         let end = self.text.len();
 
-        // A run marked as the one before it goes on from it.
+        // A run marked as the one before it goes on from it; a formula is
+        // one of its own.
         match self.spans.last_mut() {
-            Some((range, last)) if range.end == start && *last == marks => range.end = end,
+            Some((range, last)) if range.end == start && *last == marks && !marks.math => {
+                range.end = end
+            }
             _ => self.spans.push((start..end, marks)),
         }
+    }
+
+    /// Whether it holds a formula, which is drawn among its words.
+    pub(crate) fn has_math(&self) -> bool {
+        self.spans.iter().any(|(_, marks)| marks.math)
+    }
+
+    fn is_blank(&self) -> bool {
+        self.text.trim().is_empty()
     }
 }
 
@@ -73,7 +91,18 @@ pub(crate) struct Item {
 pub(crate) enum Block {
     Paragraph(Inline),
     Heading(u8, Inline),
-    Code(String),
+    /// Code, with the language its fence names, if any.
+    Code {
+        lang: Option<String>,
+        code: String,
+    },
+    /// A formula on a line of its own, in TeX.
+    Math(String),
+    /// An image, by where it is and the words that stand for it.
+    Image {
+        url: String,
+        alt: String,
+    },
     Quote(Vec<Block>),
     List {
         ordered: bool,
@@ -88,218 +117,362 @@ pub(crate) enum Block {
     },
 }
 
+/// What a text is read with: GitHub's flavor, and formulas between
+/// dollars, one for one among words and two for one on its own.
+fn options() -> ParseOptions {
+    let gfm = ParseOptions::gfm();
+
+    ParseOptions {
+        constructs: Constructs {
+            math_flow: true,
+            math_text: true,
+            ..gfm.constructs
+        },
+        ..gfm
+    }
+}
+
+/// What a text needs to read its nodes: the text itself, for what a node
+/// says only by where it stands, and the images defined by name.
+struct Reader<'a> {
+    source: &'a str,
+    definitions: HashMap<String, String>,
+}
+
 /// The blocks `source` says. What it cannot read is said as it is written.
 pub(crate) fn parse(source: &str) -> Vec<Block> {
-    match to_mdast(source, &ParseOptions::gfm()) {
-        Ok(root) => blocks(root.children().map(Vec::as_slice).unwrap_or_default()),
-        Err(_) => vec![Block::Paragraph(Inline {
-            text: source.to_string(),
-            ..Inline::default()
-        })],
-    }
-}
-
-fn blocks(nodes: &[Node]) -> Vec<Block> {
-    nodes.iter().filter_map(block).collect()
-}
-
-fn block(node: &Node) -> Option<Block> {
-    let block = match node {
-        Node::Paragraph(paragraph) => Block::Paragraph(inline(&paragraph.children)),
-        Node::Heading(heading) => Block::Heading(heading.depth, inline(&heading.children)),
-        Node::Code(code) => Block::Code(code.value.clone()),
-        Node::Math(math) => Block::Code(math.value.clone()),
-        Node::Blockquote(quote) => Block::Quote(blocks(&quote.children)),
-        Node::ThematicBreak(_) => Block::Rule,
-
-        Node::List(list) => Block::List {
-            ordered: list.ordered,
-            start: list.start.unwrap_or(1) as usize,
-            items: list
-                .children
-                .iter()
-                .filter_map(|node| match node {
-                    Node::ListItem(item) => Some(Item {
-                        checked: item.checked,
-                        blocks: blocks(&item.children),
-                    }),
-                    _ => None,
-                })
-                .collect(),
-        },
-
-        Node::Table(table) => Block::Table {
-            align: table
-                .align
-                .iter()
-                .map(|align| match align {
-                    AlignKind::Center => Align::Center,
-                    AlignKind::Right => Align::End,
-                    AlignKind::Left | AlignKind::None => Align::Start,
-                })
-                .collect(),
-            rows: table
-                .children
-                .iter()
-                .filter_map(|row| match row {
-                    Node::TableRow(row) => Some(
-                        row.children
-                            .iter()
-                            .map(|cell| match cell {
-                                Node::TableCell(cell) => inline(&cell.children),
-                                other => inline(std::slice::from_ref(other)),
-                            })
-                            .collect(),
-                    ),
-                    _ => None,
-                })
-                .collect(),
-        },
-
-        Node::Html(html) => Block::Paragraph(Inline {
-            text: html.value.clone(),
-            ..Inline::default()
-        }),
-
-        // Anything else that holds words, as a paragraph of them.
-        other => {
-            let words = inline(std::slice::from_ref(other));
-
-            if words.text.is_empty() {
-                return None;
-            }
-
-            Block::Paragraph(words)
+    let root = match to_mdast(source, &options()) {
+        Ok(root) => root,
+        Err(_) => {
+            return vec![Block::Paragraph(Inline {
+                text: source.to_string(),
+                ..Inline::default()
+            })];
         }
     };
 
-    Some(block)
+    let nodes = root.children().map(Vec::as_slice).unwrap_or_default();
+    let mut definitions = HashMap::new();
+
+    collect_definitions(nodes, &mut definitions);
+
+    let reader = Reader {
+        source,
+        definitions,
+    };
+
+    reader.blocks(nodes)
 }
 
-fn inline(nodes: &[Node]) -> Inline {
-    let mut words = Inline::default();
-
+fn collect_definitions(nodes: &[Node], definitions: &mut HashMap<String, String>) {
     for node in nodes {
-        walk(node, Marks::default(), &mut words);
-    }
+        if let Node::Definition(definition) = node {
+            definitions.insert(definition.identifier.to_lowercase(), definition.url.clone());
+        }
 
-    words
+        if let Some(children) = node.children() {
+            collect_definitions(children, definitions);
+        }
+    }
 }
 
-fn walk(node: &Node, marks: Marks, words: &mut Inline) {
-    let within = |words: &mut Inline, children: &[Node], marks: Marks| {
-        for child in children {
-            walk(child, marks, words);
+impl Reader<'_> {
+    fn blocks(&self, nodes: &[Node]) -> Vec<Block> {
+        nodes.iter().flat_map(|node| self.block(node)).collect()
+    }
+
+    fn block(&self, node: &Node) -> Vec<Block> {
+        let block = match node {
+            Node::Paragraph(paragraph) => return self.paragraph(&paragraph.children),
+            Node::Heading(heading) => Block::Heading(heading.depth, self.inline(&heading.children)),
+
+            // A fence named math holds a formula, as GitHub reads it.
+            Node::Code(code) if code.lang.as_deref() == Some("math") => {
+                Block::Math(code.value.clone())
+            }
+            Node::Code(code) => Block::Code {
+                lang: code.lang.clone().filter(|lang| !lang.is_empty()),
+                code: code.value.clone(),
+            },
+
+            Node::Math(math) => Block::Math(math.value.clone()),
+            Node::Blockquote(quote) => Block::Quote(self.blocks(&quote.children)),
+            Node::ThematicBreak(_) => Block::Rule,
+            Node::Definition(_) => return Vec::new(),
+
+            Node::List(list) => Block::List {
+                ordered: list.ordered,
+                start: list.start.unwrap_or(1) as usize,
+                items: list
+                    .children
+                    .iter()
+                    .filter_map(|node| match node {
+                        Node::ListItem(item) => Some(Item {
+                            checked: item.checked,
+                            blocks: self.blocks(&item.children),
+                        }),
+                        _ => None,
+                    })
+                    .collect(),
+            },
+
+            Node::Table(table) => Block::Table {
+                align: table
+                    .align
+                    .iter()
+                    .map(|align| match align {
+                        AlignKind::Center => Align::Center,
+                        AlignKind::Right => Align::End,
+                        AlignKind::Left | AlignKind::None => Align::Start,
+                    })
+                    .collect(),
+                rows: table
+                    .children
+                    .iter()
+                    .filter_map(|row| match row {
+                        Node::TableRow(row) => Some(
+                            row.children
+                                .iter()
+                                .map(|cell| match cell {
+                                    Node::TableCell(cell) => self.inline(&cell.children),
+                                    other => self.inline(std::slice::from_ref(other)),
+                                })
+                                .collect(),
+                        ),
+                        _ => None,
+                    })
+                    .collect(),
+            },
+
+            Node::Html(html) => Block::Paragraph(Inline {
+                text: html.value.clone(),
+                ..Inline::default()
+            }),
+
+            // Anything else that holds words, as a paragraph of them.
+            other => {
+                let words = self.inline(std::slice::from_ref(other));
+
+                if words.text.is_empty() {
+                    return Vec::new();
+                }
+
+                Block::Paragraph(words)
+            }
+        };
+
+        vec![block]
+    }
+
+    /// A paragraph's words, and each image among them as a block of its
+    /// own where it stands, between the words before and after it.
+    fn paragraph(&self, nodes: &[Node]) -> Vec<Block> {
+        let mut blocks = Vec::new();
+        let mut words = Inline::default();
+
+        for node in nodes {
+            let image = match node {
+                Node::Image(image) => Some((image.url.clone(), image.alt.clone())),
+                Node::ImageReference(reference) => self
+                    .definitions
+                    .get(&reference.identifier.to_lowercase())
+                    .map(|url| (url.clone(), reference.alt.clone())),
+                _ => None,
+            };
+
+            match image {
+                Some((url, alt)) => {
+                    let before = std::mem::take(&mut words);
+
+                    if !before.is_blank() {
+                        blocks.push(Block::Paragraph(before));
+                    }
+
+                    blocks.push(Block::Image { url, alt });
+                }
+                None => self.walk(node, Marks::default(), &mut words),
+            }
         }
-    };
 
-    match node {
-        Node::Text(text) => words.push(&text.value, marks),
-        Node::Strong(strong) => within(
-            words,
-            &strong.children,
-            Marks {
-                strong: true,
-                ..marks
-            },
-        ),
-        Node::Emphasis(emphasis) => within(
-            words,
-            &emphasis.children,
-            Marks {
-                emphasis: true,
-                ..marks
-            },
-        ),
-        Node::Delete(delete) => within(
-            words,
-            &delete.children,
-            Marks {
-                delete: true,
-                ..marks
-            },
-        ),
-        Node::InlineCode(code) => words.push(
-            &code.value,
-            Marks {
-                code: true,
-                ..marks
-            },
-        ),
-        Node::InlineMath(math) => words.push(
-            &math.value,
-            Marks {
-                code: true,
-                ..marks
-            },
-        ),
-        Node::Break(_) => words.push("\n", marks),
-        Node::Html(html) => words.push(&html.value, marks),
-        Node::Image(image) => words.push(&image.alt, marks),
+        if !words.is_blank() || blocks.is_empty() {
+            blocks.push(Block::Paragraph(words));
+        }
 
-        Node::Link(link) => {
-            let start = words.text.len();
+        blocks
+    }
 
-            within(
+    fn inline(&self, nodes: &[Node]) -> Inline {
+        let mut words = Inline::default();
+
+        for node in nodes {
+            self.walk(node, Marks::default(), &mut words);
+        }
+
+        words
+    }
+
+    fn walk(&self, node: &Node, marks: Marks, words: &mut Inline) {
+        let within = |words: &mut Inline, children: &[Node], marks: Marks| {
+            for child in children {
+                self.walk(child, marks, words);
+            }
+        };
+
+        match node {
+            Node::Text(text) => words.push(&text.value, marks),
+            Node::Strong(strong) => within(
                 words,
-                &link.children,
+                &strong.children,
                 Marks {
-                    link: true,
+                    strong: true,
                     ..marks
                 },
-            );
-            words
-                .links
-                .push((start..words.text.len(), link.url.clone()));
-        }
+            ),
+            Node::Emphasis(emphasis) => within(
+                words,
+                &emphasis.children,
+                Marks {
+                    emphasis: true,
+                    ..marks
+                },
+            ),
+            Node::Delete(delete) => within(
+                words,
+                &delete.children,
+                Marks {
+                    delete: true,
+                    ..marks
+                },
+            ),
+            Node::InlineCode(code) => words.push(
+                &code.value,
+                Marks {
+                    code: true,
+                    ..marks
+                },
+            ),
+            Node::Break(_) => words.push("\n", marks),
+            Node::Html(html) => words.push(&html.value, marks),
+            Node::Image(image) => words.push(&image.alt, marks),
+            Node::ImageReference(image) => words.push(&image.alt, marks),
 
-        other => {
-            if let Some(children) = other.children() {
-                within(words, children, marks);
+            Node::InlineMath(math) => {
+                let position = math.position.as_ref();
+                let after = position.and_then(|position| self.source.get(position.end.offset..));
+                let written = position.and_then(|position| {
+                    self.source.get(position.start.offset..position.end.offset)
+                });
+
+                // Read as written, since one space either side is dropped
+                // from what is between the dollars.
+                let between =
+                    written.map_or(math.value.as_str(), |written| written.trim_matches('$'));
+
+                match (is_formula(between, after), written) {
+                    // Dollars that are no formula, as prices are, stay as
+                    // they are written.
+                    (false, Some(written)) => words.push(written, marks),
+                    _ => words.push(
+                        &math.value,
+                        Marks {
+                            math: true,
+                            ..marks
+                        },
+                    ),
+                }
+            }
+
+            Node::Link(link) => {
+                let start = words.text.len();
+
+                within(
+                    words,
+                    &link.children,
+                    Marks {
+                        link: true,
+                        ..marks
+                    },
+                );
+                words
+                    .links
+                    .push((start..words.text.len(), link.url.clone()));
+            }
+
+            other => {
+                if let Some(children) = other.children() {
+                    within(words, children, marks);
+                }
             }
         }
     }
+}
+
+/// Whether what stands between dollars among words is a formula, as
+/// Pandoc tells: not when it starts or ends with a space, nor when a figure
+/// follows the closing dollar, so that "$5 and $10" stays as written.
+fn is_formula(tex: &str, after: Option<&str>) -> bool {
+    let spaced = tex.starts_with(char::is_whitespace) || tex.ends_with(char::is_whitespace);
+    let figure_after = after
+        .and_then(|after| after.chars().next())
+        .is_some_and(|next| next.is_ascii_digit());
+
+    !tex.is_empty() && !spaced && !figure_after
 }
 
 /// The runs of `0..len` that are marked or selected, in order and apart
 /// from each other, with their marks and whether they are selected, as a
-/// line of text is drawn.
+/// line of text is drawn. It walks the runs once, since code can have many.
 pub(crate) fn segments(
     len: usize,
     spans: &[(Range<usize>, Marks)],
     selected: Option<Range<usize>>,
 ) -> Vec<(Range<usize>, Marks, bool)> {
-    let selected = selected.filter(|range| range.start < range.end);
-    let mut cuts = vec![0, len];
+    let selected = selected
+        .map(|range| range.start.min(len)..range.end.min(len))
+        .filter(|range| range.start < range.end);
+    let mut segments = Vec::new();
 
-    for (range, _) in spans {
-        cuts.push(range.start.min(len));
-        cuts.push(range.end.min(len));
+    // A run, cut where the selection starts and ends.
+    let mut cut = |range: Range<usize>, marks: Marks| {
+        let pieces = match &selected {
+            Some(chosen) => [
+                (range.start..range.end.min(chosen.start), false),
+                (
+                    range.start.max(chosen.start)..range.end.min(chosen.end),
+                    true,
+                ),
+                (range.start.max(chosen.end)..range.end, false),
+            ],
+            None => [(range, false), (0..0, false), (0..0, false)],
+        };
+
+        for (piece, chosen) in pieces {
+            if piece.start < piece.end && (marks.any() || chosen) {
+                segments.push((piece, marks, chosen));
+            }
+        }
+    };
+
+    let mut at = 0;
+
+    for (span, marks) in spans {
+        let span = span.start.min(len).max(at)..span.end.min(len);
+
+        if at < span.start {
+            cut(at..span.start, Marks::default());
+        }
+
+        if span.start < span.end {
+            cut(span.clone(), *marks);
+            at = span.end;
+        }
     }
 
-    if let Some(range) = &selected {
-        cuts.push(range.start.min(len));
-        cuts.push(range.end.min(len));
+    if at < len {
+        cut(at..len, Marks::default());
     }
 
-    cuts.sort_unstable();
-    cuts.dedup();
-
-    cuts.windows(2)
-        .filter_map(|cut| {
-            let range = cut[0]..cut[1];
-            let marks = spans
-                .iter()
-                .find(|(span, _)| span.start <= range.start && range.end <= span.end)
-                .map(|(_, marks)| *marks)
-                .unwrap_or_default();
-            let chosen = selected.as_ref().is_some_and(|selection| {
-                selection.start <= range.start && range.end <= selection.end
-            });
-
-            (marks.any() || chosen).then_some((range, marks, chosen))
-        })
-        .collect()
+    segments
 }
 
 /// The word `index` stands in, or what is not a word there.
@@ -413,9 +586,74 @@ mod tests {
         let blocks = parse("# Plan\n\n```rust\nfn main() {}\n```\n\n> said\n\n---");
 
         assert!(matches!(&blocks[0], Block::Heading(1, words) if words.text == "Plan"));
-        assert_eq!(blocks[1], Block::Code("fn main() {}".to_string()));
+        assert_eq!(
+            blocks[1],
+            Block::Code {
+                lang: Some("rust".to_string()),
+                code: "fn main() {}".to_string(),
+            }
+        );
         assert!(matches!(&blocks[2], Block::Quote(inner) if inner.len() == 1));
         assert_eq!(blocks[3], Block::Rule);
+    }
+
+    #[test]
+    fn reads_formulas_among_words_and_on_their_own() {
+        let blocks = parse("The root is $\\sqrt{x}$, and\n\n$$\nE = mc^2\n$$\n\n```math\na^2\n```");
+        let words = paragraph(&blocks, 0);
+        let math = Marks {
+            math: true,
+            ..Marks::default()
+        };
+
+        assert_eq!(words.text, "The root is \\sqrt{x}, and");
+        assert_eq!(words.spans, [(12..20, math)]);
+        assert!(words.has_math());
+        assert_eq!(blocks[1], Block::Math("E = mc^2".to_string()));
+        assert_eq!(blocks[2], Block::Math("a^2".to_string()));
+    }
+
+    #[test]
+    fn leaves_prices_as_they_are_written() {
+        let blocks = parse("It costs $5 and $10, or $ 3 $; but $x$ is one.");
+        let words = paragraph(&blocks, 0);
+
+        assert_eq!(words.text, "It costs $5 and $10, or $ 3 $; but x is one.");
+        assert_eq!(
+            words.spans,
+            [(
+                35..36,
+                Marks {
+                    math: true,
+                    ..Marks::default()
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn takes_images_out_of_their_paragraph() {
+        let blocks = parse(
+            "Before ![a chart](chart.png) after.\n\n![logo][brand]\n\n[brand]: https://rumbo.dev/logo.svg",
+        );
+
+        assert_eq!(paragraph(&blocks, 0).text, "Before ");
+        assert_eq!(
+            blocks[1],
+            Block::Image {
+                url: "chart.png".to_string(),
+                alt: "a chart".to_string(),
+            }
+        );
+        assert_eq!(paragraph(&blocks, 2).text, " after.");
+        assert_eq!(
+            blocks[3],
+            Block::Image {
+                url: "https://rumbo.dev/logo.svg".to_string(),
+                alt: "logo".to_string(),
+            }
+        );
+        assert_eq!(blocks.len(), 4);
     }
 
     #[test]
@@ -479,6 +717,22 @@ mod tests {
 
         // A selection of nothing marks nothing.
         assert_eq!(segments(10, &[], Some(3..3)), []);
+
+        // Runs side by side, the selection over both and past them.
+        let code = Marks {
+            code: true,
+            ..Marks::default()
+        };
+
+        assert_eq!(
+            segments(8, &[(0..2, strong), (2..4, code)], Some(1..6)),
+            [
+                (0..1, strong, false),
+                (1..2, strong, true),
+                (2..4, code, true),
+                (4..6, Marks::default(), true),
+            ]
+        );
     }
 
     #[test]

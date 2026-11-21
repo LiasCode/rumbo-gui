@@ -11,12 +11,12 @@ use gpui::{
     HighlightStyle, HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, RenderOnce,
     SharedString, StrikethroughStyle, StyledText, TextLayout, UnderlineStyle, Window, canvas, div,
-    px,
+    px, rgb,
 };
 
 use super::blocks::{Marks, segments, word_at};
 use crate::text::{Copy, SelectAll};
-use crate::theme::ActiveTheme as _;
+use crate::theme::{ActiveTheme as _, ThemeColors};
 
 const CONTEXT: &str = "SelectableText";
 
@@ -76,6 +76,50 @@ impl SelectableText {
         self.links = links;
         self
     }
+}
+
+/// How words marked `marks` are drawn, and over the selection's ground
+/// when `chosen`.
+pub(super) fn style(marks: Marks, chosen: bool, colors: &ThemeColors) -> HighlightStyle {
+    let mut style = HighlightStyle::default();
+
+    if marks.strong {
+        style.font_weight = Some(FontWeight::SEMIBOLD);
+    }
+
+    if marks.emphasis {
+        style.font_style = Some(FontStyle::Italic);
+    }
+
+    if marks.code {
+        style.background_color = Some(colors.muted);
+    }
+
+    if let Some(color) = marks.color {
+        style.color = Some(rgb(color).into());
+    }
+
+    if marks.delete {
+        style.strikethrough = Some(StrikethroughStyle {
+            thickness: px(1.),
+            color: None,
+        });
+    }
+
+    if marks.link {
+        style.color = Some(colors.link);
+        style.underline = Some(UnderlineStyle {
+            thickness: px(1.),
+            color: None,
+            wavy: false,
+        });
+    }
+
+    if chosen {
+        style.background_color = Some(colors.selection);
+    }
+
+    style
 }
 
 /// The boundary between characters nearest to `position`: before the
@@ -147,43 +191,7 @@ impl RenderOnce for SelectableText {
 
         let highlights = segments(len, &self.spans, chosen.clone())
             .into_iter()
-            .map(|(range, marks, chosen)| {
-                let mut style = HighlightStyle::default();
-
-                if marks.strong {
-                    style.font_weight = Some(FontWeight::SEMIBOLD);
-                }
-
-                if marks.emphasis {
-                    style.font_style = Some(FontStyle::Italic);
-                }
-
-                if marks.code {
-                    style.background_color = Some(colors.muted);
-                }
-
-                if marks.delete {
-                    style.strikethrough = Some(StrikethroughStyle {
-                        thickness: px(1.),
-                        color: None,
-                    });
-                }
-
-                if marks.link {
-                    style.color = Some(colors.link);
-                    style.underline = Some(UnderlineStyle {
-                        thickness: px(1.),
-                        color: None,
-                        wavy: false,
-                    });
-                }
-
-                if chosen {
-                    style.background_color = Some(colors.selection);
-                }
-
-                (range, style)
-            })
+            .map(|(range, marks, chosen)| (range, style(marks, chosen, &colors)))
             .collect::<Vec<_>>();
 
         let code = self

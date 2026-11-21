@@ -7,8 +7,9 @@ rumbo holds; it sends them what the person asks, and draws what they
 report. The only thing it keeps itself is the person's
 preferences for the window, such as the theme, the sidebar, and the
 editor; it keeps no state it would need to restore, since the host records
-everything as it happens. Besides the hosts, it reads one thing itself:
-what Git says changed in a project's folder.
+everything as it happens. Besides the hosts, it reads two things itself:
+what Git says changed in a project's folder, and the images a reply names;
+an image of the web it fetches only once the person asks for it.
 
 The contract between them is rumbo's Agent Frontend Protocol
 (`docs/frontend-protocol.md` in rumbo), and what a front end must, can, and
@@ -138,15 +139,22 @@ the shell keeps the window's, and gives them to each workspace. A reply's
 Markdown is read into blocks apart from drawing them
 (`crates/ui/src/markdown/blocks.rs`), and the words of each block can be
 selected and copied on their own; a selection does not run from one block
-into the next. A diff is read from Git's patch apart from drawing it too
-(`crates/ui/src/diff/patch.rs`), and draws only the rows in view, as a
-conversation does. Whatever the pointer drags (a scrollbar's thumb, a
-slider's, the divider between panels, the edge of a table's column) goes
-through one press that follows the pointer until the button comes up
-(`crates/ui/src/drag.rs`). A window that draws its own title bar draws its
-frame too, in a `WindowFrame`, where the desktop leaves the frame to it.
-`crates/overview` shows each component on a page of its own, which is where
-one is looked at before a view uses it.
+into the next. What a reply holds besides words is drawn by libraries made
+for it: code colored by syntect, with the grammars bat ships; formulas in
+TeX typeset by latex-rust; and Mermaid diagrams laid out by merman, the
+Rust Mermaid that Zed uses. Formulas and diagrams come as SVG, which GPUI
+draws as images, and so does an image a reply names: from the text itself,
+from a file, or from the web, through the `ImageClient` an application
+gives GPUI, and only once the person asks, since an image a model names
+could carry what it read to whoever serves it. A diff is read from Git's
+patch apart from drawing it too (`crates/ui/src/diff/patch.rs`), and draws
+only the rows in view, as a conversation does. Whatever the pointer drags
+(a scrollbar's thumb, a slider's, the divider between panels, the edge of a
+table's column) goes through one press that follows the pointer until the
+button comes up (`crates/ui/src/drag.rs`). A window that draws its own
+title bar draws its frame too, in a `WindowFrame`, where the desktop leaves
+the frame to it. `crates/overview` shows each component on a page of its
+own, which is where one is looked at before a view uses it.
 
 ## Projects
 

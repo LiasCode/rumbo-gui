@@ -41,16 +41,22 @@ must not do. Both live in the rumbo repository.
   and closes it with the project; and one more in the person's home, the
   catalog's, which only lists every project and its sessions. Nothing reads
   rumbo's files.
-- **The project's files are only read, through Git.** The changes panel
-  runs `git` in the project's folder on a background thread and never
-  writes there; the window edits no file of the person's.
+- **The project's files are only read.** The changes panel runs `git` in
+  the project's folder on a background thread and never writes there, and
+  a reply's images are read from the paths it names; the window edits no
+  file of the person's.
+- **An image of the web shows only once the person asks.** A reply's
+  image could carry what the model read to whoever serves it, so nothing
+  is fetched until its Show is pressed.
 - **The window keeps only its preferences**, in `preferences.rs`'s file,
   read once at startup. Anything rumbo can keep, rumbo keeps.
 - **The window draws with `crates/ui`.** Its views use GPUI and the
   components of `crates/ui`, and nothing else draws; what a view needs
   that no component has becomes one there.
-- **`crates/ui` is GPUI alone.** Its components know nothing of rumbo;
-  check every GPUI API in the `gpui-pre-*` sources under
+- **`crates/ui` draws with GPUI alone.** Its components know nothing of
+  rumbo. A library may do a part's work for it, as syntect, latex-rust, and
+  merman do for code, formulas, and diagrams, giving what GPUI draws; none
+  draws itself. Check every GPUI API in the `gpui-pre-*` sources under
   `~/.cargo/registry/src/*/`, examples included, before using it, and do
   not translate from another framework or an older version. The window,
   `ui`, and `overview` pin the same `gpui-pre`, so one GPUI is built; they
@@ -93,7 +99,9 @@ project closed and listed again, the window with a rumbo that has no
 and kept for the next start, the sidebar searched, dragged wider, and put
 away with Ctrl-B, a session renamed and one deleted from its menu, a
 message changed and one asked again in a branch, the changes panel on a
-folder with edits and on one outside Git, the details panel, a session
+folder with edits and on one outside Git, a reply with code, formulas
+among words and on their own, a Mermaid diagram, and images from a file
+and from the web, the details panel, a session
 exported, the project opened in the editor, the notification of a run that
 ends in a session not shown and the mark it leaves, a system setting
 changed and a provider's details, the window started with
@@ -108,7 +116,8 @@ folder, so the person's own sessions and settings stay untouched, and with
 pointing at scratch folders, so the window's own preferences do too and the
 catalog's host does not start in the person's home. That provider
 describes no model and no options; a scratch copy of it that describes
-some is how the picker is looked at.
+some is how the picker is looked at, and one that answers with Markdown is
+how a reply's code, formulas, diagrams, and images are.
 
 ```sh
 export RUMBO_CONFIG=/tmp/scratch/config.yaml RUMBO_DATA=/tmp/scratch/data XDG_CONFIG_HOME=/tmp/scratch/config HOME=/tmp/scratch/home
