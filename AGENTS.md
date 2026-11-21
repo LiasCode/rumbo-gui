@@ -70,6 +70,7 @@ must not do. Both live in the rumbo repository.
   module tested without GPUI, as `text/edit.rs` is for every field. Each
   component has a page in `crates/overview`, and a new one gets its own.
 - **UI copy is English.**
+- When you compile this project utilize with flag -j 8
 
 ## Commands
 
