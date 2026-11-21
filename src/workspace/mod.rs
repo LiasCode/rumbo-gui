@@ -8,6 +8,7 @@
 //! again.
 
 mod composer;
+mod details;
 mod form;
 mod header;
 mod palette;

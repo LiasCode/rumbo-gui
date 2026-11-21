@@ -23,7 +23,7 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
  main ── config, preferences ── shell ─────────────── settings, catalog, navigation (pure; tested)
                                  │  │  one workspace per project
                                  │  └───────────────── workspace ── conversation, usage, history,
-                                 │ starts or attaches   │             commands, choices (pure; tested)
+                                 │ starts or attaches   │             commands, choices, outline (pure; tested)
                                  ▼                      │
                                host ── connection ◄─────┘
                                  │        │  one ordered channel of what the host sent
@@ -111,10 +111,18 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   through the workspace too, with what to do with the answer.
 - **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
   what changed in the project's folder, read with **git** (`src/git.rs`)
-  on a background thread, or the session's details, which are the host's
-  `status` and `skills` as it says them. rumbo keeps the conversation and
-  not the files, so Git is how a person reviews what a run did to them;
-  the window only reads.
+  on a background thread, or the session's details. rumbo keeps the
+  conversation and not the files, so Git is how a person reviews what a
+  run did to them; the window only reads.
+- **details** (`src/workspace/details.rs`) draws what the window knows of
+  the session shown to be read at a glance: from the host's answers, its
+  id and how it stands, its folder and its model; and from its runs'
+  events, how full the context is and the tokens spent, as the composer
+  counts them. Under them are the skills, as the host's `skills` says
+  them, and all its `status` says, which repeats much of the rest, when
+  asked for. What the host says in words is laid out by **outline**
+  (`src/outline.rs`) by its shape alone, keeping its words: headings,
+  `label: value` lines as rows, and lines set in under another as items.
 - **The session's actions** rename, delete, branch, and compact through
   the host's functions. They act on the current session, so one asked for
   another session first makes it current with `open`, and goes on once the
@@ -134,13 +142,14 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   The form says which lists it needs; the workspace sends the requests and
   hands the answers back, since everything the host says arrives in one
   order, on one channel.
-- **conversation**, **usage**, **history**, **commands**, and **choices**
-  hold what the workspace shows and asks, built from the protocol's
-  messages alone and tested without GPUI: the items of a conversation, the
-  tokens spent, what was entered in the composer and what the host
-  recalls, the functions of the host and the provider as commands, by what
-  they act on, with their parameters, the values those take, and their
-  answers, and the changes the picker asks of the host.
+- **conversation**, **usage**, **history**, **commands**, **choices**, and
+  **outline** hold what the workspace shows and asks, built from the
+  protocol's messages alone and tested without GPUI: the items of a
+  conversation, the tokens spent, what was entered in the composer and what
+  the host recalls, the functions of the host and the provider as commands,
+  by what they act on, with their parameters, the values those take, and
+  their answers, the changes the picker asks of the host, and the shape of
+  what the host says in words.
 
 ## Components
 

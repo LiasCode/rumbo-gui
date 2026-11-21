@@ -99,6 +99,22 @@ impl Spent {
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
+    /// How many tokens the conversation takes of how many the model's
+    /// context holds, once a response has said both.
+    pub fn context_of_window(&self) -> Option<(i64, i64)> {
+        (self.context > 0 && self.window > 0).then_some((self.context, self.window))
+    }
+
+    /// The tokens spent, counted as `tokens` counts them: the input, what
+    /// was read from the cache, and the output. None until some are spent.
+    pub fn totals(&self) -> Option<Totals> {
+        (self.total != Usage::default()).then(|| Totals {
+            input: self.total.input + self.total.cache_write,
+            cached: self.total.cache_read,
+            output: self.total.output,
+        })
+    }
+
     /// The share of all input the provider read from its cache, as `status`
     /// reports it. A share that drops says something broke the cache.
     pub fn cached_share(&self) -> Option<i64> {
@@ -106,6 +122,14 @@ impl Spent {
 
         (all > 0).then(|| self.total.cache_read * 100 / all)
     }
+}
+
+/// The tokens a session spent, as `Spent::totals` counts them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Totals {
+    pub input: i64,
+    pub cached: i64,
+    pub output: i64,
 }
 
 /// A count of tokens as it is read at a glance: as it is under a thousand,
@@ -138,7 +162,7 @@ fn scaled(value: f64) -> String {
 }
 
 /// A count with its thousands set apart, as 1,234,567.
-fn grouped(count: i64) -> String {
+pub fn grouped(count: i64) -> String {
     let digits = count.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
 
@@ -217,6 +241,8 @@ mod tests {
         let mut spent = Spent::default();
 
         assert_eq!(spent.exactly(), None);
+        assert_eq!(spent.totals(), None);
+        assert_eq!(spent.context_of_window(), None);
 
         spent.turn(&turn(1_234_567, 45_600, 2_000_000, 0, 150_000, 1_000_000));
 
@@ -225,6 +251,15 @@ mod tests {
             Some("1.2M in · 2M cached (61%) · 45.6K out")
         );
         assert_eq!(spent.context(), Some("context 15% of 1M".into()));
+        assert_eq!(spent.context_of_window(), Some((150_000, 1_000_000)));
+        assert_eq!(
+            spent.totals(),
+            Some(Totals {
+                input: 1_234_567,
+                cached: 2_000_000,
+                output: 45_600
+            })
+        );
         assert_eq!(
             spent.exactly().as_deref(),
             Some(

@@ -18,9 +18,9 @@ must not do. Both live in the rumbo repository.
   order it was sent. Do not split answers from events.
 - **Logic out of views.** What the window shows is built from events in
   plain modules that are tested without GPUI (`conversation`, `usage`,
-  `history`, `commands`, `choices`, `navigation`). A view draws them and
-  sends requests; a form says which lists it needs, and the workspace asks
-  for them.
+  `history`, `commands`, `choices`, `navigation`, `outline`). A view draws
+  them and sends requests; a form says which lists it needs, and the
+  workspace asks for them.
 - **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
   Whatever opens first can get those numbers.
 - **Known by name only where the window gives it a place.** The sidebar
@@ -32,7 +32,10 @@ must not do. Both live in the rumbo repository.
   `protocol.rs`. Each is
   offered only when `initialize` lists it, and called with the parameters
   it describes there. What it answers is shown as the host says it, never
-  read for meaning. Every command comes from the descriptions the host and
+  read for meaning: the details panel lays out what `status` and `skills`
+  say by its shape alone, with `outline.rs` (headings, `label: value`
+  lines, and lines set in under another), and keeps every word, so other
+  words still show as words. Every command comes from the descriptions the host and
   the provider give, and a parameter's values from the function it names;
   a function marked `lists` is there for those values, and is no command.
   A list a function makes may not hold every value a parameter takes, so
@@ -117,7 +120,8 @@ renamed and one deleted from its menu, a message changed and one asked
 again in a branch, the changes panel on a folder with edits and on one
 outside Git, a reply with code, formulas
 among words and on their own, a Mermaid diagram, and images from a file
-and from the web, the details panel, a session
+and from the web, the details panel (a session with runs and a new one,
+the skills with one left out, and everything rumbo reports opened), a session
 exported, the project opened in the editor, the notification of a run that
 ends in a session not shown and the mark it leaves, a system setting
 changed and a provider's details, the window started with

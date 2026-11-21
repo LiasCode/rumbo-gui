@@ -16,6 +16,7 @@ mod markdown;
 mod menu;
 mod message;
 mod message_list;
+mod meter;
 mod pagination;
 mod popover;
 mod radio;
@@ -58,6 +59,7 @@ pub enum Page {
     Slider,
     Spinner,
     Skeleton,
+    Meter,
     Tooltip,
     Scrollbar,
     Alert,
@@ -85,7 +87,7 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 35] = [
+    pub const ALL: [Page; 36] = [
         Page::Typography,
         Page::Label,
         Page::List,
@@ -97,6 +99,7 @@ impl Page {
         Page::Slider,
         Page::Spinner,
         Page::Skeleton,
+        Page::Meter,
         Page::Tooltip,
         Page::Scrollbar,
         Page::Alert,
@@ -136,6 +139,7 @@ impl Page {
             Page::Slider => "Slider",
             Page::Spinner => "Spinner",
             Page::Skeleton => "Skeleton",
+            Page::Meter => "Meter",
             Page::Tooltip => "Tooltip",
             Page::Scrollbar => "Scrollbar",
             Page::Alert => "Alert",
@@ -176,6 +180,7 @@ impl Page {
             Page::Slider => "slider",
             Page::Spinner => "spinner",
             Page::Skeleton => "skeleton",
+            Page::Meter => "meter",
             Page::Tooltip => "tooltip",
             Page::Scrollbar => "scrollbar",
             Page::Alert => "alert",
@@ -230,6 +235,7 @@ impl Page {
             Page::Slider => "A value between two ends, in steps, chosen along a track.",
             Page::Spinner => "A ring that turns while something is done whose end is not known.",
             Page::Skeleton => "A shape that breathes where something will show once it is read.",
+            Page::Meter => "How much of a whole is used, as a bar filled that far.",
             Page::Tooltip => "A word about a control, shown when the pointer rests on it.",
             Page::Scrollbar => {
                 "Along the edge of what scrolls: where the view is in it, and how much of it shows. It shows only while something is out of view."
@@ -377,6 +383,7 @@ impl Demos {
             Page::Slider => slider::render(self, window, cx),
             Page::Spinner => spinner::render(self, window, cx),
             Page::Skeleton => skeleton::render(self, window, cx),
+            Page::Meter => meter::render(self, window, cx),
             Page::Tooltip => tooltip::render(self, window, cx),
             Page::Scrollbar => scrollbar::render(self, window, cx),
             Page::Alert => alert::render(self, window, cx),

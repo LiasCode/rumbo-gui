@@ -1,18 +1,16 @@
 //! What shows beside the conversation: the changes in the project's folder,
 //! as Git sees them, which is how a person reviews what a run did to the
-//! files; or the session's details, as the host tells them, with its
-//! skills and the folder it works in.
+//! files; or the session's details, which `details` draws.
 
 use std::path::PathBuf;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, ScrollHandle, StatefulInteractiveElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _,
+    AnyElement, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
+    ScrollHandle, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use ui::{
-    ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Scrollbar, Sizable as _,
-    Spinner, h_flex, rems_from_px, v_flex,
+    ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Sizable as _, Spinner,
+    h_flex, rems_from_px, v_flex,
 };
 
 use super::{Panel, Workspace, WorkspaceEvent};
@@ -24,7 +22,7 @@ const WIDTH: f32 = 480.;
 
 /// What was read for a part of a panel.
 #[derive(Clone)]
-enum Read<T> {
+pub(super) enum Read<T> {
     Reading,
     Here(T),
     Failed(String),
@@ -46,10 +44,12 @@ pub(super) struct Panels {
     diff: Entity<DiffState>,
     /// Tells a reading of the changes from one asked for after it.
     reading: u64,
-    status: Option<Read<String>>,
-    skills: Option<Read<String>>,
+    pub(super) status: Option<Read<String>>,
+    pub(super) skills: Option<Read<String>>,
     /// Where the details are scrolled.
-    details_scroll: ScrollHandle,
+    pub(super) details_scroll: ScrollHandle,
+    /// Whether all the host says of the session shows, below its details.
+    pub(super) everything: bool,
 }
 
 impl Panels {
@@ -61,6 +61,7 @@ impl Panels {
             status: None,
             skills: None,
             details_scroll: ScrollHandle::new(),
+            everything: false,
         }
     }
 }
@@ -349,75 +350,6 @@ impl Workspace {
                         )),
                 )
             })
-            .into_any_element()
-    }
-
-    fn render_details(&self, cx: &mut Context<Self>) -> AnyElement {
-        let muted = cx.theme().colors.muted_foreground;
-
-        let section = |title: &'static str, read: &Option<Read<String>>, cx: &App| {
-            let body: AnyElement = match read {
-                None => div()
-                    .text_sm()
-                    .text_color(muted)
-                    .child("This host does not say.")
-                    .into_any_element(),
-
-                Some(Read::Reading) => Spinner::new().small().into_any_element(),
-
-                Some(Read::Failed(problem)) | Some(Read::Here(problem)) => div()
-                    .p_2()
-                    .rounded_md()
-                    .bg(cx.theme().colors.muted)
-                    .font_family(cx.theme().mono_family.clone())
-                    .text_xs()
-                    .whitespace_normal()
-                    .child(problem.clone())
-                    .into_any_element(),
-            };
-
-            v_flex()
-                .gap_2()
-                .child(div().text_xs().text_color(muted).child(title))
-                .child(body)
-        };
-
-        let details = v_flex()
-            .id("details")
-            .size_full()
-            .overflow_y_scroll()
-            .track_scroll(&self.panels.details_scroll)
-            .p_3()
-            .gap_4()
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(div().text_xs().text_color(muted).child("Folder"))
-                    .child(div().text_sm().child(self.dir.clone()))
-                    .child(
-                        Button::new("details-editor")
-                            .outline()
-                            .small()
-                            .icon(IconName::ExternalLink)
-                            .label("Open in Editor")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                cx.emit(WorkspaceEvent::OpenInEditor {
-                                    path: this.dir.clone(),
-                                })
-                            })),
-                    ),
-            )
-            .child(section("Status", &self.panels.status, cx))
-            .child(section("Skills", &self.panels.skills, cx));
-
-        div()
-            .relative()
-            .size_full()
-            .child(details)
-            .child(Scrollbar::vertical(
-                "details-scrollbar",
-                self.panels.details_scroll.clone(),
-            ))
             .into_any_element()
     }
 }
