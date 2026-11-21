@@ -67,36 +67,36 @@ impl Spent {
     }
 
     /// The context and the tokens as they are counted, to the last one, for
-    /// a person who wants more than `context` and `tokens` round to.
+    /// a person who wants more than `context` and `tokens` round to: one
+    /// count a line, so that each stays short.
     pub fn exactly(&self) -> Option<String> {
-        let context = match (self.context, self.window) {
-            (0, _) => None,
-            (context, 0) => Some(format!("Context: {} tokens", grouped(context))),
-            (context, window) => Some(format!(
+        let mut lines = Vec::new();
+
+        match (self.context, self.window) {
+            (0, _) => {}
+            (context, 0) => lines.push(format!("Context: {} tokens", grouped(context))),
+            (context, window) => lines.push(format!(
                 "Context: {} of {} tokens",
                 grouped(context),
                 grouped(window)
             )),
-        };
+        }
 
-        let tokens = (self.total != Usage::default()).then(|| {
+        if self.total != Usage::default() {
             let cached = match self.cached_share() {
                 Some(share) => format!("{} ({share}%)", grouped(self.total.cache_read)),
                 None => grouped(self.total.cache_read),
             };
 
-            format!(
-                "In: {} · Cached: {cached} · Out: {}",
-                grouped(self.total.input + self.total.cache_write),
-                grouped(self.total.output)
-            )
-        });
-
-        match (context, tokens) {
-            (None, None) => None,
-            (Some(said), None) | (None, Some(said)) => Some(said),
-            (Some(context), Some(tokens)) => Some(format!("{context}\n{tokens}")),
+            lines.push(format!(
+                "In: {}",
+                grouped(self.total.input + self.total.cache_write)
+            ));
+            lines.push(format!("Cached: {cached}"));
+            lines.push(format!("Out: {}", grouped(self.total.output)));
         }
+
+        (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
     /// The share of all input the provider read from its cache, as `status`
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(spent.context(), Some("context 210 tokens".into()));
         assert_eq!(
             spent.exactly().as_deref(),
-            Some("Context: 210 tokens\nIn: 110 · Cached: 90 (45%) · Out: 10")
+            Some("Context: 210 tokens\nIn: 110\nCached: 90 (45%)\nOut: 10")
         );
     }
 
@@ -229,7 +229,9 @@ mod tests {
             spent.exactly().as_deref(),
             Some(
                 "Context: 150,000 of 1,000,000 tokens\n\
-                 In: 1,234,567 · Cached: 2,000,000 (61%) · Out: 45,600"
+                 In: 1,234,567\n\
+                 Cached: 2,000,000 (61%)\n\
+                 Out: 45,600"
             )
         );
     }

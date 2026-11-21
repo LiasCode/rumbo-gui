@@ -62,7 +62,8 @@ impl Render for Tooltip {
                 .font_family(theme.font_family())
                 .text_sm()
                 .shadow_md()
-                .child(self.text.clone())
+                // Words wider than it can be wrap inside it.
+                .child(div().min_w_0().child(self.text.clone()))
                 .when_some(self.keys.clone(), |row, keys| {
                     row.child(
                         div()

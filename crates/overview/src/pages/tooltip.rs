@@ -11,6 +11,8 @@ pub struct Demo {
     /// Tooltips drawn in the page, to look at without resting the pointer.
     plain: Entity<Tooltip>,
     with_keys: Entity<Tooltip>,
+    /// Words wider than a tooltip can be, which wrap inside it.
+    long: Entity<Tooltip>,
 }
 
 impl Demo {
@@ -18,6 +20,12 @@ impl Demo {
         Demo {
             plain: cx.new(|_| Tooltip::new("Copy the session's id")),
             with_keys: cx.new(|_| Tooltip::new("Commands").keys("Ctrl-K")),
+            long: cx.new(|_| {
+                Tooltip::new(
+                    "Context: 14,024,688 of 1,000,000 tokens · In: 398,666,268 · \
+                     Cached: 3,691,357,722 (90%) · Out: 103,357,722",
+                )
+            }),
         }
     }
 }
@@ -59,10 +67,13 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
         ),
         section(
             "How it looks",
-            "Drawn here as it is drawn by the pointer, with and without keys.",
+            "Drawn here as it is drawn by the pointer, with and without keys, and with words \
+             that wrap inside it.",
             row()
+                .items_start()
                 .child(demo.plain.clone())
-                .child(demo.with_keys.clone()),
+                .child(demo.with_keys.clone())
+                .child(demo.long.clone()),
             cx,
         ),
     ]
