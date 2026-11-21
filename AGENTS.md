@@ -237,6 +237,12 @@ grim -o RUMBOUI shot.png
 hyprctl output remove RUMBOUI
 ```
 
+What moves, such as a button's face giving under a press and springing
+back, is over before the computer tool looks, since it looks once an
+action has settled: start the action in the background and take `grim`
+screenshots of the part that moves in a loop meanwhile, and look at them
+side by side.
+
 Keys sent to a window that does not have the desktop's keyboard make GPUI
 take the window as left after them, so a field tells `Blur` once they stop.
 Removing the output gives the monitor focus to another of the person's
