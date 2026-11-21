@@ -175,7 +175,7 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
     vec![
         section(
             "Projects and their sessions",
-            "Tab reaches each row; Enter or Space opens it, Right and Left open and close what it holds, and Shift-F10 or the other button opens its menu. Its groups scroll between its head and its foot.",
+            "Tab reaches each row. Pressing a session, or Enter or Space on it, opens it; pressing a project shows or hides its sessions, as Right and Left do. Shift-F10 or the other button opens a row's menu. Its groups scroll between its head and its foot.",
             div()
                 .rounded(radius)
                 .border_1()

@@ -1,8 +1,10 @@
 //! The projects beside the work, each with its sessions: those open in the
 //! window, whose host lists their sessions and marks the one shown and those
 //! working, and the others rumbo holds, which open in a host of their own
-//! when the person chooses one. A search narrows both to the sessions and
-//! projects whose names, or what the host says of them, hold what was typed.
+//! when the person chooses one of their sessions, or opens one from its
+//! menu. Pressing a project only shows or hides its sessions. A search
+//! narrows both to the sessions and projects whose names, or what the host
+//! says of them, hold what was typed.
 
 use gpui::{
     App, ClipboardItem, Context, ElementId, IntoElement, ParentElement as _, Styled as _, Window,
@@ -254,6 +256,8 @@ impl Shell {
         let menu_starting = opened(Opening::New);
         let said = listed.description.clone();
 
+        // Pressed, it opens in its latest session only when the search
+        // leaves none of its sessions to show or hide.
         let item = SidebarItem::new(row_id("recent", &root), label)
             .icon(IconName::FolderClosed)
             .default_open(!query.is_empty())
@@ -309,6 +313,8 @@ impl Shell {
             },
         );
 
+        // Pressed, it shows the project only while it lists no session, as
+        // while its host starts; otherwise it shows or hides them.
         let selecting = shell.clone();
         let mut item = SidebarItem::new(("project", id), name)
             .icon(IconName::FolderOpen)

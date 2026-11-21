@@ -1,10 +1,10 @@
 //! The column beside the work: a head, groups of rows under their names,
 //! and a foot. A row has its icon and name, is shown or not, does what it
-//! is pressed for, holds rows of its own that open and close under it, has
-//! something at its end, and a menu of its own. Tab reaches each row;
-//! Enter or Space presses it, Right opens what it holds and Left closes
-//! it, and Shift-F10 opens its menu. The groups scroll between the head and
-//! the foot.
+//! is pressed for, or holds rows of its own that open and close under it
+//! when it is pressed, has something at its end, and a menu of its own.
+//! Tab reaches each row; Enter or Space presses it, Right opens what it
+//! holds and Left closes it, and Shift-F10 opens its menu. The groups
+//! scroll between the head and the foot.
 
 use std::rc::Rc;
 
@@ -86,6 +86,8 @@ impl SidebarItem {
         self
     }
 
+    /// What pressing it does while it holds no rows; holding some, it
+    /// opens and closes them instead.
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
@@ -178,6 +180,7 @@ impl SidebarItem {
 
         let opening = open.clone();
         let closing = open.clone();
+        let pressed = open.clone();
         let named = self.label.clone();
 
         let mut row = h_flex()
@@ -222,12 +225,22 @@ impl SidebarItem {
             false => {
                 let ring = ring.clone();
 
-                row.cursor_pointer()
+                let row = row
+                    .cursor_pointer()
                     .tab_index(0)
-                    .focus_visible(move |style| style.shadow(ring.clone()))
-                    .when_some(self.on_click, |row, on_click| {
+                    .focus_visible(move |style| style.shadow(ring.clone()));
+
+                match holds {
+                    true => row.on_click(move |_, _, cx| {
+                        pressed.update(cx, |open, cx| {
+                            *open = !*open;
+                            cx.notify();
+                        })
+                    }),
+                    false => row.when_some(self.on_click, |row, on_click| {
                         row.on_click(move |_, window, cx| on_click(window, cx))
-                    })
+                    }),
+                }
             }
         };
 
@@ -519,6 +532,24 @@ mod pointer_tests {
         cx.simulate_click(button, none);
 
         assert_eq!(*told.borrow(), ["first", "new session"]);
+    }
+
+    #[gpui::test]
+    fn a_row_that_holds_rows_only_opens_and_closes_them(cx: &mut TestAppContext) {
+        let (told, cx) = projects(cx);
+        let none = Modifiers::none();
+        let project = middle(cx, "sidebar-rumbo").unwrap();
+
+        cx.simulate_click(project, none);
+
+        assert!(middle(cx, "sidebar-First").is_none());
+
+        cx.simulate_click(project, none);
+
+        assert!(middle(cx, "sidebar-First").is_some());
+
+        // Nothing else was done for it.
+        assert!(told.borrow().is_empty());
     }
 
     #[gpui::test]
