@@ -1357,6 +1357,7 @@ impl Shell {
                     .ghost()
                     .w_full()
                     .justify_start()
+                    .truncate()
                     .icon(IconName::FolderClosed)
                     .label(format!("{label} — {}", project.description))
                     .tooltip(root.clone())

@@ -1763,6 +1763,7 @@ impl Workspace {
                 .small()
                 .w_full()
                 .justify_start()
+                .truncate()
                 .icon(IconName::Clock)
                 .label(shown)
                 .tooltip("Write it in the composer again")
@@ -1793,7 +1794,8 @@ impl Workspace {
             )
             .child(
                 v_flex()
-                    .w(rems_from_px(self.width.min(520.)))
+                    .w_full()
+                    .max_w(rems_from_px(self.width.min(520.)))
                     .pt_4()
                     .gap_2()
                     .when(self.history.latest(1).len() == 1, |column| {

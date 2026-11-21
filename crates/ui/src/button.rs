@@ -1,5 +1,7 @@
 //! A button: words, an icon, or both, in one of a few looks by how much it
 //! matters. It takes the keyboard with Tab, and Enter or Space presses it.
+//! Words wider than the button wrap, and it grows taller to hold them, or,
+//! truncated, stay on one line cut short.
 //! Pressed, with the pointer or the keys, its face gives a little, and it
 //! springs back once let go, a little past where it rests: the button's
 //! box stays as it is, so nothing around it moves.
@@ -8,9 +10,9 @@ use std::rc::Rc;
 
 use gpui::{
     AnimationExt as _, App, ClickEvent, ElementId, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, Keystroke, MouseButton, ParentElement as _,
-    Refineable as _, Rems, RenderOnce, SharedString, SpringAnimation, SpringConfig,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    InteractiveElement as _, IntoElement, JustifyContent, Keystroke, MouseButton,
+    ParentElement as _, Refineable as _, Rems, RenderOnce, SharedString, SpringAnimation,
+    SpringConfig, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
     prelude::FluentBuilder as _, transparent_black,
 };
 
@@ -134,6 +136,7 @@ pub struct Button {
     shortcut: Option<SharedString>,
     on_click: Option<ClickHandler>,
     focus: Option<FocusHandle>,
+    truncate: bool,
     style: StyleRefinement,
 }
 
@@ -152,6 +155,7 @@ impl Button {
             shortcut: None,
             on_click: None,
             focus: None,
+            truncate: false,
             style: StyleRefinement::default(),
         }
     }
@@ -237,6 +241,14 @@ impl Button {
         self
     }
 
+    /// Keeps the label on one line, cut short with an ellipsis where the
+    /// button is narrower than it, instead of wrapping it and growing
+    /// taller, as a list of things that can be long does.
+    pub fn truncate(mut self) -> Self {
+        self.truncate = true;
+        self
+    }
+
     /// The keyboard's handle it takes, for its view to give it the
     /// keyboard, as a screen does its main action.
     pub fn track_focus(mut self, focus: &FocusHandle) -> Self {
@@ -312,6 +324,23 @@ impl RenderOnce for Button {
             },
         );
 
+        // Words that wrap line up as the button does: at its start when it
+        // was given that, else in its middle.
+        let starts = matches!(
+            style.justify_content,
+            Some(JustifyContent::Start | JustifyContent::FlexStart)
+        );
+
+        let label = self.label.map(|label| {
+            div()
+                .min_w_0()
+                .map(|words| match self.truncate {
+                    true => words.truncate(),
+                    false => words.when(!starts, |words| words.text_center()),
+                })
+                .child(label)
+        });
+
         let mut button = div()
             .id(self.id)
             .group(GROUP)
@@ -325,15 +354,22 @@ impl RenderOnce for Button {
                 Size::XSmall => rems_from_px(4.),
                 _ => rems_from_px(8.),
             })
-            .h(height)
+            // One line of words keeps it at its size's height, which more
+            // grow. The room above and below them is what a line leaves
+            // under that height, border and all, so one line sits as before.
+            .min_h(height)
             .rounded(theme.radius)
             .text_size(size.text())
             .font_weight(FontWeight::MEDIUM)
             .text_color(paint.text)
-            .whitespace_nowrap()
             .map(|button| match square {
-                true => button.w(height),
-                false => button.px(size.padding_x()),
+                true => button.w(height).h(height),
+                false => button.px(size.padding_x()).py(rems_from_px(match size {
+                    Size::XSmall => 1.,
+                    Size::Small => 3.,
+                    Size::Medium => 5.,
+                    Size::Large => 6.,
+                })),
             })
             // The face draws the border; the box keeps its room.
             .when(paint.border.is_some(), |button| {
@@ -343,7 +379,7 @@ impl RenderOnce for Button {
             .when_some(self.icon.filter(|_| !self.icon_end), |button, icon| {
                 button.child(Icon::new(icon).with_size(size).color(paint.text))
             })
-            .when_some(self.label, |button, label| button.child(label))
+            .when_some(label, |button, label| button.child(label))
             .when_some(self.icon.filter(|_| self.icon_end), |button, icon| {
                 button.child(Icon::new(icon).with_size(size).color(paint.text))
             });
@@ -483,6 +519,63 @@ mod pointer_tests {
             prefer_character_input: false,
         });
         cx.simulate_event(KeyUpEvent { keystroke });
+    }
+
+    /// A button 200 wide at the window's corner, with words much wider,
+    /// which counts its presses.
+    struct Long {
+        presses: Rc<Cell<usize>>,
+        truncate: bool,
+    }
+
+    impl Render for Long {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let presses = self.presses.clone();
+            let button = Button::new("long")
+                .w(px(200.))
+                .label("Move every configuration value behind the config module, so that startup checks it")
+                .on_click(move |_, _, _| presses.set(presses.get() + 1));
+
+            div().size_full().child(match self.truncate {
+                true => button.truncate(),
+                false => button,
+            })
+        }
+    }
+
+    /// The presses of a long button, and its window.
+    fn long(cx: &mut TestAppContext, truncate: bool) -> (Rc<Cell<usize>>, &mut VisualTestContext) {
+        cx.update(crate::theme::init);
+
+        let presses = Rc::new(Cell::new(0));
+        let counted = presses.clone();
+        let (_, cx) = cx.add_window_view(move |_, _| Long {
+            presses: counted,
+            truncate,
+        });
+
+        (presses, cx)
+    }
+
+    #[gpui::test]
+    fn wrapped_words_grow_the_button(cx: &mut TestAppContext) {
+        let (presses, cx) = long(cx, false);
+
+        // Under a medium button's height of 36, in its third line.
+        cx.simulate_click(point(px(100.), px(60.)), Modifiers::none());
+        assert_eq!(presses.get(), 1);
+    }
+
+    #[gpui::test]
+    fn truncated_words_keep_the_button_one_line_tall(cx: &mut TestAppContext) {
+        let (presses, cx) = long(cx, true);
+        let none = Modifiers::none();
+
+        cx.simulate_click(point(px(100.), px(60.)), none);
+        assert_eq!(presses.get(), 0);
+
+        cx.simulate_click(point(px(100.), px(18.)), none);
+        assert_eq!(presses.get(), 1);
     }
 
     #[gpui::test]

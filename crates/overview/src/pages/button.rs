@@ -202,5 +202,45 @@ pub fn render(demos: &mut Demos, _: &mut Window, cx: &mut Context<Overview>) -> 
                 .child(Button::new("wide").primary().label("Continue").w_full()),
             cx,
         ),
+        section(
+            "Long words",
+            "Words wider than the button wrap, and it grows taller to hold them; truncated, they stay on one line, cut short.",
+            gpui::div()
+                .w(px(320.))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    Button::new("long-wraps")
+                        .outline()
+                        .small()
+                        .w_full()
+                        .label(LONG),
+                )
+                .child(
+                    Button::new("long-starts")
+                        .outline()
+                        .small()
+                        .w_full()
+                        .justify_start()
+                        .icon(IconName::Clock)
+                        .label(LONG),
+                )
+                .child(
+                    Button::new("long-truncated")
+                        .outline()
+                        .small()
+                        .w_full()
+                        .justify_start()
+                        .truncate()
+                        .icon(IconName::Clock)
+                        .label(LONG),
+                ),
+            cx,
+        ),
     ]
 }
+
+/// Words wider than a button of the page.
+const LONG: &str =
+    "Move every configuration value behind the config module, so that startup checks it";
