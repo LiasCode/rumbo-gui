@@ -104,7 +104,8 @@ confirmation, a parameter whose values depend on the one before (the models
 that uses what it chose, a provider's function that asks a secret, given
 up with Escape, a second project opened beside the first with each one's
 sessions under it, the projects rumbo holds listed with their sessions and
-one opened from that list, a new session started from the sidebar, a
+one opened from that list, a new session started from the sidebar, and
+one started with no project open, which opens the home folder, a
 project closed and listed again, the window with a rumbo that has no
 `projects`, the settings with the theme and the conversation width changed
 and kept for the next start, the window made bigger and smaller with

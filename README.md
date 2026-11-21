@@ -77,7 +77,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Up, Down | What was asked before, in any session of the project |
 | Escape | Give up a provider's function in progress, else cancel the run; leave the settings |
 | Ctrl-K, Ctrl-P | Commands, and the project's sessions to show one |
-| Ctrl-N | New session |
+| Ctrl-N | New session; with no project open, in your home folder |
 | Ctrl-1 … Ctrl-9 | The project's sessions, most recently used first |
 | Alt-Left, Alt-Right | Back and forward between what was shown |
 | Ctrl-B | Show or put away the sidebar |

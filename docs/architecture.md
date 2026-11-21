@@ -45,10 +45,11 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   go on while another project is shown. The shell says why a host did not
   start, and starts it again when its workspace asks. The window can start
   with no project, and opens as many as the person asks, from a folder or
-  from what rumbo holds. Started by rumbo, it attaches to that rumbo
-  instead, and works only in its project. Ctrl-+ and Ctrl-- draw the whole
-  window bigger or smaller, and Ctrl-0 at its own size, by the window's
-  rem size, which the preferences keep.
+  from what rumbo holds; a new session asked for with no project open
+  opens the person's home folder as one. Started by rumbo, it attaches to
+  that rumbo instead, and works only in its project. Ctrl-+ and Ctrl--
+  draw the whole window bigger or smaller, and Ctrl-0 at its own size, by
+  the window's rem size, which the preferences keep.
 - **navigation** (`src/navigation.rs`) keeps the places the window showed,
   as a browser keeps the pages: a session of a project, a new session
   included, or the settings. The toolbar's arrows, Alt-Left and Alt-Right,

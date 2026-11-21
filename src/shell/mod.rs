@@ -117,7 +117,10 @@ pub const SHORTCUTS: [(&str, &str); 18] = [
     ("Up / Down", "Bring back what was asked in the project"),
     ("Escape", "Cancel the run, or give up a provider's function"),
     ("Ctrl-K, Ctrl-P", "Commands, sessions, and projects"),
-    ("Ctrl-N", "New session"),
+    (
+        "Ctrl-N",
+        "New session, in your home folder when no project is open",
+    ),
     (
         "Ctrl-1 … Ctrl-9",
         "Show the project's sessions, most recent first",
@@ -754,11 +757,23 @@ impl Shell {
         }
     }
 
-    /// Makes the next task of the project shown start a new session.
+    /// Makes the next task of the project shown start a new session. With
+    /// no project shown, the person's home folder is opened as one, in a
+    /// new session.
     fn new_session_shown(&mut self, _: &NewSession, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.selected {
             self.new_session(id, window, cx);
+            return;
         }
+
+        if !self.opens_projects() {
+            return;
+        }
+
+        let home = catalog::home().to_string_lossy().to_string();
+
+        self.leave_settings(window, cx);
+        self.open_listed(home, Opening::New, window, cx);
     }
 
     /// Asks for a new title for a session of a project, which shows it.

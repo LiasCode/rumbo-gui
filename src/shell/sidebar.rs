@@ -81,14 +81,22 @@ impl Shell {
 
         let recent = self.recent_items(&query, cx);
 
+        // With no project shown, a new session starts in the person's home.
+        let in_home = self.selected.is_none();
         let new_session = Button::new("sidebar-new-session")
             .outline()
             .small()
             .flex_1()
             .icon(IconName::SquarePen)
             .label("New Session")
-            .disabled(self.selected_workspace().is_none())
-            .tooltip("Start the next task in a new session (Ctrl-N)")
+            .disabled(match in_home {
+                true => !opens_projects,
+                false => self.selected_workspace().is_none(),
+            })
+            .tooltip(match in_home {
+                true => "Start a new session in your home folder (Ctrl-N)",
+                false => "Start the next task in a new session (Ctrl-N)",
+            })
             .on_click(cx.listener(|this, _, window, cx| {
                 this.new_session_shown(&super::NewSession, window, cx)
             }));
