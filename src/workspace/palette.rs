@@ -337,7 +337,7 @@ fn chose_entry(
     let _ = workspace.update(cx, |this, cx| match chosen {
         Some(Entry::Function(command)) => this.chose(command, window, cx),
         Some(Entry::Picker) => this.open_picker(cx),
-        Some(Entry::NewSession) => this.new_session(cx),
+        Some(Entry::NewSession) => this.new_session(window, cx),
         Some(Entry::Changes) => this.toggle_panel(super::Panel::Changes, window, cx),
         Some(Entry::Details) => this.toggle_panel(super::Panel::Details, window, cx),
         Some(Entry::Export) => this.export(window, cx),

@@ -795,12 +795,14 @@ impl Shell {
         };
 
         let shown = workspace.read(cx);
-        let follows = !shown.current().is_empty()
-            && !shown.has_ended()
-            && shown.offers(crate::protocol::FUNCTION_NEW);
+
+        // While no session is shown, the host's current one is new already.
+        let follows = !shown.has_ended()
+            && (shown.is_blank()
+                || (!shown.current().is_empty() && shown.offers(crate::protocol::FUNCTION_NEW)));
 
         match follows {
-            true => workspace.update(cx, |workspace, cx| workspace.new_session(cx)),
+            true => workspace.update(cx, |workspace, cx| workspace.new_session(window, cx)),
             false => self.record(cx),
         }
     }
@@ -1249,7 +1251,7 @@ impl Shell {
                 self.show_project(project, window, cx);
 
                 if let Some(workspace) = self.workspace_of(project) {
-                    workspace.update(cx, |workspace, cx| workspace.revisit(&session, cx));
+                    workspace.update(cx, |workspace, cx| workspace.revisit(&session, window, cx));
                 }
             }
         }

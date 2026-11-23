@@ -487,6 +487,7 @@ impl Shell {
         };
 
         let current = workspace.current().to_string();
+        let blank = workspace.is_blank();
         let can_open = workspace.offers(protocol::FUNCTION_OPEN);
         let can_rename = workspace.offers(protocol::FUNCTION_RENAME);
         let can_delete = workspace.offers(protocol::FUNCTION_DELETE);
@@ -494,8 +495,8 @@ impl Shell {
         let mut sessions = Vec::new();
 
         // A new session is shown before it has an id, and is listed once a
-        // run makes it.
-        if current.is_empty() && shown && query.is_empty() {
+        // run makes it. While no session is shown, none is marked.
+        if current.is_empty() && shown && !blank && query.is_empty() {
             sessions.push(
                 SidebarItem::new(("new-session-row", id), "New session")
                     .icon(IconName::SquarePen)
@@ -601,7 +602,10 @@ impl Shell {
 
         // The project's row stands for its session while it has none
         // listed yet.
-        Some(item.active(shown && sessions.is_empty()).children(sessions))
+        Some(
+            item.active(shown && !blank && sessions.is_empty())
+                .children(sessions),
+        )
     }
 }
 

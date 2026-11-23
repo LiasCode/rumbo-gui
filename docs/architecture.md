@@ -77,7 +77,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   A project's sessions stay in the order they were first listed, the
   newest first, as **order** (`src/order.rs`) keeps them, so a session a
   run works in does not jump to the top, nor does opening a project move
-  them.
+  them. Deleting the session shown leaves none shown and none marked,
+  until the person chooses one or starts a new one.
   Its New Session starts one in the person's home folder, whatever project
   is shown. It can be dragged wider and put away; the window keeps both,
   and the pins.
@@ -104,13 +105,15 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   spent, a panel beside them, and the command palette. How a run stands
   shows in what the composer says it is for, and anything else the
   workspace has to say, such as what went wrong, in a notification. The
-  shell lists the sessions and opens them through it. It keeps a view of
-  each session it has shown, and sends each event to the view of the
-  session it belongs to: the session of the run it names, by the id of the
-  run request, or the session it names. A run in a new session learns the
-  session's id from its first event. A session shown for the first time
-  asks the host for its history, which comes before anything that happens
-  in it after. The
+  shell lists the sessions and opens them through it. Once the session
+  shown is deleted, the workspace shows none, though the host makes a new
+  one current, until the person opens a session or starts a new one. It
+  keeps a view of each session it has shown, and sends each event to the
+  view of the session it belongs to: the session of the run it names, by
+  the id of the run request, or the session it names. A run in a new
+  session learns the session's id from its first event. A session shown
+  for the first time asks the host for its history, which comes before
+  anything that happens in it after. The
   composer starts with what the host recalls of the project's sessions,
   and keeps the images pasted into it, which go with what is sent next;
   **picture** (`src/picture.rs`) carries them between the clipboard, the

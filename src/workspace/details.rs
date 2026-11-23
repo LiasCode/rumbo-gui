@@ -63,14 +63,20 @@ impl Workspace {
             .iter()
             .find(|listed| !self.current.is_empty() && listed.value == self.current);
 
-        let session = match self.current.is_empty() {
-            true => div()
+        let session = match (self.blank, self.current.is_empty()) {
+            (true, _) => div()
+                .text_sm()
+                .text_color(muted)
+                .child("None is shown; choose one or start a new one.")
+                .into_any_element(),
+
+            (false, true) => div()
                 .text_sm()
                 .text_color(muted)
                 .child("New; its first task starts it.")
                 .into_any_element(),
 
-            false => {
+            (false, false) => {
                 let copied = self.current.clone();
 
                 v_flex()

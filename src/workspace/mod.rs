@@ -2,10 +2,11 @@
 //! the conversation of the one shown, and the composer. The window around
 //! it lists the sessions and opens them through it.
 //!
-//! The workspace shows the host's current session. Runs started in other
-//! sessions go on in the background, and their events go to the session
-//! they work in, so each session's conversation is whole when it is shown
-//! again.
+//! The workspace shows the host's current session, or none once the one
+//! shown is deleted, until the person chooses one or starts one. Runs
+//! started in other sessions go on in the background, and their events go
+//! to the session they work in, so each session's conversation is whole
+//! when it is shown again.
 
 mod composer;
 mod details;
@@ -215,6 +216,10 @@ pub struct Workspace {
     /// The session shown, which is the host's current one. It is empty for
     /// a new session until its first run makes it.
     current: String,
+    /// Whether no session is shown, as once the one shown is deleted, until
+    /// the person chooses one or starts one. The host's current session is
+    /// a new one meanwhile.
+    blank: bool,
     views: HashMap<String, SessionView>,
     /// The session each run of this window works in, by the id of its run
     /// request.
@@ -257,6 +262,8 @@ pub struct Workspace {
     focus_handle: FocusHandle,
     /// Where focus goes once the host ended, so Enter starts it again.
     start_again_focus: FocusHandle,
+    /// Where focus goes while no session is shown, so Enter starts one.
+    blank_focus: FocusHandle,
     /// The window's dialogs and notifications, which the workspace shows
     /// its own in.
     dialogs: Entity<Dialogs>,
@@ -315,6 +322,7 @@ impl Workspace {
             provider: initialize.provider,
             model: initialize.model,
             current: String::new(),
+            blank: false,
             views: HashMap::new(),
             runs: HashMap::new(),
             started: HashMap::new(),
@@ -338,6 +346,7 @@ impl Workspace {
             width: crate::preferences::Width::default().pixels(),
             focus_handle: cx.focus_handle(),
             start_again_focus: cx.focus_handle(),
+            blank_focus: cx.focus_handle(),
             dialogs,
             toasts,
             _reading: reading,
@@ -415,12 +424,25 @@ impl Workspace {
         self.view(&session, cx);
         self.unseen.remove(&session);
         self.current = session.clone();
+        self.blank = false;
         self.set_hint(cx);
         self.refresh_panel(cx);
         cx.emit(WorkspaceEvent::Shown {
             session,
             went: !self.revisiting,
         });
+        cx.notify();
+    }
+
+    /// Shows no session, as once the one shown is deleted, until the person
+    /// chooses one or starts one. It is no place to go back to: the place
+    /// shown stays the session deleted, which going back and forward pass
+    /// over.
+    fn show_nothing(&mut self, cx: &mut Context<Self>) {
+        self.current = String::new();
+        self.blank = true;
+        self.set_hint(cx);
+        self.refresh_panel(cx);
         cx.notify();
     }
 
@@ -466,6 +488,11 @@ impl Workspace {
     /// The session shown, empty for a new one until its first run makes it.
     pub fn current(&self) -> &str {
         &self.current
+    }
+
+    /// Whether no session is shown, since the one shown was deleted.
+    pub fn is_blank(&self) -> bool {
+        self.blank
     }
 
     /// Whether a run of this window works in the session.
@@ -541,8 +568,14 @@ impl Workspace {
             .filter(|label| !label.is_empty())
     }
 
-    /// Gives the keyboard to the composer.
+    /// Gives the keyboard to the composer, or, while no session is shown, to
+    /// starting one.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        if self.blank && self.ended.is_none() {
+            self.blank_focus.focus(window, cx);
+            return;
+        }
+
         self.composer
             .update(cx, |state, cx| state.focus(window, cx));
     }
@@ -562,8 +595,15 @@ impl Workspace {
         );
     }
 
-    /// Makes the next task start a new session.
-    pub fn new_session(&mut self, cx: &mut Context<Self>) {
+    /// Makes the next task start a new session. While no session is shown,
+    /// the host's current one is new already, and is shown.
+    pub fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.blank && self.ended.is_none() {
+            self.show_session(String::new(), window, cx);
+            self.focus(window, cx);
+            return;
+        }
+
         if self.current.is_empty() || self.ended.is_some() {
             return;
         }
@@ -575,8 +615,16 @@ impl Workspace {
     /// does: what it shows is told as the place arrived at, not as a new
     /// one. A session that cannot be shown leaves the one shown as it is,
     /// and is told as the place arrived at instead.
-    pub fn revisit(&mut self, session: &str, cx: &mut Context<Self>) {
+    pub fn revisit(&mut self, session: &str, window: &mut Window, cx: &mut Context<Self>) {
         if session == self.current {
+            // While no session is shown, the host's current one is new
+            // already.
+            if self.blank {
+                self.revisiting = true;
+                self.show_session(String::new(), window, cx);
+                self.revisiting = false;
+            }
+
             return;
         }
 
@@ -1517,6 +1565,19 @@ impl Workspace {
 
             (Ok(result), Source::Host) => {
                 let result: HostResult = serde_json::from_value(result).unwrap_or_default();
+                let session = &result.state.session;
+
+                // Deleting the session shown leaves none shown, rather than
+                // the new one the host makes current; asking for a new one
+                // shows it.
+                if name == protocol::FUNCTION_DELETE
+                    && session.is_empty()
+                    && !self.current.is_empty()
+                {
+                    self.show_nothing(cx);
+                } else if name == protocol::FUNCTION_NEW && self.blank {
+                    self.show_session(String::new(), window, cx);
+                }
 
                 self.attached(result.state.clone(), window, cx);
 
@@ -1530,6 +1591,12 @@ impl Workspace {
             self.refresh_sessions();
             cx.emit(WorkspaceEvent::Answered);
         }
+
+        // With no session shown, there is no conversation to answer in.
+        let feedback = match feedback {
+            Feedback::Conversation if self.blank => Feedback::Toast,
+            feedback => feedback,
+        };
 
         match feedback {
             Feedback::Toast | Feedback::Quiet if failed => {
@@ -1660,7 +1727,9 @@ impl Workspace {
             *key = session.to_string();
         }
 
-        if self.current.is_empty() {
+        // While no session is shown, the new one the host has current is
+        // another.
+        if self.current.is_empty() && !self.blank {
             self.current = session.to_string();
             cx.emit(WorkspaceEvent::Shown {
                 session: session.to_string(),
@@ -1846,6 +1915,39 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// No session shown, once the one shown was deleted: what to do next,
+    /// with a way to start a new session, which has the keyboard.
+    fn render_blank(&self, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().colors.muted_foreground;
+        let said = match self.listed.is_empty() {
+            true => "The project has no sessions left. Start a new one to work in it.",
+            false => "Choose a session, or start a new one.",
+        };
+
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .px_8()
+            .items_center()
+            .justify_center()
+            .gap_2()
+            .child(Icon::new(IconName::MessageSquare).large().color(muted))
+            .child(div().text_2xl().child("No session selected"))
+            .child(div().text_sm().text_color(muted).child(said))
+            .child(
+                div().pt_2().child(
+                    Button::new("blank-new-session")
+                        .track_focus(&self.blank_focus)
+                        .primary()
+                        .icon(IconName::SquarePen)
+                        .label("New Session")
+                        .tooltip("Start a new session in this project (Ctrl-N)")
+                        .on_click(cx.listener(|this, _, window, cx| this.new_session(window, cx))),
+                ),
+            )
+            .into_any_element()
+    }
+
     /// The provider and the model of the session shown, as the host said.
     /// A session can start before its model is chosen, which the picker
     /// does, and a task is refused until then.
@@ -1860,12 +1962,16 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let work = v_flex()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .child(self.render_conversation(cx))
-            .child(self.render_composer(cx));
+        let work = v_flex().flex_1().min_w_0().h_full();
+
+        // With no session shown there is nothing to write in, until the host
+        // ends and the composer says so.
+        let work = match self.blank && self.ended.is_none() {
+            true => work.child(self.render_blank(cx)),
+            false => work
+                .child(self.render_conversation(cx))
+                .child(self.render_composer(cx)),
+        };
 
         v_flex()
             .key_context(KEY_CONTEXT)

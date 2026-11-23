@@ -12,13 +12,20 @@ use crate::protocol;
 
 impl Workspace {
     /// The name of the session shown: its title, or its id until it has
-    /// one, or New session until its first run makes it.
-    pub fn shown_name(&self) -> String {
-        self.session_title()
-            .unwrap_or_else(|| match self.current.is_empty() {
-                true => "New session".into(),
-                false => self.current.clone(),
-            })
+    /// one, or New session until its first run makes it. None while no
+    /// session is shown.
+    pub fn shown_name(&self) -> Option<String> {
+        if self.blank {
+            return None;
+        }
+
+        Some(
+            self.session_title()
+                .unwrap_or_else(|| match self.current.is_empty() {
+                    true => "New session".into(),
+                    false => self.current.clone(),
+                }),
+        )
     }
 
     /// The buttons of the panels beside the conversation, and the session's
@@ -56,7 +63,8 @@ impl Workspace {
     }
 
     /// What can be done with the session shown, as the host offers it. A new
-    /// session has nothing to act on until its first run makes it.
+    /// session has nothing to act on until its first run makes it, and
+    /// neither has the window while it shows none.
     fn session_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let workspace = cx.weak_entity();
         let made = !self.current.is_empty() && self.ended.is_none();
@@ -68,10 +76,11 @@ impl Workspace {
             offers(protocol::FUNCTION_COMPACT),
             offers(protocol::FUNCTION_DELETE),
         );
-        let exportable = self
-            .views
-            .get(&self.current)
-            .is_some_and(|view| !view.conversation.items().is_empty());
+        let exportable = !self.blank
+            && self
+                .views
+                .get(&self.current)
+                .is_some_and(|view| !view.conversation.items().is_empty());
 
         let button = Button::new("session-menu")
             .ghost()
