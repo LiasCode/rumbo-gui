@@ -19,7 +19,7 @@ use ui::{
 };
 
 use super::Workspace;
-use super::panel::{Read, centered};
+use super::panel::{Read, centered, message};
 use crate::git::graph::{self, Color, Label};
 use crate::git::history::{self, HEAD, PAGE};
 
@@ -381,27 +381,13 @@ impl Workspace {
 /// What shows while the commits are read, or why they could not be.
 fn unread<T>(read: &Option<Read<T>>, cx: &App) -> AnyElement {
     match read {
-        Some(Read::Failed(problem)) => centered()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().colors.muted_foreground)
-                    .child(problem.clone()),
-            )
-            .into_any_element(),
+        Some(Read::Failed(problem)) => message(problem.clone(), cx),
         _ => centered().child(Spinner::new()).into_any_element(),
     }
 }
 
 fn no_commits(cx: &App) -> AnyElement {
-    centered()
-        .child(
-            div()
-                .text_sm()
-                .text_color(cx.theme().colors.muted_foreground)
-                .child("No commits yet."),
-        )
-        .into_any_element()
+    message("No commits yet.", cx)
 }
 
 /// A line of the graph as Git writes it, with the colors it gives each

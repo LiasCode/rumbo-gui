@@ -7,8 +7,8 @@
 use std::path::PathBuf;
 
 use gpui::{
-    AnyElement, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
-    ScrollHandle, Styled as _, Window, div, prelude::FluentBuilder as _,
+    AnyElement, App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
+    ScrollHandle, SharedString, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use ui::{
     ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Sizable as _, Spinner,
@@ -300,9 +300,7 @@ impl Workspace {
             }
 
             Some(Read::Failed(problem)) => {
-                return centered()
-                    .child(div().text_sm().text_color(muted).child(problem.clone()))
-                    .into_any_element();
+                return message(problem.clone(), cx);
             }
 
             Some(Read::Here(changed)) => changed.clone(),
@@ -406,4 +404,18 @@ pub(super) fn centered() -> Div {
         .items_center()
         .justify_center()
         .text_center()
+}
+
+/// Words in the middle of a panel, such as why it shows nothing. They are
+/// as wide as the panel, so a long one wraps rather than run past its edge.
+pub(super) fn message(words: impl Into<SharedString>, cx: &App) -> AnyElement {
+    centered()
+        .child(
+            div()
+                .w_full()
+                .text_sm()
+                .text_color(cx.theme().colors.muted_foreground)
+                .child(words.into()),
+        )
+        .into_any_element()
 }
