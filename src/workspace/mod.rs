@@ -12,6 +12,7 @@ mod composer;
 mod details;
 mod form;
 mod header;
+mod marks;
 mod palette;
 mod panel;
 mod picker;
@@ -33,7 +34,7 @@ use ui::{
 
 use crate::commands::{self, Command};
 use crate::connection::Incoming;
-use crate::conversation::{Change, Conversation, ItemId, Kind, RowGroup, Source};
+use crate::conversation::{Change, Conversation, ItemId, Kind, MessageMark, RowGroup, Source};
 use crate::history::History;
 use crate::host::Host;
 use crate::picture::{self, Picture};
@@ -182,6 +183,7 @@ struct OpenForm {
 struct SessionView {
     conversation: Conversation,
     groups: Vec<RowGroup>,
+    marks: Vec<MessageMark>,
     open_groups: HashSet<ItemId>,
     scroller: Entity<MessageListState>,
     spent: Spent,
@@ -201,6 +203,7 @@ impl SessionView {
         SessionView {
             conversation: Conversation::default(),
             groups: Vec::new(),
+            marks: Vec::new(),
             open_groups: HashSet::new(),
             scroller,
             spent: Spent::default(),
@@ -235,6 +238,7 @@ impl SessionView {
         let old_end = self.groups.len() - suffix;
         let new_end = next.len() - suffix;
 
+        self.marks = self.conversation.message_marks(&next);
         self.groups = next;
 
         if prefix != old_end || prefix != new_end {
@@ -1921,7 +1925,7 @@ impl Workspace {
             .any(|pending| matches!(pending, Pending::History(asked) if asked == session))
     }
 
-    fn render_conversation(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_conversation(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(view) = self.views.get(&self.current) else {
             return div().flex_1().into_any_element();
         };
@@ -1940,10 +1944,13 @@ impl Workspace {
         let key = self.current.clone();
         let width = self.width;
 
-        div()
+        let rail = (!view.marks.is_empty())
+            .then(|| marks::rail(&self.current, &view.marks, &view.scroller, window, cx));
+
+        h_flex()
             .flex_1()
             .min_h_0()
-            .child(MessageList::new(
+            .child(div().flex_1().min_w_0().h_full().child(MessageList::new(
                 // One list per session, so each keeps its place.
                 ElementId::Name(format!("conversation-{}", self.current).into()),
                 &view.scroller,
@@ -1958,7 +1965,8 @@ impl Workspace {
                         .child(rows::render_row(&workspace, &key, index, cx))
                         .into_any_element()
                 },
-            ))
+            )))
+            .children(rail)
             .into_any_element()
     }
 
@@ -2065,7 +2073,7 @@ impl Workspace {
 }
 
 impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let work = v_flex().flex_1().min_w_0().h_full();
 
         // With no session shown there is nothing to write in, until the host
@@ -2073,7 +2081,7 @@ impl Render for Workspace {
         let work = match self.blank && self.ended.is_none() {
             true => work.child(self.render_blank(cx)),
             false => work
-                .child(self.render_conversation(cx))
+                .child(self.render_conversation(window, cx))
                 .child(self.render_composer(cx)),
         };
 

@@ -130,6 +130,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   through the workspace too, with what to do with the answer.
   Consecutive tool calls share a collapsible conversation row. Grouping is
   a view of the transcript, so history and export still keep each call.
+  The message marks beside the conversation navigate the person's messages
+  in that same view, without leaving the session or changing its transcript.
 - **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
   what changed in the project's folder, read with **git** (`src/git.rs`)
   on a background thread, or the session's details. rumbo keeps the

@@ -97,6 +97,17 @@ impl MessageListState {
         }
     }
 
+    /// Jumps to the start of a row without following new output.
+    pub fn jump_to(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.list.item_count() {
+            self.list.scroll_to(gpui::ListOffset {
+                item_ix: index,
+                offset_in_item: px(0.),
+            });
+            cx.notify();
+        }
+    }
+
     /// Back to the end, keeping to it again.
     pub fn scroll_to_end(&mut self, cx: &mut Context<Self>) {
         self.list.set_follow_mode(FollowMode::Tail);
@@ -251,6 +262,23 @@ mod tests {
 
         assert_eq!(row.origin.x, px(100.));
         assert_eq!(row.size.width, px(200.));
+    }
+
+    #[gpui::test]
+    fn jumps_to_an_older_row_and_stops_following_until_asked(cx: &mut TestAppContext) {
+        let state = cx.new(|cx| MessageListState::new(100, cx));
+
+        state.update(cx, |state, cx| {
+            state.jump_to(12, cx);
+            assert_eq!(state.list.logical_scroll_top().item_ix, 12);
+            assert!(!state.list.is_following_tail());
+
+            state.append(1, cx);
+            assert_eq!(state.list.logical_scroll_top().item_ix, 12);
+
+            state.scroll_to_end(cx);
+            assert!(state.list.is_following_tail());
+        });
     }
 
     #[gpui::test]

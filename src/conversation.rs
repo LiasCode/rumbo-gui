@@ -119,6 +119,14 @@ impl RowGroup {
     }
 }
 
+/// A shortcut to one of the person's messages in the visible list.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MessageMark {
+    pub id: ItemId,
+    pub row: usize,
+    pub preview: String,
+}
+
 #[derive(Debug, Default)]
 pub struct Conversation {
     items: Vec<Item>,
@@ -172,6 +180,32 @@ impl Conversation {
         }
 
         groups
+    }
+
+    /// The person's messages and their positions in the visible conversation.
+    pub fn message_marks(&self, groups: &[RowGroup]) -> Vec<MessageMark> {
+        groups
+            .iter()
+            .enumerate()
+            .filter_map(|(row, group)| {
+                let (item, _) = self.row(group.start)?;
+                let text = match &item.kind {
+                    Kind::Task(text, _) | Kind::Steer(text, _) => text,
+                    _ => return None,
+                };
+                let preview = first_line(text);
+
+                Some(MessageMark {
+                    id: item.id,
+                    row,
+                    preview: if preview.is_empty() {
+                        "Image message".into()
+                    } else {
+                        preview
+                    },
+                })
+            })
+            .collect()
     }
 
     pub fn push(&mut self, kind: Kind) -> Change {
@@ -548,6 +582,31 @@ mod tests {
                 Kind::Reply("Again".into()),
             ]
         );
+    }
+
+    #[test]
+    fn marks_messages_at_their_visible_rows_after_grouping_and_loading_history() {
+        let mut conversation = Conversation::default();
+        let tool = event(json!({"type": "tool_started", "name": "read"}));
+
+        conversation.push(Kind::Task("Current\nMore detail".into(), vec![]));
+        conversation.apply(&tool);
+        conversation.apply(&tool);
+        conversation.push(Kind::Reply("Found it".into()));
+        conversation.wait("Keep going".into(), vec![]);
+        conversation.earlier(&[event(json!({"type": "objective", "text": "Earlier"}))]);
+
+        let marks = conversation.message_marks(&conversation.groups());
+        let positions: Vec<_> = marks
+            .iter()
+            .map(|mark| (mark.row, mark.preview.as_str()))
+            .collect();
+
+        assert_eq!(
+            positions,
+            [(0, "Earlier"), (1, "Current"), (4, "Keep going")]
+        );
+        assert_eq!(marks[2].id, conversation.row(5).unwrap().0.id);
     }
 
     #[test]
