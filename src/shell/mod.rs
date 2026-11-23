@@ -69,8 +69,8 @@ const KEY_CONTEXT: &str = "Shell";
 /// How many of the projects rumbo holds the window with none open offers.
 const RECENT_SHOWN: usize = 8;
 
-/// How long the sidebar's width waits after it last changed to be kept,
-/// so a drag writes the preferences once.
+/// How long a width dragged, the sidebar's or the panel's, waits after it
+/// last changed to be kept, so a drag writes the preferences once.
 const KEEP_WIDTH_AFTER: Duration = Duration::from_millis(400);
 
 /// The least the work beside the sidebar is given.
@@ -239,7 +239,7 @@ pub struct Shell {
     /// theirs in too.
     dialogs: Entity<Dialogs>,
     toasts: Entity<Toasts>,
-    /// Keeps the sidebar's width once it stops changing.
+    /// Keeps a width dragged once it stops changing.
     keeping_width: Option<Task<()>>,
     /// The places shown, to go back and forward between.
     places: Navigation<Place>,
@@ -570,12 +570,14 @@ impl Shell {
 
     fn attach(&mut self, id: ProjectId, host: Host, window: &mut Window, cx: &mut Context<Self>) {
         let width = self.preferred.preferences.width.pixels();
+        let panel_width = self.preferred.preferences.panel_width;
         let dialogs = self.dialogs.clone();
         let toasts = self.toasts.clone();
         let workspace = cx.new(|cx| {
             let mut workspace = Workspace::new(host, dialogs, toasts, window, cx);
 
             workspace.set_width(width, cx);
+            workspace.set_panel_width(panel_width, cx);
             workspace
         });
 
@@ -702,6 +704,8 @@ impl Shell {
             }
 
             WorkspaceEvent::Shown { session, went } => self.shown(id, session, *went, cx),
+
+            WorkspaceEvent::PanelResized { width } => self.resize_panel(*width, cx),
         }
     }
 
@@ -1007,12 +1011,34 @@ impl Shell {
             .clamp(sidebar::MIN_WIDTH, sidebar::MAX_WIDTH);
 
         self.preferred.preferences.sidebar_width = Some(width.round() as u32);
+        self.keep_width(cx);
+        cx.notify();
+    }
+
+    /// Takes the width the panel beside a conversation was dragged to, for
+    /// every project's, and keeps it once it stops changing.
+    fn resize_panel(&mut self, width: u32, cx: &mut Context<Self>) {
+        self.preferred.preferences.panel_width = Some(width);
+
+        for project in &self.projects {
+            if let State::Working { workspace, .. } = &project.state {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.set_panel_width(Some(width), cx)
+                });
+            }
+        }
+
+        self.keep_width(cx);
+    }
+
+    /// Keeps the preferences once a width dragged stops changing, so a drag
+    /// writes them once.
+    fn keep_width(&mut self, cx: &mut Context<Self>) {
         self.keeping_width = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(KEEP_WIDTH_AFTER).await;
 
             let _ = this.update(cx, |this, cx| this.save_preferences(cx));
         }));
-        cx.notify();
     }
 
     /// Closes a project, which ends its host. Runs working in it are

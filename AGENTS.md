@@ -134,8 +134,10 @@ again in a branch, the changes panel on a folder with edits and on one
 outside Git, its history of the branch checked out and of another chosen,
 local and remote, and of every branch as a graph, with a merge, a tag, a
 remote's branch, and the stash, against what `git log --oneline --decorate
---all --graph` prints, and with more commits loaded, the files panel with
-a folder opened inside another and a
+--all --graph` prints, and with more commits loaded, the panel beside the
+conversation dragged wider and
+narrower, kept for the next start, the files panel with a folder opened
+inside another and a
 file opened in the editor, from its button and with Ctrl-Alt-E while the
 toolbar has the keyboard, its files and folders marked as Git sees them
 (modified, added, untracked, deleted, and in a repository nested in the

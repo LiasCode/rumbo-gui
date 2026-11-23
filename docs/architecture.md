@@ -142,7 +142,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   (`src/git/graph.rs`). It reads with **git** (`src/git.rs`)
   on a background thread. rumbo keeps the conversation and not the files,
   so Git is how a person reviews what a run did to them; the window only
-  reads.
+  reads. The panel can be dragged wider and narrower, and the window keeps
+  its width, the same for every project.
 - **files** (`src/workspace/files.rs`) lists the project's folder beside
   the conversation, each folder read by **file_tree** (`src/file_tree.rs`)
   on a background thread as it is opened, without following links; a file

@@ -1,7 +1,8 @@
 //! What shows beside the conversation: the project's Git repository, with
 //! the changes in its folder, which is how a person reviews what a run did
 //! to the files, and the history of its branches; the project file
-//! explorer; or the session's details.
+//! explorer; or the session's details. It is as wide as the person drags
+//! it, the same for every project.
 
 use std::path::PathBuf;
 
@@ -19,8 +20,18 @@ use super::{Panel, Workspace, WorkspaceEvent};
 use crate::git;
 use crate::protocol;
 
-/// How wide the panel is.
-const WIDTH: f32 = 480.;
+/// The panel's width, in pixels at the interface's own size, when the
+/// person has not chosen one, and the least and most it can be dragged to.
+pub(super) const DEFAULT_WIDTH: f32 = 480.;
+pub(super) const MIN_WIDTH: f32 = 320.;
+pub(super) const MAX_WIDTH: f32 = 800.;
+
+/// The panel's width, from the one the person chose, if any.
+pub(super) fn width(chosen: Option<u32>) -> f32 {
+    chosen
+        .map(|width| (width as f32).clamp(MIN_WIDTH, MAX_WIDTH))
+        .unwrap_or(DEFAULT_WIDTH)
+}
 
 /// What was read for a part of a panel.
 #[derive(Clone)]
@@ -230,12 +241,10 @@ impl Workspace {
                         })),
                 );
 
+        // Its width is the divider's beside the conversation, which draws
+        // the line between them too.
         v_flex()
-            .w(rems_from_px(WIDTH))
-            .flex_shrink_0()
-            .h_full()
-            .border_l_1()
-            .border_color(cx.theme().colors.border)
+            .size_full()
             .bg(cx.theme().colors.background)
             .child(
                 h_flex()

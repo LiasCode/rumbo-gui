@@ -100,6 +100,10 @@ pub struct Preferences {
     /// The sidebar's width in pixels at the interface's own size; none keeps
     /// the window's own.
     pub sidebar_width: Option<u32>,
+    /// The width of the panel beside the conversation, in pixels at the
+    /// interface's own size, the same for every project; none keeps the
+    /// window's own.
+    pub panel_width: Option<u32>,
     /// How wide the conversation grows.
     pub width: Width,
     /// The command a project's folder is opened with in an editor, such as
@@ -252,6 +256,7 @@ mod tests {
         let dark = Preferences {
             theme: Theme::Dark,
             sidebar_width: Some(300),
+            panel_width: Some(560),
             editor: "zed".into(),
             ..Preferences::default()
         };

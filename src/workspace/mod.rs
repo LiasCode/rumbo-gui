@@ -25,13 +25,14 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
-    Subscription, Task, Window, actions, div, prelude::FluentBuilder as _,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render,
+    Styled as _, Subscription, Task, Window, actions, div, prelude::FluentBuilder as _,
 };
 use serde_json::{Value as Json, json};
 use ui::{
     ActiveTheme as _, Button, CommandPaletteState, Dialogs, Icon, IconName, InputEvent, InputState,
-    MessageList, MessageListState, Sizable as _, Toast, Toasts, h_flex, rems_from_px, v_flex,
+    MessageList, MessageListState, PanelSize, Resizable, ResizablePanel, Sizable as _, Toast,
+    Toasts, h_flex, rems_from_px, v_flex,
 };
 
 use crate::commands::{self, Command};
@@ -111,6 +112,11 @@ pub enum WorkspaceEvent {
     Shown {
         session: String,
         went: bool,
+    },
+    /// The person dragged the panel beside the conversation to this width,
+    /// in pixels at the interface's own size.
+    PanelResized {
+        width: u32,
     },
 }
 
@@ -307,6 +313,9 @@ pub struct Workspace {
     files: files::Files,
     /// The widest the conversation and the composer grow, in pixels.
     width: f32,
+    /// How wide the panel beside the conversation is, in pixels at the
+    /// interface's own size.
+    panel_width: f32,
     focus_handle: FocusHandle,
     /// Where focus goes once the host ended, so Enter starts it again.
     start_again_focus: FocusHandle,
@@ -393,6 +402,7 @@ impl Workspace {
             panels: panel::Panels::new(window, cx),
             files: files::Files::default(),
             width: crate::preferences::Width::default().pixels(),
+            panel_width: panel::DEFAULT_WIDTH,
             focus_handle: cx.focus_handle(),
             start_again_focus: cx.focus_handle(),
             blank_focus: cx.focus_handle(),
@@ -573,6 +583,31 @@ impl Workspace {
     /// How wide the conversation and the composer grow.
     pub fn set_width(&mut self, width: f32, cx: &mut Context<Self>) {
         self.width = width;
+        cx.notify();
+    }
+
+    /// How wide the panel beside the conversation is: the width the person
+    /// chose, in pixels at the interface's own size, or its own.
+    pub fn set_panel_width(&mut self, chosen: Option<u32>, cx: &mut Context<Self>) {
+        self.panel_width = panel::width(chosen);
+        cx.notify();
+    }
+
+    /// Takes the width a drag or the keys gave the panel, and tells the
+    /// window, which keeps it for every project.
+    fn resize_panel(&mut self, size: &PanelSize, window: &mut Window, cx: &mut Context<Self>) {
+        if size.key != "panel" {
+            return;
+        }
+
+        // It is kept at the interface's own size, as it grows with it.
+        let pixel = rems_from_px(1.).to_pixels(window.rem_size());
+        let width = panel::width(Some((size.size / pixel).round() as u32));
+
+        self.panel_width = width;
+        cx.emit(WorkspaceEvent::PanelResized {
+            width: width as u32,
+        });
         cx.notify();
     }
 
@@ -2081,7 +2116,7 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let work = v_flex().flex_1().min_w_0().h_full();
+        let work = v_flex().size_full().min_w_0();
 
         // With no session shown there is nothing to write in, until the host
         // ends and the composer says so.
@@ -2091,6 +2126,30 @@ impl Render for Workspace {
                 .child(self.render_conversation(window, cx))
                 .child(self.render_composer(cx)),
         };
+
+        // The conversation keeps no least width, as before the panel could
+        // be dragged, so a narrow window cuts off no more of the panel than
+        // it did; the panel's most keeps the conversation in view on a
+        // screen of usual width.
+        let mut row = Resizable::horizontal("workspace-body")
+            .child(ResizablePanel::new("work").min(Pixels::ZERO).child(work));
+
+        if let Some(panel) = self.panel {
+            let rem = window.rem_size();
+
+            row = row.child(
+                ResizablePanel::new("panel")
+                    .size(rems_from_px(self.panel_width).to_pixels(rem))
+                    .min(rems_from_px(panel::MIN_WIDTH).to_pixels(rem))
+                    .max(rems_from_px(panel::MAX_WIDTH).to_pixels(rem))
+                    .child(self.render_panel(panel, cx)),
+            );
+        }
+
+        let row =
+            row.on_resize(cx.listener(|this, size: &PanelSize, window, cx| {
+                this.resize_panel(size, window, cx)
+            }));
 
         v_flex()
             .key_context(KEY_CONTEXT)
@@ -2106,16 +2165,7 @@ impl Render for Workspace {
             .min_w_0()
             .bg(cx.theme().colors.background)
             .text_color(cx.theme().colors.foreground)
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_stretch()
-                    .child(work)
-                    .when_some(self.panel, |row, panel| {
-                        row.child(self.render_panel(panel, cx))
-                    }),
-            )
+            .child(div().flex_1().min_h_0().child(row))
     }
 }
 
