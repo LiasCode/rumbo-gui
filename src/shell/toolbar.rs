@@ -83,11 +83,12 @@ impl Shell {
             .filter(|_| !settings_shown)
             .map(|workspace| workspace.update(cx, |workspace, cx| workspace.render_actions(cx)));
 
-        TitleBar::new().child(
+        TitleBar::new().h(rems_from_px(42.)).child(
             h_flex()
                 .flex_1()
                 .min_w_0()
                 .pr_2()
+                .py(rems_from_px(4.))
                 .gap_2()
                 .justify_between()
                 .child(
