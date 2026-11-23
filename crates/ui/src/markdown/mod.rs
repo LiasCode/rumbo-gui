@@ -9,7 +9,7 @@
 
 mod blocks;
 mod diagram;
-mod highlight;
+pub(crate) mod highlight;
 mod image;
 mod math;
 mod selectable;

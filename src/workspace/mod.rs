@@ -2142,7 +2142,7 @@ impl Render for Workspace {
                     .size(rems_from_px(self.panel_width).to_pixels(rem))
                     .min(rems_from_px(panel::MIN_WIDTH).to_pixels(rem))
                     .max(rems_from_px(panel::MAX_WIDTH).to_pixels(rem))
-                    .child(self.render_panel(panel, cx)),
+                    .child(self.render_panel(panel, window, cx)),
             );
         }
 

@@ -206,19 +206,40 @@ impl Workspace {
         }
     }
 
-    pub(super) fn render_panel(&self, panel: Panel, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_panel(
+        &self,
+        panel: Panel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let (title, icon, body) = match panel {
             Panel::Changes if self.panels.showing_history => {
                 ("Git", IconName::GitBranch, self.render_git_history(cx))
             }
             Panel::Changes => ("Git", IconName::GitBranch, self.render_changes(cx)),
-            Panel::Files => ("Files", IconName::FolderOpen, self.render_files(cx)),
+            Panel::Files => ("Files", IconName::FolderOpen, self.render_files(window, cx)),
             Panel::Details => ("Session", IconName::Info, self.render_details(cx)),
         };
+
+        // The files' panel opens the project in the editor; the others have
+        // a place of their own for it.
+        let editor = (panel == Panel::Files).then(|| {
+            Button::new("panel-editor")
+                .ghost()
+                .xsmall()
+                .icon(IconName::ExternalLink)
+                .tooltip("Open the project in the editor (Ctrl-Shift-E)")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    cx.emit(WorkspaceEvent::OpenInEditor {
+                        path: this.dir.clone(),
+                    })
+                }))
+        });
 
         let actions =
             h_flex()
                 .gap_1()
+                .children(editor)
                 .child(
                     Button::new("panel-refresh")
                         .ghost()

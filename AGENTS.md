@@ -48,8 +48,9 @@ must not do. Both live in the rumbo repository.
 - **The project's files are only read.** The changes panel runs `git` in
   the project's folder on a background thread and never writes there, the
   files panel lists its folders on a background thread too, as each is
-  opened, and a reply's images are read from the paths it names; the window
-  edits no file of the person's.
+  opened, and reads the file it shows there as well, and a reply's images
+  are read from the paths it names; the window edits no file of the
+  person's.
 - **An image of the web shows only once the person asks.** A reply's
   image could carry what the model read to whoever serves it, so nothing
   is fetched until its Show is pressed.
@@ -137,8 +138,12 @@ remote's branch, and the stash, against what `git log --oneline --decorate
 --all --graph` prints, and with more commits loaded, the panel beside the
 conversation dragged wider and
 narrower, kept for the next start, the files panel with a folder opened
-inside another and a
-file opened in the editor, from its button and with Ctrl-Alt-E while the
+inside another and a file shown beside the tree, its syntax colored in
+both themes, a long line wrapped, one too large, one not text, and an
+empty one, the divider between them dragged, the file read again after it
+changed and closed, it and the project opened in the editor (an editor
+set in the scratch preferences to a script that writes down what it is
+given, so no editor of the person's opens), the panel opened from its button and with Ctrl-Alt-E while the
 toolbar has the keyboard, its files and folders marked as Git sees them
 (modified, added, untracked, deleted, and in a repository nested in the
 project), and marked again after a refresh and after a run, a reply with

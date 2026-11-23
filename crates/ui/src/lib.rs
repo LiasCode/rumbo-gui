@@ -10,6 +10,7 @@ mod breadcrumb;
 mod button;
 mod check_row;
 mod checkbox;
+mod code_view;
 mod command_palette;
 mod dialog;
 mod diff;
@@ -66,6 +67,7 @@ pub use assets::Assets;
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use button::{Button, ButtonVariant};
 pub use checkbox::Checkbox;
+pub use code_view::{CodeView, CodeViewState};
 pub use command_palette::{
     CommandGroup, CommandIndex, CommandItem, CommandPalette, CommandPaletteState,
 };

@@ -1,25 +1,32 @@
 //! The project file explorer. Only opened folders are read, off the UI
-//! thread; opening a file hands its path to the configured editor. Each
-//! file and folder is marked with what Git says of it, in the project's
-//! repository and in any repository nested in it whose folder is opened.
+//! thread; a file pressed shows beside the tree, read off the UI thread
+//! too, and its divider moves. Each file and folder is marked with what
+//! Git says of it, in the project's repository and in any repository nested
+//! in it whose folder is opened.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use gpui::{
-    AnyElement, AppContext as _, Context, Div, ElementId, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, ScrollHandle, StatefulInteractiveElement as _, Styled as _,
-    div, prelude::FluentBuilder as _,
+    AnyElement, AppContext as _, Context, Div, ElementId, Entity, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, Pixels, ScrollHandle, StatefulInteractiveElement as _,
+    Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use ui::{
-    ActiveTheme as _, Button, IconName, Scrollbar, Sizable as _, Spinner, ThemeColors, h_flex,
-    rems_from_px, v_flex,
+    ActiveTheme as _, Button, CodeView, CodeViewState, Icon, IconName, PanelSize, Resizable,
+    ResizablePanel, Scrollbar, Sizable as _, Spinner, ThemeColors, h_flex, rems_from_px, v_flex,
 };
 
-use super::panel::Read;
+use super::panel::{Read, centered, message};
 use super::{Workspace, WorkspaceEvent};
 use crate::file_tree::{self, Entry, Kind};
 use crate::git::{self, FileStatus};
+
+/// The tree's width beside a file shown, in pixels at the interface's own
+/// size, and the least and most it can be dragged to.
+const TREE_WIDTH: f32 = 200.;
+const TREE_MIN_WIDTH: f32 = 120.;
+const TREE_MAX_WIDTH: f32 = 480.;
 
 #[derive(Default)]
 pub(super) struct Files {
@@ -31,6 +38,16 @@ pub(super) struct Files {
     /// each repository nested in it that was opened.
     statuses: HashMap<PathBuf, git::Statuses>,
     scroll: ScrollHandle,
+    /// The file shown beside the tree, if any.
+    shown: Option<Shown>,
+    /// The tree's width beside it, once dragged.
+    tree_width: Option<f32>,
+}
+
+/// A file shown beside the tree, and its text once read.
+struct Shown {
+    path: PathBuf,
+    text: Read<Entity<CodeViewState>>,
 }
 
 /// The color a file or a folder is named in, by what Git says of it.
@@ -44,8 +61,8 @@ fn status_color(status: FileStatus, colors: &ThemeColors) -> Hsla {
 
 impl Workspace {
     /// Reads the files of a project shown for the first time; otherwise
-    /// reads again what is open, as a run may have changed it, keeping the
-    /// folders open.
+    /// reads again what is open, and the file shown, as a run may have
+    /// changed them, keeping the folders open.
     pub(super) fn refresh_files(&mut self, cx: &mut Context<Self>) {
         if self.files.root != Path::new(&self.dir) || self.files.folders.is_empty() {
             self.reload_files(cx);
@@ -57,6 +74,8 @@ impl Workspace {
         for folder in loaded {
             self.read_folder(folder, cx);
         }
+
+        self.read_shown_file(cx);
     }
 
     fn reload_files(&mut self, cx: &mut Context<Self>) {
@@ -161,7 +180,84 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(super) fn render_files(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// Shows a file beside the tree.
+    fn show_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.files.shown = Some(Shown {
+            path,
+            text: Read::Reading,
+        });
+
+        self.read_shown_file(cx);
+        cx.notify();
+    }
+
+    fn close_file(&mut self, cx: &mut Context<Self>) {
+        self.files.shown = None;
+        cx.notify();
+    }
+
+    /// Reads the file shown, off the UI thread. What was shown of it stays,
+    /// scrolled where it was, until it is read again.
+    fn read_shown_file(&mut self, cx: &mut Context<Self>) {
+        let Some(shown) = &self.files.shown else {
+            return;
+        };
+
+        let path = shown.path.clone();
+        let generation = self.files.generation;
+
+        cx.spawn(async move |this, cx| {
+            let (path, read) = cx
+                .background_spawn(async move {
+                    let read = file_tree::text(&path);
+
+                    (path, read)
+                })
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                if this.files.generation != generation {
+                    return;
+                }
+
+                // Another file may be shown by now.
+                let Some(shown) = this.files.shown.as_mut().filter(|shown| shown.path == path)
+                else {
+                    return;
+                };
+
+                // The language is named by the file's extension, or by its
+                // name when it has none, as a Dockerfile's is.
+                let lang = path
+                    .extension()
+                    .or_else(|| path.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+
+                shown.text = match (read, &shown.text) {
+                    (Ok(text), Read::Here(state)) => {
+                        state.update(cx, |state, cx| state.set_text(&text, &lang, cx));
+
+                        Read::Here(state.clone())
+                    }
+
+                    (Ok(text), _) => Read::Here(cx.new(|cx| {
+                        let mut state = CodeViewState::new(cx);
+
+                        state.set_text(&text, &lang, cx);
+                        state
+                    })),
+
+                    (Err(problem), _) => Read::Failed(problem),
+                };
+
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn render_files(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().colors.muted_foreground;
         let root = &self.files.root;
         let tree = v_flex()
@@ -181,7 +277,7 @@ impl Workspace {
             )
             .child(self.render_folder(root, 0, cx));
 
-        div()
+        let tree = div()
             .relative()
             .size_full()
             .child(tree)
@@ -189,6 +285,104 @@ impl Workspace {
                 "files-scrollbar",
                 self.files.scroll.clone(),
             ))
+            .into_any_element();
+
+        let Some(shown) = &self.files.shown else {
+            return tree;
+        };
+
+        let rem = window.rem_size();
+        let width = self.files.tree_width.unwrap_or(TREE_WIDTH);
+
+        // The file keeps no least width, so a narrow panel cuts off none of
+        // the tree.
+        Resizable::horizontal("files-split")
+            .child(
+                ResizablePanel::new("tree")
+                    .size(rems_from_px(width).to_pixels(rem))
+                    .min(rems_from_px(TREE_MIN_WIDTH).to_pixels(rem))
+                    .max(rems_from_px(TREE_MAX_WIDTH).to_pixels(rem))
+                    .child(tree),
+            )
+            .child(
+                ResizablePanel::new("file")
+                    .min(Pixels::ZERO)
+                    .child(self.render_shown_file(shown, cx)),
+            )
+            .on_resize(cx.listener(|this, size: &PanelSize, window, cx| {
+                if size.key != "tree" {
+                    return;
+                }
+
+                // It is kept at the interface's own size, as it grows with it.
+                let pixel = rems_from_px(1.).to_pixels(window.rem_size());
+
+                this.files.tree_width =
+                    Some((size.size / pixel).clamp(TREE_MIN_WIDTH, TREE_MAX_WIDTH));
+                cx.notify();
+            }))
+            .into_any_element()
+    }
+
+    /// The file shown beside the tree: its path under the project, with
+    /// ways to open it in the editor and to close it, over its text.
+    fn render_shown_file(&self, shown: &Shown, cx: &mut Context<Self>) -> AnyElement {
+        let colors = cx.theme().colors;
+        let muted = colors.muted_foreground;
+        let name = shown
+            .path
+            .strip_prefix(&self.files.root)
+            .unwrap_or(&shown.path)
+            .display()
+            .to_string();
+
+        // The editor is given the path as text, which only a path in UTF-8
+        // is.
+        let editable = shown.path.to_str().map(str::to_string);
+
+        let header = h_flex()
+            .flex_shrink_0()
+            .h(rems_from_px(36.))
+            .pl_3()
+            .pr_1()
+            .gap_2()
+            .text_sm()
+            .border_b_1()
+            .border_color(colors.border)
+            .child(Icon::new(IconName::FileText).small().color(muted))
+            .child(div().flex_1().min_w_0().truncate().child(name))
+            .when_some(editable, |header, path| {
+                header.child(
+                    Button::new("shown-file-editor")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ExternalLink)
+                        .tooltip("Open this file in the editor")
+                        .on_click(cx.listener(move |_, _, _, cx| {
+                            cx.emit(WorkspaceEvent::OpenInEditor { path: path.clone() })
+                        })),
+                )
+            })
+            .child(
+                Button::new("shown-file-close")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Close)
+                    .tooltip("Close this file")
+                    .on_click(cx.listener(|this, _, _, cx| this.close_file(cx))),
+            );
+
+        let body = match &shown.text {
+            Read::Reading => centered().child(Spinner::new()).into_any_element(),
+            Read::Failed(problem) => message(problem.clone(), cx),
+            Read::Here(state) if state.read(cx).is_empty() => message("This file is empty.", cx),
+            Read::Here(state) => CodeView::new("shown-file", state).into_any_element(),
+        };
+
+        v_flex()
+            .size_full()
+            .child(header)
+            .child(div().flex_1().min_h_0().child(body))
             .into_any_element()
     }
 
@@ -218,7 +412,12 @@ impl Workspace {
                     let expanded = self.files.expanded.contains(&child);
                     let name = entry.name.to_string_lossy().into_owned();
                     let folder = entry.kind == Kind::Folder;
-                    let openable = entry.kind == Kind::File && child.to_str().is_some();
+                    let file = entry.kind == Kind::File;
+                    let shown = self
+                        .files
+                        .shown
+                        .as_ref()
+                        .is_some_and(|shown| shown.path == child);
                     let status = git::status_at(&self.files.statuses, &child, folder);
                     let color = status.map(|status| status_color(status, &colors));
                     let said = status
@@ -240,6 +439,7 @@ impl Workspace {
                         .truncate()
                         .icon(icon)
                         .label(name.clone())
+                        .selected(shown)
                         .when_some(color, |row, color| row.text_color(color));
                     let row = if folder {
                         let folder = child.clone();
@@ -249,13 +449,14 @@ impl Workspace {
                                 this.toggle_folder(folder.clone(), cx);
                             },
                         ))
-                    } else if openable {
-                        let path = child.to_string_lossy().into_owned();
+                    } else if file {
+                        let file = child.clone();
 
-                        row.tooltip(format!("Open {name} in Editor{said}"))
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                cx.emit(WorkspaceEvent::OpenInEditor { path: path.clone() });
-                            }))
+                        row.tooltip(format!("{name}{said}")).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                this.show_file(file.clone(), cx);
+                            },
+                        ))
                     } else {
                         row.disabled(true)
                     };

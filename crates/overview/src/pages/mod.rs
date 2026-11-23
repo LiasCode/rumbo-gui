@@ -5,6 +5,7 @@ mod alert;
 mod breadcrumb;
 mod button;
 mod checkbox;
+mod code_view;
 mod command_palette;
 mod dialog;
 mod diff;
@@ -82,12 +83,13 @@ pub enum Page {
     Resizable,
     Table,
     Diff,
+    CodeView,
     FloatingWindow,
     Window,
 }
 
 impl Page {
-    pub const ALL: [Page; 36] = [
+    pub const ALL: [Page; 37] = [
         Page::Typography,
         Page::Label,
         Page::List,
@@ -122,6 +124,7 @@ impl Page {
         Page::Resizable,
         Page::Table,
         Page::Diff,
+        Page::CodeView,
         Page::FloatingWindow,
         Page::Window,
     ];
@@ -162,6 +165,7 @@ impl Page {
             Page::Resizable => "Resizable",
             Page::Table => "Table",
             Page::Diff => "Diff",
+            Page::CodeView => "Code view",
             Page::FloatingWindow => "Floating window",
             Page::Window => "Window",
         }
@@ -203,6 +207,7 @@ impl Page {
             Page::Resizable => "resizable",
             Page::Table => "table",
             Page::Diff => "diff",
+            Page::CodeView => "code-view",
             Page::FloatingWindow => "floating-window",
             Page::Window => "window",
         }
@@ -277,6 +282,9 @@ impl Page {
             Page::Diff => {
                 "The changes a patch makes, file by file, each line on green where added and red where taken out."
             }
+            Page::CodeView => {
+                "A file's text, read only: its lines numbered, colored by their syntax, and wrapped when too long. Only the rows in view are drawn."
+            }
             Page::Message => "A message in a conversation, on a quiet ground, with words over it.",
             Page::Sidebar => {
                 "The column beside the work: a head, groups of rows that hold rows, and a foot."
@@ -329,6 +337,7 @@ pub struct Demos {
     message_list: message_list::Demo,
     settings: settings::Demo,
     diff: diff::Demo,
+    code_view: code_view::Demo,
 }
 
 impl Demos {
@@ -361,6 +370,7 @@ impl Demos {
             message_list: message_list::Demo::new(cx),
             settings: settings::Demo::new(window, cx),
             diff: diff::Demo::new(cx),
+            code_view: code_view::Demo::new(cx),
         }
     }
 
@@ -401,6 +411,7 @@ impl Demos {
             Page::MessageList => message_list::render(self, window, cx),
             Page::Settings => settings::render(self, window, cx),
             Page::Diff => diff::render(self, window, cx),
+            Page::CodeView => code_view::render(self, window, cx),
             Page::Toast => toast::render(self, window, cx),
             Page::Message => message::render(self, window, cx),
             Page::Sidebar => sidebar::render(self, window, cx),

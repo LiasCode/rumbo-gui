@@ -147,12 +147,15 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 - **files** (`src/workspace/files.rs`) lists the project's folder beside
   the conversation, each folder read by **file_tree** (`src/file_tree.rs`)
   on a background thread as it is opened, without following links; a file
-  pressed opens in the editor, and nothing is written. Each file and folder
+  pressed shows beside the tree, split from it by a divider that moves,
+  its text read on a background thread too, and nothing is written. A file
+  too large or not text says so instead, and the editor opens the file or
+  the whole project from the panel. Each file and folder
   is marked with what **git** says of it: in the project's repository, and
   in any repository nested in it once its folder is opened, which speaks
-  for its own files. A folder shows the most of what it holds. The marks
-  are read again, with the folders open, when the panel is refreshed and
-  when a run ends.
+  for its own files. A folder shows the most of what it holds. The marks,
+  and the file shown, are read again, with the folders open, when the
+  panel is refreshed and when a run ends.
 - **details** (`src/workspace/details.rs`) draws what the window knows of
   the session shown to be read at a glance: from the host's answers, its
   id and how it stands, its folder and its model; and from its runs'
@@ -225,7 +228,9 @@ file, or from the web, through the `ImageClient` an application gives GPUI,
 and only once the person asks, since an image a model names could carry what
 it read to whoever serves it. A diff is read from Git's patch apart from
 drawing it too (`crates/ui/src/diff/patch.rs`), and draws only the rows in
-view, as a conversation does. Whatever the pointer drags (a scrollbar's
+view, as a conversation does, and so does a file's text in a code view
+(`crates/ui/src/code_view.rs`), colored by the same highlighter as a
+reply's code, off the UI thread. Whatever the pointer drags (a scrollbar's
 thumb, a slider's, the divider between panels, the edge of a table's column)
 goes through one press that follows the pointer until the button comes up
 (`crates/ui/src/drag.rs`). A window that draws its own title bar draws its
