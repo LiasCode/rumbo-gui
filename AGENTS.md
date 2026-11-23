@@ -18,9 +18,9 @@ must not do. Both live in the rumbo repository.
   order it was sent. Do not split answers from events.
 - **Logic out of views.** What the window shows is built from events in
   plain modules that are tested without GPUI (`conversation`, `usage`,
-  `history`, `commands`, `choices`, `navigation`, `outline`). A view draws
-  them and sends requests; a form says which lists it needs, and the
-  workspace asks for them.
+  `history`, `commands`, `choices`, `navigation`, `outline`, `order`). A
+  view draws them and sends requests; a form says which lists it needs,
+  and the workspace asks for them.
 - **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
   Whatever opens first can get those numbers.
 - **Known by name only where the window gives it a place.** The sidebar
@@ -119,7 +119,9 @@ project closed and listed again, the window with a rumbo that has no
 and kept for the next start, the window made bigger and smaller with
 Ctrl-+ and Ctrl--, kept for the next start, and back with Ctrl-0, the
 sidebar searched, dragged wider, and put away with Ctrl-B, a session
-renamed and one deleted from its menu, a message changed and one asked
+renamed and one deleted from its menu, a project's sessions after a run
+in an older one and after the project is opened, which stay in their order,
+a message changed and one asked
 again in a branch, the changes panel on a folder with edits and on one
 outside Git, a reply with code, formulas
 among words and on their own, a Mermaid diagram, and images from a file

@@ -222,7 +222,8 @@ pub struct Workspace {
     /// When each run of this window started.
     started: HashMap<i64, std::time::Instant>,
     pending: HashMap<i64, Pending>,
-    /// The project's sessions, most recently used first.
+    /// The project's sessions, in the order they were first listed, the
+    /// newest first.
     listed: Vec<Value>,
     /// What the host can be asked, whatever the provider.
     host_functions: Vec<Function>,
@@ -447,10 +448,19 @@ impl Workspace {
             .find(|function| function.name == name)
     }
 
-    /// The project's sessions, most recently used first, as the host lists
-    /// them.
+    /// The project's sessions as the host lists them, in the order they were
+    /// first listed, the newest first.
     pub fn sessions(&self) -> &[Value] {
         &self.listed
+    }
+
+    /// Lists the project's sessions in the order the window listed them
+    /// before it opened the project, until the host lists them, so opening
+    /// it moves none.
+    pub fn keep_order(&mut self, listed: Vec<Value>) {
+        if self.listed.is_empty() {
+            self.listed = listed;
+        }
     }
 
     /// The session shown, empty for a new one until its first run makes it.
@@ -1253,7 +1263,7 @@ impl Workspace {
             Pending::Sessions => {
                 if let Ok(result) = answer {
                     let listed: HostResult = serde_json::from_value(result).unwrap_or_default();
-                    self.listed = listed.values;
+                    self.listed = crate::order::kept(&self.listed, listed.values);
                 }
             }
 

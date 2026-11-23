@@ -14,6 +14,7 @@ mod git;
 mod history;
 mod host;
 mod navigation;
+mod order;
 mod outline;
 mod picture;
 mod preferences;

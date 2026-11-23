@@ -3,7 +3,9 @@
 //! one shown and those working, and the others rumbo holds, which open in a
 //! host of their own when the person chooses one of their sessions, or
 //! opens one from its menu. The projects the person pinned come first, in
-//! the order they were pinned, then the rest, most recently used first.
+//! the order they were pinned, then the rest, most recently used first. A
+//! project's sessions keep the order they were first listed in, the newest
+//! first, so using one moves none.
 //! Pressing a project only shows or hides its sessions. A search, at the
 //! top, narrows the list to the sessions and projects whose names, or what
 //! the host says of them, hold what was typed; under it, New Session starts

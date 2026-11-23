@@ -29,7 +29,8 @@ conversation, and rumbo's settings, without a terminal.
 
 - **Work in sessions.** Search them, open one with Ctrl-K or Ctrl-1 … 9,
   rename, branch, compact, export as Markdown, or delete it from its menu.
-  Every project is in the sidebar; pin the ones you use most to its top.
+  Every project is in the sidebar, its sessions newest first, each staying
+  where it is when you use it; pin the projects you use most to its top.
   New Session there starts one in your home folder.
 - **Go back and forward.** As in a browser, between the sessions, projects,
   and settings you went to, with the arrows in the toolbar, Alt-Left and
@@ -85,7 +86,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Escape | Give up a provider's function in progress, else cancel the run; leave the settings |
 | Ctrl-K, Ctrl-P | Commands, and the project's sessions to show one |
 | Ctrl-N | New session; with no project open, in your home folder |
-| Ctrl-1 … Ctrl-9 | The project's sessions, most recently used first |
+| Ctrl-1 … Ctrl-9 | The project's sessions, in the order the sidebar lists them |
 | Alt-Left, Alt-Right | Back and forward between what was shown |
 | Ctrl-B | Show or put away the sidebar |
 | Ctrl-F | Search the sessions |

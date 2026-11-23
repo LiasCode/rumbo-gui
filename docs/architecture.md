@@ -23,7 +23,7 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
  main ── config, preferences ── shell ─────────────── settings, catalog, navigation (pure; tested)
                                  │  │  one workspace per project
                                  │  └───────────────── workspace ── conversation, usage, history,
-                                 │ starts or attaches   │             commands, choices, outline (pure; tested)
+                                 │ starts or attaches   │             commands, choices, outline, order (pure; tested)
                                  ▼                      │
                                host ── connection ◄─────┘
                                  │        │  one ordered channel of what the host sent
@@ -74,6 +74,10 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   narrowed by the search at its top, with what the host offers to do with
   each session in its menu. The projects the person pins come first, in
   the order they pinned them; the rest follow, most recently used first.
+  A project's sessions stay in the order they were first listed, the
+  newest first, as **order** (`src/order.rs`) keeps them, so a session a
+  run works in does not jump to the top, nor does opening a project move
+  them.
   Its New Session starts one in the person's home folder, whatever project
   is shown. It can be dragged wider and put away; the window keeps both,
   and the pins.
@@ -150,14 +154,15 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   The form says which lists it needs; the workspace sends the requests and
   hands the answers back, since everything the host says arrives in one
   order, on one channel.
-- **conversation**, **usage**, **history**, **commands**, **choices**, and
-  **outline** hold what the workspace shows and asks, built from the
-  protocol's messages alone and tested without GPUI: the items of a
+- **conversation**, **usage**, **history**, **commands**, **choices**,
+  **outline**, and **order** hold what the workspace shows and asks, built
+  from the protocol's messages alone and tested without GPUI: the items of a
   conversation, the tokens spent, what was entered in the composer and what
   the host recalls, the functions of the host and the provider as commands,
   by what they act on, with their parameters, the values those take, and
-  their answers, the changes the picker asks of the host, and the shape of
-  what the host says in words.
+  their answers, the changes the picker asks of the host, the shape of
+  what the host says in words, and the order a project's sessions are
+  listed in.
 
 ## Components
 

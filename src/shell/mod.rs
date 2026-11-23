@@ -548,6 +548,18 @@ impl Shell {
             workspace
         });
 
+        // A project opened from the sidebar keeps the order its sessions
+        // were listed in there.
+        let root = self
+            .project(id)
+            .and_then(|project| self.root_of(project, cx));
+
+        if let (Some(root), Some(catalog)) = (root, &self.catalog) {
+            let listed = catalog.read(cx).sessions(&root).to_vec();
+
+            workspace.update(cx, |workspace, _| workspace.keep_order(listed));
+        }
+
         let subscriptions = vec![
             cx.subscribe_in(
                 &workspace,
@@ -1307,7 +1319,7 @@ impl Shell {
     }
 
     /// Shows the project's session at `position`, counted from 1, in the
-    /// order the host lists them: most recently used first.
+    /// order the sidebar lists them.
     fn jump(&mut self, position: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.selected else {
             return;

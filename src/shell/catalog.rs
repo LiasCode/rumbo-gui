@@ -28,6 +28,8 @@ pub(super) struct Catalog {
     pending: HashMap<i64, Asked>,
     /// The projects that have sessions, most recently used first, by root.
     projects: Vec<Value>,
+    /// The sessions of each project, by root, in the order they were first
+    /// listed, the newest first.
     sessions: HashMap<String, Vec<Value>>,
     /// Why there is nothing to list: rumbo did not start, or stopped.
     problem: Option<String>,
@@ -182,7 +184,9 @@ impl Catalog {
                     }
 
                     Asked::Sessions(root) => {
-                        self.sessions.insert(root, values);
+                        let kept = crate::order::kept(self.sessions(&root), values);
+
+                        self.sessions.insert(root, kept);
                     }
                 }
             }
