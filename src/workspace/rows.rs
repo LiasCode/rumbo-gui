@@ -1,7 +1,8 @@
 //! The rows of a session's conversation: what the person asked, with ways
-//! to copy it, change it, or ask it again in a branch; what the model
-//! wrote; each tool call, which opens to show what it sent and got back,
-//! and what it changed in a file; and how runs ended.
+//! to copy it, change it, or ask it again in a branch; what they told a
+//! run, faded until the run reads it; what the model wrote; each tool call,
+//! which opens to show what it sent and got back, and what it changed in a
+//! file; and how runs ended.
 
 use gpui::{
     AnyElement, App, ClipboardItem, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -42,7 +43,7 @@ pub(super) fn render_row(
         return div().into_any_element();
     };
 
-    let Some(item) = view.conversation.items().get(index) else {
+    let Some((item, waiting)) = view.conversation.row(index) else {
         return div().into_any_element();
     };
 
@@ -67,6 +68,16 @@ pub(super) fn render_row(
                 ))
                 .into_any_element()
         }
+
+        // Until the run reads it, it shows faded, saying so.
+        Kind::Steer(text, images) if waiting => row
+            .opacity(0.6)
+            .child(said_by_person(
+                text,
+                images,
+                Some("Waiting for the run's next turn"),
+            ))
+            .into_any_element(),
 
         Kind::Steer(text, images) => row
             .child(said_by_person(text, images, Some("Told the run")))

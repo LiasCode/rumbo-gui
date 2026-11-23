@@ -97,7 +97,9 @@ an agent's harness does: run the tests there with
 The window has no automated test. After changing a view, run it and look at
 it: a task, its streamed answer, the context and the tokens under the
 composer in K and M with every token in their tooltip, a tool call opened,
-a steer during a run and what the composer says while it waits,
+a steer during a run, which shows at once, faded, until the run reads it,
+and what the composer says while it waits, Working over the composer
+while a run works, and none once it ends,
 an image pasted with Ctrl-V into a task and into a steer, one taken away,
 and one sent alone, Escape to cancel, Up and Down in the composer, bringing back what was asked
 in another session, a session opened with its history, going back and

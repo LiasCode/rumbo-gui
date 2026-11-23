@@ -1,7 +1,8 @@
 //! What the window shows of a session: the tasks the person gave, what the
 //! model answered, the tools it called, and what the host and the provider
-//! said. It is built from the protocol's events alone, so the view only
-//! draws it.
+//! said; and, after all of it, what the person told a run that the run has
+//! not read yet. It is built from the protocol's events and the window's
+//! requests alone, so the view only draws it.
 
 use serde_json::Value as Json;
 
@@ -47,8 +48,8 @@ pub enum Kind {
     /// An objective the person gave, which starts a run, and the images
     /// given with it.
     Task(String, Vec<Picture>),
-    /// What the person told a run while it worked, once the run had it,
-    /// and the images given with it.
+    /// What the person told a run while it worked, and the images given
+    /// with it. It waits after the items until the run reads it.
     Steer(String, Vec<Picture>),
     /// The model's visible answer, which grows while it streams.
     Reply(String),
@@ -85,25 +86,54 @@ pub struct Item {
     pub kind: Kind,
 }
 
-/// What an event did to the conversation, so a view can update only that.
+/// What an event did to the conversation's rows, so a view can update only
+/// that. The rows are the items, then what still waits for a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
     Nothing,
-    /// A new item at the end.
-    Appended,
-    /// The item at this index changed.
+    /// A new row at this index; those after it move down one.
+    Inserted(usize),
+    /// The row at this index changed.
     Updated(usize),
+    /// The row at this index is gone; those after it move up one.
+    Removed(usize),
+    /// The row at `from` is now at `to`, as when a run reads one message
+    /// of several waiting for it.
+    Moved {
+        from: usize,
+        to: usize,
+    },
 }
 
 #[derive(Debug, Default)]
 pub struct Conversation {
     items: Vec<Item>,
+    /// What the person told a run that the run has not read yet, in the
+    /// order told. Each shows after the items until the run reads it.
+    waiting: Vec<Item>,
     next_id: ItemId,
 }
 
 impl Conversation {
     pub fn items(&self) -> &[Item] {
         &self.items
+    }
+
+    /// How many rows it shows: the items, then what still waits for a run.
+    pub fn rows(&self) -> usize {
+        self.items.len() + self.waiting.len()
+    }
+
+    /// The row at `index`, and whether it still waits for its run to read
+    /// it.
+    pub fn row(&self, index: usize) -> Option<(&Item, bool)> {
+        match self.items.get(index) {
+            Some(item) => Some((item, false)),
+            None => self
+                .waiting
+                .get(index - self.items.len())
+                .map(|item| (item, true)),
+        }
     }
 
     pub fn push(&mut self, kind: Kind) -> Change {
@@ -113,7 +143,49 @@ impl Conversation {
             kind,
         });
 
-        Change::Appended
+        Change::Inserted(self.items.len() - 1)
+    }
+
+    /// Shows what the person told a run at once, after everything else,
+    /// until the run reads it.
+    pub fn wait(&mut self, text: String, images: Vec<Picture>) -> (ItemId, Change) {
+        self.next_id += 1;
+        self.waiting.push(Item {
+            id: self.next_id,
+            kind: Kind::Steer(text, images),
+        });
+
+        (self.next_id, Change::Inserted(self.rows() - 1))
+    }
+
+    /// The run read what the person told it: it joins the items where the
+    /// run read it, before what still waits.
+    pub fn heard(&mut self, id: ItemId) -> Change {
+        let Some(position) = self.waiting.iter().position(|item| item.id == id) else {
+            return Change::Nothing;
+        };
+
+        let from = self.items.len() + position;
+        let item = self.waiting.remove(position);
+
+        self.items.push(item);
+
+        match self.items.len() - 1 {
+            to if to == from => Change::Updated(to),
+            to => Change::Moved { from, to },
+        }
+    }
+
+    /// The run will never read what the person told it: it is taken away,
+    /// and given back.
+    pub fn withdraw(&mut self, id: ItemId) -> Option<(String, Vec<Picture>, Change)> {
+        let position = self.waiting.iter().position(|item| item.id == id)?;
+        let row = self.items.len() + position;
+
+        match self.waiting.remove(position).kind {
+            Kind::Steer(text, images) => Some((text, images, Change::Removed(row))),
+            _ => None,
+        }
     }
 
     /// Adds what one event of a run says. Events it does not show, such as
@@ -408,11 +480,11 @@ mod tests {
 
         assert_eq!(
             conversation.push(Kind::Task("say hi".into(), vec![])),
-            Change::Appended
+            Change::Inserted(0)
         );
         assert_eq!(
             conversation.apply(&event(json!({"type": "text", "text": "Hi"}))),
-            Change::Appended
+            Change::Inserted(1)
         );
         assert_eq!(
             conversation.apply(&event(json!({"type": "text", "text": " there"}))),
@@ -422,11 +494,11 @@ mod tests {
             conversation.apply(&event(
                 json!({"type": "context", "sections": ["environment"]})
             )),
-            Change::Appended
+            Change::Inserted(2)
         );
         assert_eq!(
             conversation.apply(&event(json!({"type": "text", "text": "Again"}))),
-            Change::Appended
+            Change::Inserted(3)
         );
 
         assert_eq!(
@@ -656,7 +728,7 @@ mod tests {
 
         assert_eq!(
             conversation.end_after("done", "", Some(12)),
-            Change::Appended
+            Change::Inserted(6)
         );
         assert_eq!(
             conversation.items().last().map(|item| item.kind.clone()),
@@ -706,5 +778,77 @@ mod tests {
         assert!(
             matches!(&kinds[1], Kind::Steer(text, images) if text.is_empty() && images.len() == 2)
         );
+    }
+
+    #[test]
+    fn what_was_told_waits_after_everything_until_the_run_reads_it() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("fix it".into(), vec![]));
+        conversation.apply(&event(json!({"type": "text", "text": "Looking"})));
+
+        let (told, change) = conversation.wait("use v2".into(), vec![]);
+
+        assert_eq!(change, Change::Inserted(2));
+        assert_eq!(conversation.rows(), 3);
+        assert!(matches!(conversation.row(2), Some((item, true)) if item.id == told));
+
+        // What the run says meanwhile goes before it, which stays last.
+        assert_eq!(
+            conversation.apply(&event(json!({"type": "text", "text": " around"}))),
+            Change::Updated(1)
+        );
+        assert_eq!(
+            conversation.apply(&event(json!({"type": "tool_started", "name": "bash"}))),
+            Change::Inserted(2)
+        );
+        assert!(matches!(conversation.row(3), Some((item, true)) if item.id == told));
+
+        // Read, it stays where it is, as a message the run has.
+        assert_eq!(conversation.heard(told), Change::Updated(3));
+        assert!(matches!(conversation.row(3), Some((item, false)) if item.id == told));
+        assert_eq!(conversation.heard(told), Change::Nothing);
+
+        // What comes next goes after it.
+        assert_eq!(
+            conversation.apply(&event(json!({"type": "text", "text": "Done"}))),
+            Change::Inserted(4)
+        );
+        assert_eq!(
+            kinds(&conversation)[3],
+            Kind::Steer("use v2".into(), vec![])
+        );
+    }
+
+    #[test]
+    fn a_message_read_before_others_waiting_moves_before_them() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("fix it".into(), vec![]));
+
+        let (first, _) = conversation.wait("one".into(), vec![]);
+        let (second, _) = conversation.wait("two".into(), vec![]);
+
+        assert_eq!(conversation.heard(second), Change::Moved { from: 2, to: 1 });
+        assert!(matches!(conversation.row(1), Some((item, false)) if item.id == second));
+        assert!(matches!(conversation.row(2), Some((item, true)) if item.id == first));
+    }
+
+    #[test]
+    fn a_message_never_read_is_taken_away_and_given_back() {
+        let mut conversation = Conversation::default();
+
+        conversation.push(Kind::Task("fix it".into(), vec![]));
+
+        let (told, _) = conversation.wait("use v2".into(), vec![]);
+
+        conversation.end("cancelled", "");
+
+        let (text, images, change) = conversation.withdraw(told).expect("it was waiting");
+
+        assert_eq!((text.as_str(), images.len()), ("use v2", 0));
+        assert_eq!(change, Change::Removed(2));
+        assert_eq!(conversation.rows(), 2);
+        assert!(conversation.withdraw(told).is_none());
     }
 }

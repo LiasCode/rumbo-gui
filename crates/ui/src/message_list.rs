@@ -67,6 +67,22 @@ impl MessageListState {
         cx.notify();
     }
 
+    /// `count` rows at `index`, before those that were there.
+    pub fn insert(&mut self, index: usize, count: usize, cx: &mut Context<Self>) {
+        let index = index.min(self.list.item_count());
+
+        self.list.splice(index..index, count);
+        cx.notify();
+    }
+
+    /// The row at `index` is gone; those after it close up.
+    pub fn remove(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.list.item_count() {
+            self.list.splice(index..index + 1, 0);
+            cx.notify();
+        }
+    }
+
     /// The row at `index` changed, and is measured again.
     pub fn remeasure(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.list.item_count() {
@@ -229,5 +245,25 @@ mod tests {
 
         assert_eq!(row.origin.x, px(100.));
         assert_eq!(row.size.width, px(200.));
+    }
+
+    #[gpui::test]
+    fn takes_rows_in_and_out_anywhere(cx: &mut TestAppContext) {
+        let state = cx.new(|cx| MessageListState::new(2, cx));
+
+        state.update(cx, |state, cx| {
+            state.insert(1, 1, cx);
+            assert_eq!(state.count(), 3);
+
+            state.remove(0, cx);
+            assert_eq!(state.count(), 2);
+
+            // Past the end, nothing is taken out, and rows go in at the end.
+            state.remove(5, cx);
+            assert_eq!(state.count(), 2);
+
+            state.insert(9, 2, cx);
+            assert_eq!(state.count(), 4);
+        });
     }
 }

@@ -119,11 +119,11 @@ type Then = Box<dyn FnOnce(&mut Workspace, HostResult, &mut Window, &mut Context
 /// A request whose answer the workspace waits for.
 enum Pending {
     Run,
-    /// What the person told a run, shown once the run has it.
+    /// What the person told a run, which waits in the session's
+    /// conversation as this item until the run has it.
     Steer {
-        run: i64,
-        text: String,
-        images: Vec<Picture>,
+        session: String,
+        item: ItemId,
     },
     /// The history of a session, for its view.
     History(String),
@@ -948,10 +948,17 @@ impl Workspace {
 
         match self.view(&current, cx).run {
             Some(run) => {
+                // It shows at once, waiting, until the run has it.
+                let (item, change) = self
+                    .view(&current, cx)
+                    .conversation
+                    .wait(text.clone(), images);
+
+                self.show(&current, change, cx);
+
                 let pending = Pending::Steer {
-                    run,
-                    text: text.clone(),
-                    images,
+                    session: current.clone(),
+                    item,
                 };
                 let params = SteerParams {
                     run,
@@ -959,7 +966,13 @@ impl Workspace {
                     images: sent,
                 };
 
-                self.request(protocol::METHOD_STEER, params, pending);
+                if self
+                    .request(protocol::METHOD_STEER, params, pending)
+                    .is_none()
+                {
+                    self.unheard(&current, item, "The host is gone", window, cx);
+                }
+
                 self.set_hint(cx);
             }
 
@@ -1281,9 +1294,7 @@ impl Workspace {
         match pending {
             Pending::Run => self.run_ended(id, answer, window, cx),
 
-            Pending::Steer { run, text, images } => {
-                self.steered(run, text, images, answer, window, cx)
-            }
+            Pending::Steer { session, item } => self.steered(session, item, answer, window, cx),
 
             Pending::History(session) => {
                 let told: HistoryResult = match answer {
@@ -1472,9 +1483,8 @@ impl Workspace {
 
     fn steered(
         &mut self,
-        run: i64,
-        text: String,
-        images: Vec<Picture>,
+        session: String,
+        item: ItemId,
         answer: Result<Json, RpcError>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1484,42 +1494,55 @@ impl Workspace {
 
         match answer {
             Ok(_) => {
-                let key = self
-                    .runs
-                    .get(&run)
-                    .cloned()
-                    .unwrap_or_else(|| self.current.clone());
-                let change = self
-                    .view(&key, cx)
-                    .conversation
-                    .push(Kind::Steer(text, images));
+                let Some(view) = self.views.get_mut(&session) else {
+                    return;
+                };
 
-                self.show(&key, change, cx);
+                let change = view.conversation.heard(item);
+
+                self.show(&session, change, cx);
             }
 
-            // The run never reads it, so it goes back to be sent again,
-            // unless something new is being typed.
-            Err(error) if self.composer.read(cx).value().is_empty() && self.pasted.is_empty() => {
-                self.fill(text, window, cx);
-                self.pasted = images;
+            Err(error) => self.unheard(&session, item, &error.message, window, cx),
+        }
+    }
 
-                let said = format!("{}; Enter sends it as a new task", error.message);
+    /// Takes away what the person told a run that will never read it, and
+    /// gives it back to be sent again, unless something new is being typed.
+    fn unheard(
+        &mut self,
+        session: &str,
+        item: ItemId,
+        why: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((text, images, change)) = self
+            .views
+            .get_mut(session)
+            .and_then(|view| view.conversation.withdraw(item))
+        else {
+            return;
+        };
 
-                self.toast(Toast::new(said).danger(), cx);
-            }
+        self.show(session, change, cx);
 
-            Err(error) => {
-                let said = format!("{}: {text}", error.message);
+        if self.composer.read(cx).value().is_empty() && self.pasted.is_empty() {
+            self.fill(text, window, cx);
+            self.pasted = images;
 
-                self.toast(Toast::new(said).danger(), cx);
-            }
+            let said = format!("{why}; Enter sends it as a new task");
+
+            self.toast(Toast::new(said).danger(), cx);
+        } else {
+            self.toast(Toast::new(format!("{why}: {text}")).danger(), cx);
         }
     }
 
     /// Puts what a session held before the window opened it in its view.
     fn told(&mut self, session: &str, events: &[Event], cx: &mut Context<Self>) {
         let view = self.view(session, cx);
-        let before = view.conversation.items().len();
+        let before = view.conversation.rows();
         let count = view.conversation.earlier(events);
 
         for event in events
@@ -1727,6 +1750,14 @@ impl Workspace {
             *key = session.to_string();
         }
 
+        for pending in self.pending.values_mut() {
+            if let Pending::Steer { session: key, .. } = pending
+                && key.is_empty()
+            {
+                *key = session.to_string();
+            }
+        }
+
         // While no session is shown, the new one the host has current is
         // another.
         if self.current.is_empty() && !self.blank {
@@ -1756,7 +1787,16 @@ impl Workspace {
             format!("The host ended: {said}")
         });
 
-        self.pending.clear();
+        // What still waited for a run never reaches it.
+        let waiting: Vec<(String, ItemId)> = self
+            .pending
+            .drain()
+            .filter_map(|(_, pending)| match pending {
+                Pending::Steer { session, item } => Some((session, item)),
+                _ => None,
+            })
+            .collect();
+
         self.start_again_focus.focus(window, cx);
 
         let runs: Vec<String> = self.runs.drain().map(|(_, key)| key).collect();
@@ -1773,6 +1813,22 @@ impl Workspace {
                 .end(protocol::RUN_FAILED, "The host ended before the run did.");
 
             self.show(&key, change, cx);
+        }
+
+        for (session, item) in waiting {
+            let Some((text, _, change)) = self
+                .views
+                .get_mut(&session)
+                .and_then(|view| view.conversation.withdraw(item))
+            else {
+                continue;
+            };
+
+            self.show(&session, change, cx);
+            self.toast(
+                Toast::new(format!("The host ended before the run read: {text}")).danger(),
+                cx,
+            );
         }
 
         self.set_hint(cx);
@@ -1806,12 +1862,21 @@ impl Workspace {
         match change {
             Change::Nothing => {}
 
-            Change::Appended => view.scroller.update(cx, |state, cx| {
-                state.append(1, cx);
+            Change::Inserted(index) => view.scroller.update(cx, |state, cx| {
+                state.insert(index, 1, cx);
             }),
 
             Change::Updated(index) => view.scroller.update(cx, |state, cx| {
                 state.remeasure(index, cx);
+            }),
+
+            Change::Removed(index) => view.scroller.update(cx, |state, cx| {
+                state.remove(index, cx);
+            }),
+
+            Change::Moved { from, to } => view.scroller.update(cx, |state, cx| {
+                state.remove(from, cx);
+                state.insert(to, 1, cx);
             }),
         }
     }
@@ -1819,7 +1884,7 @@ impl Workspace {
     fn steers_waiting(&self) -> usize {
         self.pending
             .values()
-            .filter(|pending| matches!(pending, Pending::Steer { run, .. } if self.runs.get(run) == Some(&self.current)))
+            .filter(|pending| matches!(pending, Pending::Steer { session, .. } if *session == self.current))
             .count()
     }
 

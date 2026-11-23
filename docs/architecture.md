@@ -103,8 +103,12 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   session's menu and the buttons of the panels, which the toolbar shows,
   the composer, with how full the model's context is and the tokens
   spent, a panel beside them, and the command palette. How a run stands
-  shows in what the composer says it is for, and anything else the
-  workspace has to say, such as what went wrong, in a notification. The
+  shows in what the composer says it is for, and in Working, which turns
+  over it while a run works in the session shown; what the person tells a
+  run shows at once at the end of the conversation, faded, until the host
+  answers that the run has it, and then stays where the run read it.
+  Anything else the workspace has to say, such as what went wrong, shows
+  in a notification. The
   shell lists the sessions and opens them through it. Once the session
   shown is deleted, the workspace shows none, though the host makes a new
   one current, until the person opens a session or starts a new one. It
@@ -160,8 +164,9 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 - **conversation**, **usage**, **history**, **commands**, **choices**,
   **outline**, and **order** hold what the workspace shows and asks, built
   from the protocol's messages alone and tested without GPUI: the items of a
-  conversation, the tokens spent, what was entered in the composer and what
-  the host recalls, the functions of the host and the provider as commands,
+  conversation, and what waits for a run after them, the tokens spent, what
+  was entered in the composer and what the host recalls, the functions of
+  the host and the provider as commands,
   by what they act on, with their parameters, the values those take, and
   their answers, the changes the picker asks of the host, the shape of
   what the host says in words, and the order a project's sessions are

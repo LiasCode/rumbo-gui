@@ -2,8 +2,9 @@
 //! writes a task, or, while a run works, something for it to read, with the
 //! images pasted into it; with the model the session uses, which opens the
 //! picker, how full the model's context is and the tokens spent, and the
-//! buttons that send and cancel. Once the host is gone, it says why, and
-//! starts it again.
+//! buttons that send and cancel. Over it, Working turns while a run works
+//! in the session shown. Once the host is gone, it says why, and starts it
+//! again.
 
 use gpui::{
     AnyElement, ClipboardEntry, Context, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -11,7 +12,7 @@ use gpui::{
 };
 use ui::input_actions::{MoveDown, MoveUp, Paste};
 use ui::{
-    ActiveTheme as _, Button, IconName, Sizable as _, Textarea, Toast, Tooltip, h_flex,
+    ActiveTheme as _, Button, IconName, Sizable as _, Spinner, Textarea, Toast, Tooltip, h_flex,
     rems_from_px, v_flex,
 };
 
@@ -161,7 +162,19 @@ impl Workspace {
                     .child(send),
             );
 
-        column.child(card).into_any_element()
+        // While a run works in the session shown, it says so over the card.
+        let status = working.then(|| {
+            h_flex()
+                .px_2()
+                .gap_1p5()
+                .items_center()
+                .text_xs()
+                .text_color(muted)
+                .child(Spinner::new().xsmall())
+                .child("Working")
+        });
+
+        column.children(status).child(card).into_any_element()
     }
 
     /// The images pasted into the composer, each with a button that takes it
