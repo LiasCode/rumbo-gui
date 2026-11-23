@@ -466,7 +466,7 @@ impl Shell {
 
         let status = match &project.state {
             State::Working { .. } => None,
-            State::Starting => Some(Spinner::new().xsmall().into_any_element()),
+            State::Starting { .. } => Some(Spinner::new().xsmall().into_any_element()),
             State::Failed(_) => Some(
                 Icon::new(IconName::CircleAlert)
                     .xsmall()
@@ -482,7 +482,18 @@ impl Shell {
 
         let workspace = match &project.state {
             State::Working { workspace, .. } => workspace.read(cx),
-            State::Starting => return project_matches.then_some(item),
+
+            // The list stays as it was while the host starts.
+            State::Starting { .. } => {
+                let sessions = self.starting_rows(project, query, project_matches, shown, cx);
+
+                if !project_matches && sessions.is_empty() {
+                    return None;
+                }
+
+                return Some(item.active(shown && sessions.is_empty()).children(sessions));
+            }
+
             State::Failed(_) => return project_matches.then(|| item.active(shown)),
         };
 
@@ -606,6 +617,77 @@ impl Shell {
             item.active(shown && !blank && sessions.is_empty())
                 .children(sessions),
         )
+    }
+
+    /// The sessions of a project whose host starts, as rumbo lists them,
+    /// with the one the window asked for marked, and the rows the host's
+    /// list will have, so nothing in the list moves once it has spoken.
+    /// They open nothing until then.
+    fn starting_rows(
+        &self,
+        project: &Project,
+        query: &str,
+        project_matches: bool,
+        shown: bool,
+        cx: &Context<Self>,
+    ) -> Vec<SidebarItem> {
+        let id = project.id;
+        let listed = self.held_sessions(project, cx);
+        let opened = match &project.opening {
+            Some(Opening::Session(session)) => session.as_str(),
+            _ => "",
+        };
+        let mut rows = Vec::new();
+
+        if shown && query.is_empty() && matches!(project.opening, Some(Opening::New)) {
+            rows.push(
+                SidebarItem::new(("new-session-row", id), "New session")
+                    .icon(IconName::SquarePen)
+                    .active(true),
+            );
+        }
+
+        rows.extend(
+            listed
+                .iter()
+                .filter(|session| project_matches || matches(query, session))
+                .map(|session| {
+                    SidebarItem::new(
+                        row_id(&format!("session-{id}"), &session.value),
+                        session_name(session),
+                    )
+                    .active(shown && session.value == opened)
+                }),
+        );
+
+        rows
+    }
+
+    /// The sessions rumbo lists for a project, which show until its host
+    /// lists them.
+    fn held_sessions<'a>(&'a self, project: &Project, cx: &'a App) -> &'a [Value] {
+        let catalog = self.catalog.as_ref().map(|catalog| catalog.read(cx));
+
+        match (self.root_of(project, cx), catalog) {
+            (Some(root), Some(catalog)) => catalog.sessions(&root),
+            _ => &[],
+        }
+    }
+
+    /// The name of the session a project's host starts in, while it starts,
+    /// when the window asked for one.
+    pub(super) fn opening_name(&self, project: &Project, cx: &App) -> Option<String> {
+        match project.opening.as_ref()? {
+            Opening::Latest => None,
+            Opening::New => Some("New session".into()),
+            Opening::Session(session) => Some(
+                self.held_sessions(project, cx)
+                    .iter()
+                    .find(|listed| listed.value == *session)
+                    .map(session_name)
+                    .unwrap_or_else(|| session.clone()),
+            ),
+        }
     }
 }
 

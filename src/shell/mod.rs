@@ -10,7 +10,7 @@ mod toolbar;
 
 use std::path::{Path, PathBuf};
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Div, ElementId, Entity, FocusHandle,
@@ -74,6 +74,11 @@ const KEEP_WIDTH_AFTER: Duration = Duration::from_millis(400);
 
 /// The least the work beside the sidebar is given.
 const MAIN_MIN_WIDTH: f32 = 320.;
+
+/// How long a project's host can take to start before the window says it
+/// starts. A quicker start goes from the click to the session without a
+/// screen that would only flash.
+const QUIET_START: Duration = Duration::from_millis(400);
 
 /// The keys of the window, which work wherever the keyboard is in it.
 pub fn bind_keys(cx: &mut App) {
@@ -189,11 +194,16 @@ struct Project {
     dir: PathBuf,
     /// What its host is started with again.
     flags: Vec<String>,
+    /// What the window asked its host to start in, which the sidebar marks
+    /// while it starts; none when the command line or rumbo chose it.
+    opening: Option<Opening>,
     state: State,
 }
 
 enum State {
-    Starting,
+    Starting {
+        since: Instant,
+    },
     Failed(String),
     Working {
         workspace: Entity<Workspace>,
@@ -331,7 +341,7 @@ impl Shell {
                 shell.environment = environment;
 
                 match named {
-                    Some(dir) => shell.open_project(dir, flags, window, cx),
+                    Some(dir) => shell.open_project(dir, flags, None, window, cx),
                     None => shell.action_focus.focus(window, cx),
                 }
             }
@@ -424,20 +434,22 @@ impl Shell {
             .map(|config| config.serve_flags.clone())
             .unwrap_or_default();
 
-        let flags = match opening {
+        let flags = match &opening {
             Opening::Latest => config::continuing_latest(&base),
-            Opening::Session(session) => config::continuing(&base, &session),
+            Opening::Session(session) => config::continuing(&base, session),
             Opening::New => config::continuing(&base, ""),
         };
 
-        self.open_project(PathBuf::from(root), flags, window, cx);
+        self.open_project(PathBuf::from(root), flags, Some(opening), window, cx);
     }
 
-    /// Shows a project, or opens it and starts its host when it is not open.
+    /// Shows a project, or opens it and starts its host when it is not open,
+    /// in what the window asked for, when it did.
     fn open_project(
         &mut self,
         dir: PathBuf,
         flags: Vec<String>,
+        opening: Option<Opening>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -455,7 +467,10 @@ impl Shell {
             id,
             dir,
             flags,
-            state: State::Starting,
+            opening,
+            state: State::Starting {
+                since: Instant::now(),
+            },
         });
 
         self.selected = Some(id);
@@ -476,8 +491,18 @@ impl Shell {
         let environment = self.environment.clone();
 
         if let Some(project) = self.project_mut(id) {
-            project.state = State::Starting;
+            project.state = State::Starting {
+                since: Instant::now(),
+            };
         }
+
+        // Says that it starts once it has taken a while.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(QUIET_START).await;
+
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
 
         cx.spawn_in(window, async move |this, cx| {
             let started = cx
@@ -508,7 +533,10 @@ impl Shell {
             id,
             dir: PathBuf::new(),
             flags: Vec::new(),
-            state: State::Starting,
+            opening: None,
+            state: State::Starting {
+                since: Instant::now(),
+            },
         });
         self.selected = Some(id);
         self.record(cx);
@@ -624,6 +652,10 @@ impl Shell {
             WorkspaceEvent::StartAgain { session } => {
                 if let Some(project) = self.project_mut(id) {
                     project.flags = config::continuing(&project.flags, session);
+                    project.opening = Some(match session.is_empty() {
+                        true => Opening::New,
+                        false => Opening::Session(session.clone()),
+                    });
                 }
 
                 self.start(id, window, cx);
@@ -1079,7 +1111,7 @@ impl Shell {
                         .map(|config| config::continuing(&config.serve_flags, ""))
                         .unwrap_or_default();
 
-                    this.open_project(paths[0].clone(), flags, window, cx);
+                    this.open_project(paths[0].clone(), flags, Some(Opening::New), window, cx);
                 }
 
                 Ok(Err(error)) => {
@@ -1376,12 +1408,18 @@ impl Shell {
         match &project.state {
             State::Working { workspace, .. } => workspace.clone().into_any_element(),
 
-            State::Starting if project.dir.as_os_str().is_empty() => centered()
+            State::Starting { .. } if project.dir.as_os_str().is_empty() => centered()
                 .child(Spinner::new().large())
                 .child(muted("Waiting for rumbo", cx))
                 .into_any_element(),
 
-            State::Starting => centered()
+            // Nothing yet, so a quick start does not flash a screen that is
+            // gone at once.
+            State::Starting { since } if since.elapsed() < QUIET_START => {
+                div().size_full().into_any_element()
+            }
+
+            State::Starting { .. } => centered()
                 .child(Spinner::new().large())
                 .child(muted(
                     &format!("Starting rumbo in {}", project.dir.display()),

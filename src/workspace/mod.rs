@@ -1823,12 +1823,25 @@ impl Workspace {
             .count()
     }
 
+    /// Whether the history of a session was asked for and has not come.
+    fn reading_history(&self, session: &str) -> bool {
+        self.pending
+            .values()
+            .any(|pending| matches!(pending, Pending::History(asked) if asked == session))
+    }
+
     fn render_conversation(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(view) = self.views.get(&self.current) else {
             return div().flex_1().into_any_element();
         };
 
         if view.conversation.items().is_empty() {
+            // A session whose history is on its way is no new one: it shows
+            // nothing until its history comes.
+            if self.reading_history(&self.current) {
+                return div().flex_1().into_any_element();
+            }
+
             return self.render_start(cx);
         }
 

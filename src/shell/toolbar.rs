@@ -148,6 +148,7 @@ impl Shell {
 
         let session = match &project.state {
             State::Working { workspace, .. } => workspace.read(cx).shown_name(),
+            State::Starting { .. } => self.opening_name(project, cx),
             _ => None,
         };
 

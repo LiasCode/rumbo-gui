@@ -109,7 +109,11 @@ confirmation, a parameter whose values depend on the one before (the models
 that uses what it chose, a provider's function that asks a secret, given
 up with Escape, a second project opened beside the first with each one's
 sessions under it, every project in one list, those rumbo holds with
-their sessions and one opened from it, a project pinned and one unpinned,
+their sessions and one opened from it, a session of one, chosen in the
+sidebar, which goes from the press to the session without the list folding
+or the screen of a new session flashing, filmed with `grim` in a loop and
+with a host slowed to start and to answer `history`, a project pinned and
+one unpinned,
 kept for the next start, a search that finds a session under a project
 folded, a new session started from the sidebar, which opens the home
 folder whatever project is shown, and Ctrl-N, which starts one in the
