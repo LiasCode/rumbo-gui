@@ -33,7 +33,7 @@ use ui::{
 
 use crate::commands::{self, Command};
 use crate::connection::Incoming;
-use crate::conversation::{Change, Conversation, ItemId, Kind, Source};
+use crate::conversation::{Change, Conversation, ItemId, Kind, RowGroup, Source};
 use crate::history::History;
 use crate::host::Host;
 use crate::picture::{self, Picture};
@@ -181,6 +181,8 @@ struct OpenForm {
 /// What the window keeps of one session.
 struct SessionView {
     conversation: Conversation,
+    groups: Vec<RowGroup>,
+    open_groups: HashSet<ItemId>,
     scroller: Entity<MessageListState>,
     spent: Spent,
     /// The run of this window working in the session, by the id of its run
@@ -198,11 +200,47 @@ impl SessionView {
 
         SessionView {
             conversation: Conversation::default(),
+            groups: Vec::new(),
+            open_groups: HashSet::new(),
             scroller,
             spent: Spent::default(),
             run: None,
             expanded: HashSet::new(),
             _scrolling: scrolling,
+        }
+    }
+
+    fn visible_index(&self, item_index: usize) -> Option<usize> {
+        self.groups
+            .partition_point(|group| group.start <= item_index)
+            .checked_sub(1)
+    }
+
+    /// Updates only the changed range of the virtual list, keeping unchanged
+    /// rows and their scroll position even if their item indices shifted.
+    fn sync_groups(&mut self, cx: &mut Context<Workspace>) {
+        let next = self.conversation.groups();
+        let prefix = self
+            .groups
+            .iter()
+            .zip(&next)
+            .take_while(|(old, new)| old.same_items(new))
+            .count();
+        let suffix = self.groups[prefix..]
+            .iter()
+            .rev()
+            .zip(next[prefix..].iter().rev())
+            .take_while(|(old, new)| old.same_items(new))
+            .count();
+        let old_end = self.groups.len() - suffix;
+        let new_end = next.len() - suffix;
+
+        self.groups = next;
+
+        if prefix != old_end || prefix != new_end {
+            self.scroller.update(cx, |state, cx| {
+                state.replace(prefix..old_end, new_end - prefix, cx)
+            });
         }
     }
 }
@@ -1542,8 +1580,7 @@ impl Workspace {
     /// Puts what a session held before the window opened it in its view.
     fn told(&mut self, session: &str, events: &[Event], cx: &mut Context<Self>) {
         let view = self.view(session, cx);
-        let before = view.conversation.rows();
-        let count = view.conversation.earlier(events);
+        view.conversation.earlier(events);
 
         for event in events
             .iter()
@@ -1552,16 +1589,7 @@ impl Workspace {
             view.spent.turn(event);
         }
 
-        let total = before + count;
-
-        view.scroller.update(cx, |state, cx| {
-            // An empty view starts at its end, where the latest work is.
-            if before == 0 {
-                state.reset(total, cx);
-            } else {
-                state.prepend(count, cx);
-            }
-        });
+        view.sync_groups(cx);
     }
 
     fn call_answered(
@@ -1834,11 +1862,17 @@ impl Workspace {
         self.set_hint(cx);
     }
 
-    fn toggle(&mut self, key: &str, id: ItemId, cx: &mut Context<Self>) {
+    fn toggle(&mut self, key: &str, id: ItemId, group: bool, cx: &mut Context<Self>) {
         let view = self.view(key, cx);
 
-        if !view.expanded.remove(&id) {
-            view.expanded.insert(id);
+        let expanded = if group {
+            &mut view.open_groups
+        } else {
+            &mut view.expanded
+        };
+
+        if !expanded.remove(&id) {
+            expanded.insert(id);
         }
 
         if let Some(index) = view
@@ -1855,29 +1889,21 @@ impl Workspace {
 
     /// Tells a session's scroller what changed, so it measures only that row.
     fn show(&mut self, key: &str, change: Change, cx: &mut Context<Self>) {
-        let Some(view) = self.views.get(key) else {
+        let Some(view) = self.views.get_mut(key) else {
             return;
         };
 
         match change {
             Change::Nothing => {}
 
-            Change::Inserted(index) => view.scroller.update(cx, |state, cx| {
-                state.insert(index, 1, cx);
-            }),
+            Change::Updated(index) => {
+                if let Some(row) = view.visible_index(index) {
+                    view.scroller
+                        .update(cx, |state, cx| state.remeasure(row, cx));
+                }
+            }
 
-            Change::Updated(index) => view.scroller.update(cx, |state, cx| {
-                state.remeasure(index, cx);
-            }),
-
-            Change::Removed(index) => view.scroller.update(cx, |state, cx| {
-                state.remove(index, cx);
-            }),
-
-            Change::Moved { from, to } => view.scroller.update(cx, |state, cx| {
-                state.remove(from, cx);
-                state.insert(to, 1, cx);
-            }),
+            Change::Inserted(_) | Change::Removed(_) | Change::Moved { .. } => view.sync_groups(cx),
         }
     }
 

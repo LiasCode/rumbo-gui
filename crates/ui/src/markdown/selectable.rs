@@ -7,11 +7,11 @@ use std::ops::Range;
 
 use gpui::Styled as _;
 use gpui::{
-    App, ClipboardItem, CursorStyle, DispatchPhase, ElementId, FocusHandle, FontStyle, FontWeight,
-    HighlightStyle, HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, RenderOnce,
-    SharedString, StrikethroughStyle, StyledText, TextLayout, UnderlineStyle, Window, canvas, div,
-    px, rgb,
+    App, ClipboardItem, CursorStyle, DispatchPhase, Div, ElementId, Entity, FocusHandle, FontStyle,
+    FontWeight, HighlightStyle, HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
+    RenderOnce, SharedString, StrikethroughStyle, StyledText, TextLayout, UnderlineStyle, Window,
+    canvas, div, px, rgb,
 };
 
 use super::blocks::{Marks, segments, word_at};
@@ -29,10 +29,11 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 /// What is chosen of the words, from where the press went down to where
 /// the pointer is, and whether the button is still down.
-struct Selection {
+pub(super) struct Selection {
     anchor: usize,
     head: usize,
     held: bool,
+    origin: usize,
     /// The link the button went down on, followed if it comes up there
     /// having chosen nothing.
     pressed: Option<SharedString>,
@@ -40,6 +41,57 @@ struct Selection {
 }
 
 impl Selection {
+    pub(super) fn new(cx: &mut App) -> Self {
+        Self {
+            anchor: 0,
+            head: 0,
+            held: false,
+            origin: 0,
+            pressed: None,
+            focus: cx.focus_handle().tab_stop(false),
+        }
+    }
+
+    pub(super) fn controls(
+        container: gpui::Stateful<Div>,
+        state: Entity<Self>,
+        text: SharedString,
+        cx: &App,
+    ) -> gpui::Stateful<Div> {
+        let focus = state.read(cx).focus.clone();
+        let copy = state.clone();
+        let all = state.clone();
+        let len = text.len();
+
+        container
+            .key_context(CONTEXT)
+            .track_focus(&focus)
+            .on_mouse_down_out(move |event, _, cx| {
+                if event.button == MouseButton::Left && state.read(cx).range().is_some() {
+                    state.update(cx, |selection, cx| {
+                        selection.head = selection.anchor;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_action(move |_: &Copy, _, cx| {
+                let chosen = copy.read(cx).range().and_then(|range| text.get(range));
+
+                if let Some(chosen) = chosen {
+                    cx.write_to_clipboard(ClipboardItem::new_string(chosen.to_string()));
+                } else {
+                    cx.propagate();
+                }
+            })
+            .on_action(move |_: &SelectAll, _, cx| {
+                all.update(cx, |selection, cx| {
+                    selection.anchor = 0;
+                    selection.head = len;
+                    cx.notify();
+                });
+            })
+    }
+
     fn range(&self) -> Option<Range<usize>> {
         let range = self.anchor.min(self.head)..self.anchor.max(self.head);
 
@@ -53,6 +105,7 @@ pub(crate) struct SelectableText {
     text: SharedString,
     spans: Vec<(Range<usize>, Marks)>,
     links: Vec<(Range<usize>, SharedString)>,
+    document: Option<(Entity<Selection>, usize)>,
 }
 
 impl SelectableText {
@@ -62,7 +115,13 @@ impl SelectableText {
             text: text.into(),
             spans: Vec::new(),
             links: Vec::new(),
+            document: None,
         }
+    }
+
+    pub(super) fn in_document(mut self, state: Entity<Selection>, offset: usize) -> Self {
+        self.document = Some((state, offset));
+        self
     }
 
     /// The runs that are marked, in order and apart from each other, and
@@ -172,22 +231,28 @@ fn link_at(
 
 impl RenderOnce for SelectableText {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(self.id.clone(), cx, |_, cx| Selection {
-            anchor: 0,
-            head: 0,
-            held: false,
-            pressed: None,
-            focus: cx.focus_handle().tab_stop(false),
+        let shared = self.document.is_some();
+        let (state, offset) = self.document.unwrap_or_else(|| {
+            (
+                window.use_keyed_state(self.id.clone(), cx, |_, cx| Selection::new(cx)),
+                0,
+            )
         });
 
         let selection = state.read(cx);
-        let chosen = selection.range();
-        let focus = selection.focus.clone();
         let held = selection.held;
-
+        let colors = cx.theme().colors;
         let theme = cx.theme();
-        let colors = theme.colors;
         let len = self.text.len();
+        let chosen = selection.range().and_then(|range| {
+            let start = range.start.max(offset);
+            let end = range.end.min(offset + len);
+
+            (start < end).then(|| {
+                self.text.floor_char_boundary(start - offset)
+                    ..self.text.ceil_char_boundary(end - offset)
+            })
+        });
 
         let highlights = segments(len, &self.spans, chosen.clone())
             .into_iter()
@@ -206,31 +271,9 @@ impl RenderOnce for SelectableText {
             .with_font_family_overrides(code);
         let layout = text.layout().clone();
 
-        let copied = self.text.clone();
-        let copy = {
-            let state = state.clone();
-
-            move |_: &Copy, _: &mut Window, cx: &mut App| match state.read(cx).range() {
-                Some(range) => {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied[range].to_string()))
-                }
-                None => cx.propagate(),
-            }
-        };
-        let select_all = {
-            let state = state.clone();
-
-            move |_: &SelectAll, _: &mut Window, cx: &mut App| {
-                state.update(cx, |selection, cx| {
-                    selection.anchor = 0;
-                    selection.head = len;
-                    cx.notify();
-                });
-            }
-        };
-
         let links = self.links;
-        let words = self.text;
+        let words = self.text.clone();
+        let input = state.clone();
 
         let listen = canvas(
             |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
@@ -251,7 +294,7 @@ impl RenderOnce for SelectableText {
                 }
 
                 let on_text = hitbox.clone();
-                let pressed = state.clone();
+                let pressed = input.clone();
                 let pressed_layout = layout.clone();
                 let pressed_links = links.clone();
 
@@ -260,21 +303,7 @@ impl RenderOnce for SelectableText {
                         return;
                     }
 
-                    // A press anywhere else lets what is chosen go.
-                    if !on_text.is_hovered(window) {
-                        if phase == DispatchPhase::Capture {
-                            pressed.update(cx, |selection, cx| {
-                                if selection.range().is_some() {
-                                    selection.head = selection.anchor;
-                                    cx.notify();
-                                }
-                            });
-                        }
-
-                        return;
-                    }
-
-                    if phase != DispatchPhase::Bubble {
+                    if phase != DispatchPhase::Bubble || !on_text.is_hovered(window) {
                         return;
                     }
 
@@ -283,23 +312,24 @@ impl RenderOnce for SelectableText {
 
                     pressed.update(cx, |selection, cx| {
                         match event.click_count {
-                            1 if event.modifiers.shift => selection.head = index,
+                            1 if event.modifiers.shift => selection.head = offset + index,
                             1 => {
-                                selection.anchor = index;
-                                selection.head = index;
+                                selection.anchor = offset + index;
+                                selection.head = offset + index;
                             }
                             2 => {
                                 let word = word_at(&words, index);
 
-                                selection.anchor = word.start;
-                                selection.head = word.end;
+                                selection.anchor = offset + word.start;
+                                selection.head = offset + word.end;
                             }
                             _ => {
-                                selection.anchor = 0;
-                                selection.head = words.len();
+                                selection.anchor = offset;
+                                selection.head = offset + words.len();
                             }
                         }
 
+                        selection.origin = offset;
                         selection.held = event.click_count == 1;
                         selection.pressed = link.filter(|_| event.click_count == 1);
                         selection.focus.focus(window, cx);
@@ -309,7 +339,7 @@ impl RenderOnce for SelectableText {
                     cx.stop_propagation();
                 });
 
-                let moved = state.clone();
+                let moved = input.clone();
                 let moved_layout = layout.clone();
                 let hovered = hitbox.clone();
                 let hovered_links = links.clone();
@@ -342,7 +372,11 @@ impl RenderOnce for SelectableText {
                         return;
                     }
 
-                    let index = index_at(&moved_layout, event.position);
+                    if shared && !hovered.is_hovered(window) {
+                        return;
+                    }
+
+                    let index = offset + index_at(&moved_layout, event.position);
 
                     moved.update(cx, |selection, cx| {
                         if selection.head != index {
@@ -352,7 +386,7 @@ impl RenderOnce for SelectableText {
                     });
                 });
 
-                let released = state.clone();
+                let released = input.clone();
                 let released_layout = layout.clone();
                 let released_links = links.clone();
 
@@ -360,6 +394,7 @@ impl RenderOnce for SelectableText {
                     if phase != DispatchPhase::Capture
                         || event.button != MouseButton::Left
                         || !released.read(cx).held
+                        || released.read(cx).origin != offset
                     {
                         return;
                     }
@@ -385,15 +420,13 @@ impl RenderOnce for SelectableText {
         .absolute()
         .inset_0();
 
-        div()
-            .id(self.id)
-            .key_context(CONTEXT)
-            .track_focus(&focus)
-            .relative()
-            .on_action(copy)
-            .on_action(select_all)
-            .child(text)
-            .child(listen)
+        let container = div().id(self.id).relative().child(text).child(listen);
+
+        if shared {
+            container
+        } else {
+            Selection::controls(container, state, self.text, cx)
+        }
     }
 }
 

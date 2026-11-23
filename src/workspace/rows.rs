@@ -15,7 +15,7 @@ use ui::{
 };
 
 use super::Workspace;
-use crate::conversation::{Item, Kind, Line, Source, Tool};
+use crate::conversation::{Item, Kind, Line, RowGroup, Source, Tool};
 use crate::picture::Picture;
 use crate::protocol;
 
@@ -43,7 +43,11 @@ pub(super) fn render_row(
         return div().into_any_element();
     };
 
-    let Some((item, waiting)) = view.conversation.row(index) else {
+    let Some(group) = view.groups.get(index) else {
+        return div().into_any_element();
+    };
+
+    let Some((item, waiting)) = view.conversation.row(group.start) else {
         return div().into_any_element();
     };
 
@@ -101,12 +105,9 @@ pub(super) fn render_row(
                 .into_any_element()
         }
 
-        Kind::Tool(tool) => {
-            let open = view.expanded.contains(&item.id);
-
-            row.child(render_tool(workspace.clone(), key, item, tool, open, cx))
-                .into_any_element()
-        }
+        Kind::Tool(_) => row
+            .child(render_tools(workspace, key, view, group, cx))
+            .into_any_element(),
 
         Kind::Context(sections) => row
             .child(note(
@@ -341,6 +342,89 @@ fn said_by_person(
     })
 }
 
+/// A compact heading for the calls the agent made without speaking in between.
+fn render_tools(
+    workspace: &WeakEntity<Workspace>,
+    key: &str,
+    view: &super::SessionView,
+    group: &RowGroup,
+    cx: &App,
+) -> impl IntoElement {
+    let items = &view.conversation.items()[group.start..group.start + group.len];
+    let tools = items.iter().filter_map(|item| match &item.kind {
+        Kind::Tool(tool) => Some((item, tool)),
+        _ => None,
+    });
+    let mut names = tools.clone().map(|(_, tool)| tool.name.as_str());
+    let first = names.next().unwrap_or_default();
+    let activity = if names.all(|name| name == first) {
+        match first {
+            "read" => "Read files",
+            "write" => "Write files",
+            "edit" => "Edit files",
+            "bash" => "Run commands",
+            _ => "Tool activity",
+        }
+    } else {
+        "Tool activity"
+    };
+
+    let count = if group.len == 1 {
+        "1 call".to_string()
+    } else {
+        format!("{} calls", group.len)
+    };
+    let working = tools.clone().any(|(_, tool)| tool.is_open());
+    let failed = tools.clone().filter(|(_, tool)| tool.failed).count();
+    let colors = cx.theme().colors;
+    let id = group.first;
+    let open = view.open_groups.contains(&id);
+    let target = workspace.clone();
+    let session = key.to_string();
+    let heading = Button::new(("tool-group", id))
+        .ghost()
+        .small()
+        .icon(if open {
+            IconName::ChevronDown
+        } else {
+            IconName::ChevronRight
+        })
+        .label(format!("{activity} · {count}"))
+        .on_click(move |_, _, cx| {
+            let _ = target.update(cx, |this, cx| this.toggle(&session, id, true, cx));
+        });
+
+    v_flex()
+        .gap_1()
+        .child(
+            h_flex()
+                .gap_2()
+                .items_center()
+                .child(heading)
+                .when(working, |row| row.child(Spinner::new().xsmall()))
+                .when(failed > 0, |row| {
+                    row.child(
+                        div()
+                            .text_xs()
+                            .text_color(colors.danger)
+                            .child(format!("{failed} failed")),
+                    )
+                }),
+        )
+        .when(open, |group| {
+            group.child(v_flex().pl_3().gap_1().children(tools.map(|(item, tool)| {
+                render_tool(
+                    workspace.clone(),
+                    key,
+                    item,
+                    tool,
+                    view.expanded.contains(&item.id),
+                    cx,
+                )
+            })))
+        })
+}
+
 /// The icon a tool is shown with, by what it does.
 fn tool_icon(name: &str) -> IconName {
     match name {
@@ -395,7 +479,7 @@ fn render_tool(
         .cursor_pointer()
         .hover(move |style| style.bg(hovered))
         .on_click(move |_, _, cx| {
-            let _ = workspace.update(cx, |this, cx| this.toggle(&key, id, cx));
+            let _ = workspace.update(cx, |this, cx| this.toggle(&key, id, false, cx));
         })
         .child(Icon::new(tool_icon(&tool.name)).small().color(muted))
         .child(

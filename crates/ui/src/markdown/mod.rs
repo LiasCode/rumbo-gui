@@ -1,9 +1,7 @@
 //! Markdown as a model writes it, drawn: paragraphs and headings, lists
 //! and tasks, code colored by its syntax, formulas in TeX, Mermaid
-//! diagrams, images, quotes, rules, and tables. Each block's words can be
-//! selected and copied on their own; a selection does not run from one
-//! block into the next, nor through a paragraph that holds a formula,
-//! whose words are laid out one by one around it.
+//! diagrams, images, quotes, rules, and tables. Selectable text shares one
+//! selection across the reply. Rendered formulas and images are not text.
 //!
 //! An image of the web shows only once the person asks for it, since an
 //! image a model names could carry what it read to whoever serves it; a
@@ -40,7 +38,7 @@ use crate::size::{self, Sizable as _, rems_from_px};
 use crate::theme::{ActiveTheme as _, ThemeMode};
 use blocks::{Align, Block, Inline, Marks};
 use image::Source;
-use selectable::SelectableText;
+use selectable::{SelectableText, Selection};
 
 pub(crate) use selectable::bind_keys;
 
@@ -187,6 +185,8 @@ fn reason(error: &ImageCacheError) -> SharedString {
 struct Drawer<'a> {
     id: &'a ElementId,
     parsed: Entity<Parsed>,
+    selection: Entity<Selection>,
+    selectable: String,
     base: Option<&'a PathBuf>,
     window: &'a mut Window,
     cx: &'a mut App,
@@ -273,6 +273,18 @@ impl Drawer<'_> {
         })
     }
 
+    fn selectable(&mut self, path: &str, text: &str) -> SelectableText {
+        if !self.selectable.is_empty() {
+            self.selectable.push_str("\n\n");
+        }
+
+        let offset = self.selectable.len();
+
+        self.selectable.push_str(text);
+        SelectableText::new(self.id(path), text.to_string())
+            .in_document(self.selection.clone(), offset)
+    }
+
     /// A block's words: as words that can be selected, or laid out one by
     /// one around the formulas among them.
     fn words(&mut self, path: &str, words: &Inline, size: Rems) -> AnyElement {
@@ -286,7 +298,7 @@ impl Drawer<'_> {
             .map(|(range, url)| (range.clone(), SharedString::from(url.clone())))
             .collect();
 
-        SelectableText::new(self.id(path), words.text.clone())
+        self.selectable(path, &words.text)
             .marked(words.spans.clone(), links)
             .into_any_element()
     }
@@ -474,7 +486,7 @@ impl Drawer<'_> {
             })
             .unwrap_or_default();
 
-        let words = SelectableText::new(self.id(path), code.to_string()).marked(spans, Vec::new());
+        let words = self.selectable(path, code).marked(spans, Vec::new());
 
         self.scrolled(
             path,
@@ -836,14 +848,21 @@ impl RenderOnce for Markdown {
             parsed.blocks.clone()
         });
 
+        let selection = window.use_keyed_state(child_id(&self.id, "selection"), cx, |_, cx| {
+            Selection::new(cx)
+        });
+
         let mut drawer = Drawer {
             id: &self.id,
             parsed: parsed.clone(),
+            selection: selection.clone(),
+            selectable: String::new(),
             base: self.base.as_ref(),
             window,
             cx,
         };
         let children = drawer.blocks("block", &blocks);
+        let selectable = SharedString::from(drawer.selectable);
 
         // What this frame did not draw is let go.
         parsed.update(cx, |parsed, _| {
@@ -878,7 +897,7 @@ impl RenderOnce for Markdown {
             .child(measure);
 
         markdown.style().refine(&self.style);
-        markdown
+        Selection::controls(markdown.id(self.id), selection, selectable, cx)
     }
 }
 
@@ -904,6 +923,34 @@ mod tests {
     impl Render for Text {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             div().w(px(500.)).child(Markdown::new("text", self.0))
+        }
+    }
+
+    #[gpui::test]
+    fn copies_selection_across_paragraphs_in_both_directions(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            crate::theme::init(cx);
+            super::bind_keys(cx);
+        });
+
+        let (_, cx) = cx.add_window_view(|_, _| Text("First **paragraph**.\n\nSecond paragraph."));
+        let first = gpui::point(px(1.), px(10.));
+        let second = gpui::point(px(200.), px(42.));
+        let none = Modifiers::none();
+
+        for (from, to) in [(first, second), (second, first)] {
+            cx.simulate_mouse_move(from, None, none);
+            cx.simulate_mouse_down(from, gpui::MouseButton::Left, none);
+            cx.simulate_mouse_move(to, gpui::MouseButton::Left, none);
+            cx.simulate_mouse_up(to, gpui::MouseButton::Left, none);
+            cx.simulate_keystrokes("ctrl-c");
+
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("First paragraph.\n\nSecond paragraph.")
+            );
         }
     }
 

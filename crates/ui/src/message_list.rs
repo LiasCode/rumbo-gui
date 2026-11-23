@@ -83,6 +83,12 @@ impl MessageListState {
         }
     }
 
+    /// Replaces a range of rows without moving the scroll position of rows outside it.
+    pub fn replace(&mut self, rows: std::ops::Range<usize>, count: usize, cx: &mut Context<Self>) {
+        self.list.splice(rows, count);
+        cx.notify();
+    }
+
     /// The row at `index` changed, and is measured again.
     pub fn remeasure(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.list.item_count() {

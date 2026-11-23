@@ -105,6 +105,20 @@ pub enum Change {
     },
 }
 
+/// A visible row: one item, or a group of consecutive tool calls.
+#[derive(Debug, Clone, Copy)]
+pub struct RowGroup {
+    pub first: ItemId,
+    pub start: usize,
+    pub len: usize,
+}
+
+impl RowGroup {
+    pub fn same_items(&self, other: &Self) -> bool {
+        self.first == other.first && self.len == other.len
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Conversation {
     items: Vec<Item>,
@@ -134,6 +148,30 @@ impl Conversation {
                 .get(index - self.items.len())
                 .map(|item| (item, true)),
         }
+    }
+
+    /// Groups calls without changing the transcript used by history and export.
+    pub fn groups(&self) -> Vec<RowGroup> {
+        let mut groups: Vec<RowGroup> = Vec::new();
+        let mut previous_tool = false;
+
+        for (index, item) in self.items.iter().chain(&self.waiting).enumerate() {
+            let tool = matches!(item.kind, Kind::Tool(_));
+
+            if tool && previous_tool {
+                groups.last_mut().expect("the preceding tool has a row").len += 1;
+            } else {
+                groups.push(RowGroup {
+                    first: item.id,
+                    start: index,
+                    len: 1,
+                });
+            }
+
+            previous_tool = tool;
+        }
+
+        groups
     }
 
     pub fn push(&mut self, kind: Kind) -> Change {
@@ -510,6 +548,25 @@ mod tests {
                 Kind::Reply("Again".into()),
             ]
         );
+    }
+
+    #[test]
+    fn groups_only_adjacent_tools_without_changing_the_transcript() {
+        let mut conversation = Conversation::default();
+        let tool = event(json!({"type": "tool_started", "name": "read"}));
+
+        conversation.apply(&tool);
+        conversation.apply(&tool);
+        conversation.apply(&event(json!({"type": "text", "text": "Found it"})));
+        conversation.apply(&tool);
+        conversation.wait("Keep going".into(), vec![]);
+
+        let groups = conversation.groups();
+        let positions: Vec<_> = groups.iter().map(|row| (row.start, row.len)).collect();
+
+        assert_eq!(positions, [(0, 2), (2, 1), (3, 1), (4, 1)]);
+        assert_eq!(conversation.items().len(), 4);
+        assert_eq!(groups[0].first, conversation.items()[0].id);
     }
 
     #[test]

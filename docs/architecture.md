@@ -128,6 +128,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   it called, answering the questions asked for it and refusing any other.
   What the window asks of the host for itself, as the settings do, goes
   through the workspace too, with what to do with the answer.
+  Consecutive tool calls share a collapsible conversation row. Grouping is
+  a view of the transcript, so history and export still keep each call.
 - **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
   what changed in the project's folder, read with **git** (`src/git.rs`)
   on a background thread, or the session's details. rumbo keeps the
@@ -194,10 +196,10 @@ toasts over all of them. A window's dialogs and toasts come from the one
 `Dialogs` and `Toasts` its view keeps and hands to what opens them: the
 shell keeps the window's, and gives them to each workspace. A reply's
 Markdown is read into blocks apart from drawing them
-(`crates/ui/src/markdown/blocks.rs`), and the words of each block can be
-selected and copied on their own; a selection does not run from one block
-into the next. What a reply holds besides words is drawn by libraries made
-for it: code colored by syntect, with the grammars bat ships; formulas in
+(`crates/ui/src/markdown/blocks.rs`). Selectable text shares one selection
+across the reply, so it can be copied across paragraphs and code blocks.
+What a reply holds besides words is drawn by libraries made for it: code
+colored by syntect, with the grammars bat ships; formulas in
 TeX typeset by latex-rust; and Mermaid diagrams laid out by merman, the Rust
 Mermaid that Zed uses. Formulas and diagrams come as SVG, which GPUI draws
 as images, and so does an image a reply names: from the text itself, from a
