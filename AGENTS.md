@@ -132,7 +132,10 @@ Ctrl-N, a project's sessions after a run in an older one and after the
 project is opened, which stay in their order, a message changed and one asked
 again in a branch, the changes panel on a folder with edits and on one
 outside Git, its history of the branch checked out and of another chosen,
-local and remote, the files panel with a folder opened inside another and a
+local and remote, and of every branch as a graph, with a merge, a tag, a
+remote's branch, and the stash, against what `git log --oneline --decorate
+--all --graph` prints, and with more commits loaded, the files panel with
+a folder opened inside another and a
 file opened in the editor, from its button and with Ctrl-Alt-E while the
 toolbar has the keyboard, its files and folders marked as Git sees them
 (modified, added, untracked, deleted, and in a repository nested in the

@@ -4,6 +4,7 @@
 //! rumbo keeps the conversation, not the files, so this is how a person
 //! sees what a run did to them. The window only reads.
 
+pub mod graph;
 pub mod history;
 
 use std::collections::HashMap;
@@ -375,6 +376,87 @@ mod tests {
 
         assert_eq!(empty.current.as_deref(), Some("main"));
         assert!(empty.commits.is_empty());
+        assert!(!empty.more);
+    }
+
+    #[test]
+    fn draws_every_branch_as_git_log_graph_does() {
+        let scratch = Scratch::new("graph");
+
+        scratch.git(&["init", "-q", "-b", "main"]);
+        scratch.git(&["commit", "--allow-empty", "-qm", "First commit"]);
+        scratch.git(&["checkout", "-q", "-b", "topic"]);
+        scratch.git(&["commit", "--allow-empty", "-qm", "Topic commit"]);
+        scratch.git(&["checkout", "-q", "main"]);
+        scratch.git(&["commit", "--allow-empty", "-qm", "Main commit"]);
+        scratch.git(&["merge", "-q", "--no-ff", "-m", "Merge topic", "topic"]);
+        scratch.git(&["tag", "v1"]);
+        scratch.git(&["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+
+        let all = graph::read(&scratch.0, 10).unwrap();
+        let commits: Vec<&graph::Commit> = all
+            .lines
+            .iter()
+            .filter_map(|line| line.commit.as_ref())
+            .collect();
+
+        assert!(!all.more);
+        assert_eq!(
+            commits
+                .iter()
+                .map(|commit| commit.subject.as_str())
+                .collect::<Vec<_>>(),
+            ["Merge topic", "Topic commit", "Main commit", "First commit"]
+        );
+        assert_eq!(
+            commits[0].labels,
+            [
+                graph::Label::Head(Some("main".into())),
+                graph::Label::Tag("v1".into()),
+            ]
+        );
+        assert_eq!(commits[1].labels, [graph::Label::Branch("topic".into())]);
+        assert_eq!(
+            commits[2].labels,
+            [graph::Label::Remote("origin/main".into())]
+        );
+
+        // The merge's two lines are joined by lines with no commit, which
+        // Git colors as it does in a terminal.
+        assert!(all.lines.len() > commits.len());
+        assert!(
+            all.lines
+                .iter()
+                .flat_map(|line| &line.graph)
+                .any(|stroke| stroke.color.is_some())
+        );
+
+        let first = graph::read(&scratch.0, 1).unwrap();
+
+        assert!(first.more);
+        assert_eq!(
+            first
+                .lines
+                .iter()
+                .filter(|line| line.commit.is_some())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn draws_no_graph_without_commits_or_outside_git() {
+        let scratch = Scratch::new("empty-graph");
+
+        let problem = graph::read(&scratch.0, 1).unwrap_err();
+
+        assert!(problem.contains("not in a Git repository"), "{problem}");
+
+        scratch.git(&["init", "-q", "-b", "main"]);
+
+        let empty = graph::read(&scratch.0, 1).unwrap();
+
+        assert!(empty.lines.is_empty());
         assert!(!empty.more);
     }
 

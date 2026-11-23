@@ -136,7 +136,10 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   the project's Git repository, its files, or the session's details. The
   Git panel shows what changed in the folder, or the commits of a branch:
   the one checked out, or another, local or remote, chosen without
-  checking it out or asking a remote. It reads with **git** (`src/git.rs`)
+  checking it out or asking a remote; or, with its Graph switch, those of
+  every branch at once, drawn as `git log --oneline --decorate --all
+  --graph` draws them, in the colors Git gives the graph's lines
+  (`src/git/graph.rs`). It reads with **git** (`src/git.rs`)
   on a background thread. rumbo keeps the conversation and not the files,
   so Git is how a person reviews what a run did to them; the window only
   reads.
