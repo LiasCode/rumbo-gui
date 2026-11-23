@@ -5,9 +5,9 @@
 //! file; and how runs ended.
 
 use gpui::{
-    AnyElement, App, ClipboardItem, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity, div,
-    prelude::FluentBuilder as _,
+    AnyElement, App, ClipboardItem, Div, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity,
+    div, prelude::FluentBuilder as _,
 };
 use ui::{
     ActiveTheme as _, Button, Icon, IconName, Markdown, Message, Sizable as _, Spinner, h_flex,
@@ -351,7 +351,7 @@ fn render_tools(
     cx: &App,
 ) -> impl IntoElement {
     let items = &view.conversation.items()[group.start..group.start + group.len];
-    let tools = items.iter().filter_map(|item| match &item.kind {
+    let mut tools = items.iter().filter_map(|item| match &item.kind {
         Kind::Tool(tool) => Some((item, tool)),
         _ => None,
     });
@@ -411,17 +411,25 @@ fn render_tools(
                     )
                 }),
         )
-        .when(open, |group| {
-            group.child(v_flex().pl_3().gap_1().children(tools.map(|(item, tool)| {
-                render_tool(
-                    workspace.clone(),
-                    key,
-                    item,
-                    tool,
-                    view.expanded.contains(&item.id),
-                    cx,
-                )
-            })))
+        .map(|group| {
+            if open {
+                group.child(v_flex().pl_3().gap_1().children(tools.map(|(item, tool)| {
+                    render_tool(
+                        workspace.clone(),
+                        key,
+                        item,
+                        tool,
+                        view.expanded.contains(&item.id),
+                        cx,
+                    )
+                })))
+            } else {
+                group.children(tools.next_back().map(|(_, tool)| {
+                    tool_line(tool, cx)
+                        .pl_5()
+                        .text_color(colors.muted_foreground)
+                }))
+            }
         })
 }
 
@@ -434,6 +442,45 @@ fn tool_icon(name: &str) -> IconName {
         "edit" => IconName::FilePen,
         _ => IconName::Wrench,
     }
+}
+
+fn tool_line(tool: &Tool, cx: &App) -> Div {
+    let colors = cx.theme().colors;
+    let muted = colors.muted_foreground;
+
+    let status: AnyElement = match (&tool.result, tool.failed) {
+        (None, false) => Spinner::new().xsmall().into_any_element(),
+        (None, true) => Icon::new(IconName::CircleX)
+            .xsmall()
+            .color(muted)
+            .into_any_element(),
+        (Some(_), false) => Icon::new(IconName::Check)
+            .xsmall()
+            .color(colors.success)
+            .into_any_element(),
+        (Some(_), true) => Icon::new(IconName::CircleX)
+            .xsmall()
+            .color(colors.danger)
+            .into_any_element(),
+    };
+
+    h_flex()
+        .w_full()
+        .min_w_0()
+        .gap_2()
+        .px_2()
+        .py_1()
+        .child(Icon::new(tool_icon(&tool.name)).small().color(muted))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_sm()
+                .font_family(cx.theme().mono_family.clone())
+                .child(tool.summary.clone()),
+        )
+        .child(status)
 }
 
 /// A tool call as one line that opens to show what the model sent and what
@@ -452,46 +499,14 @@ fn render_tool(
     let muted = colors.muted_foreground;
     let hovered = colors.muted;
 
-    let status: AnyElement = match (&tool.result, tool.failed) {
-        (None, false) => Spinner::new().xsmall().into_any_element(),
-        (None, true) => Icon::new(IconName::CircleX)
-            .xsmall()
-            .color(muted)
-            .into_any_element(),
-        (Some(_), false) => Icon::new(IconName::Check)
-            .xsmall()
-            .color(colors.success)
-            .into_any_element(),
-        (Some(_), true) => Icon::new(IconName::CircleX)
-            .xsmall()
-            .color(colors.danger)
-            .into_any_element(),
-    };
-
-    let header = h_flex()
+    let header = tool_line(tool, cx)
         .id(("tool", id))
-        .w_full()
-        .min_w_0()
-        .gap_2()
-        .px_2()
-        .py_1()
         .rounded_md()
         .cursor_pointer()
         .hover(move |style| style.bg(hovered))
         .on_click(move |_, _, cx| {
             let _ = workspace.update(cx, |this, cx| this.toggle(&key, id, false, cx));
         })
-        .child(Icon::new(tool_icon(&tool.name)).small().color(muted))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_sm()
-                .font_family(cx.theme().mono_family.clone())
-                .child(tool.summary.clone()),
-        )
-        .child(status)
         .child(
             Icon::new(if open {
                 IconName::ChevronDown
