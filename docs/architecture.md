@@ -8,9 +8,9 @@ report. The only thing it keeps itself is the person's preferences for
 the window, such as the theme, the sidebar, the size it is drawn at, and
 the editor; it keeps no state it would need to restore, since the host
 records everything as it happens. Besides the hosts, it reads two things
-itself: what Git says changed in a project's folder, and the images a
-reply names; an image of the web it fetches only once the person asks for
-it.
+itself: what Git says of a project's changes and the history of its
+branches, and the images a reply names; an image of the web it fetches
+only once the person asks for it.
 
 The contract between them is rumbo's Agent Frontend Protocol
 (`docs/frontend-protocol.md` in rumbo), and what a front end must, can, and
@@ -133,10 +133,13 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   The message marks beside the conversation navigate the person's messages
   in that same view, without leaving the session or changing its transcript.
 - **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
-  what changed in the project's folder, read with **git** (`src/git.rs`)
-  on a background thread, the project's files, or the session's details.
-  rumbo keeps the conversation and not the files, so Git is how a person
-  reviews what a run did to them; the window only reads.
+  the project's Git repository, its files, or the session's details. The
+  Git panel shows what changed in the folder, or the commits of a branch:
+  the one checked out, or another, local or remote, chosen without
+  checking it out or asking a remote. It reads with **git** (`src/git.rs`)
+  on a background thread. rumbo keeps the conversation and not the files,
+  so Git is how a person reviews what a run did to them; the window only
+  reads.
 - **files** (`src/workspace/files.rs`) lists the project's folder beside
   the conversation, each folder read by **file_tree** (`src/file_tree.rs`)
   on a background thread as it is opened, without following links; a file

@@ -4,6 +4,8 @@
 //! rumbo keeps the conversation, not the files, so this is how a person
 //! sees what a run did to them. The window only reads.
 
+pub mod history;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,14 +28,7 @@ pub struct Changes {
 /// Reads what changed in `dir`. It fails, saying why, when the folder is
 /// not in a Git repository or Git cannot be run.
 pub fn changes(dir: &Path) -> Result<Changes, String> {
-    git(dir, &["rev-parse", "--is-inside-work-tree"]).map_err(|problem| {
-        match problem.contains("not a git repository") {
-            true => {
-                "This folder is not in a Git repository, so its changes cannot be shown.".into()
-            }
-            false => problem,
-        }
-    })?;
+    repository(dir, "changes")?;
 
     // Fails on a detached head, which has no branch to name.
     let branch = git(dir, &["symbolic-ref", "--short", "-q", "HEAD"])
@@ -79,6 +74,19 @@ pub fn changes(dir: &Path) -> Result<Changes, String> {
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     run(dir, args, &[0])
+}
+
+/// Fails, saying why plainly, when `dir` is not in a Git repository, so
+/// what Git would show of it cannot be.
+fn repository(dir: &Path, shown: &str) -> Result<(), String> {
+    git(dir, &["rev-parse", "--is-inside-work-tree"])
+        .map(|_| ())
+        .map_err(|problem| match problem.contains("not a git repository") {
+            true => {
+                format!("This folder is not in a Git repository, so its {shown} cannot be shown.")
+            }
+            false => problem,
+        })
 }
 
 /// What Git says of a file, from the least to the most a person should
@@ -299,6 +307,75 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn reads_branch_history_without_switching_branches() {
+        let scratch = Scratch::new("branch-history");
+
+        scratch.git(&["init", "-q", "-b", "main"]);
+        scratch.git(&["commit", "--allow-empty", "-qm", "First commit"]);
+        scratch.git(&["branch", "topic"]);
+        scratch.git(&["commit", "--allow-empty", "-qm", "Main commit"]);
+        scratch.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        scratch.git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ]);
+
+        let current = history::read(&scratch.0, history::HEAD, 1).unwrap();
+
+        assert_eq!(current.current.as_deref(), Some("main"));
+        assert_eq!(current.commits.len(), 1);
+        assert_eq!(current.commits[0].subject, "Main commit");
+        assert_eq!(current.commits[0].author, "t");
+        assert!(current.more);
+        assert_eq!(
+            current
+                .branches
+                .iter()
+                .map(|branch| (branch.name.as_str(), branch.remote))
+                .collect::<Vec<_>>(),
+            [("main", false), ("topic", false), ("origin/main", true)]
+        );
+
+        let topic = history::read(&scratch.0, "refs/heads/topic", 1).unwrap();
+
+        assert_eq!(topic.selected, "refs/heads/topic");
+        assert_eq!(topic.current.as_deref(), Some("main"));
+        assert_eq!(topic.commits[0].subject, "First commit");
+        assert!(!topic.more);
+
+        let missing = history::read(&scratch.0, "refs/heads/gone", 2).unwrap();
+
+        assert_eq!(missing.selected, history::HEAD);
+        assert_eq!(missing.commits.len(), 2);
+        assert!(!missing.more);
+
+        scratch.git(&["checkout", "--detach", "-q", "topic"]);
+
+        let detached = history::read(&scratch.0, history::HEAD, 1).unwrap();
+
+        assert_eq!(detached.current, None);
+        assert_eq!(detached.commits[0].subject, "First commit");
+    }
+
+    #[test]
+    fn tells_a_folder_outside_git_from_a_repository_without_commits() {
+        let scratch = Scratch::new("empty-history");
+
+        let problem = history::read(&scratch.0, history::HEAD, 1).unwrap_err();
+
+        assert!(problem.contains("not in a Git repository"), "{problem}");
+
+        scratch.git(&["init", "-q", "-b", "main"]);
+
+        let empty = history::read(&scratch.0, history::HEAD, 1).unwrap();
+
+        assert_eq!(empty.current.as_deref(), Some("main"));
+        assert!(empty.commits.is_empty());
+        assert!(!empty.more);
     }
 
     #[test]

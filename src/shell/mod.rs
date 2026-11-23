@@ -137,7 +137,7 @@ pub const SHORTCUTS: [(&str, &str); 19] = [
         "Go back or forward between what was shown",
     ),
     ("Ctrl-B", "Show or put away the sidebar"),
-    ("Ctrl-Shift-G", "Changes in the project's folder"),
+    ("Ctrl-Shift-G", "The project's Git changes and history"),
     ("Ctrl-Alt-E", "Explore the project files"),
     ("Ctrl-Alt-B", "The session's details"),
     ("Ctrl-Shift-E", "Open the project in the editor"),

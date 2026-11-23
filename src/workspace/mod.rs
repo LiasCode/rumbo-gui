@@ -12,6 +12,7 @@ mod composer;
 mod details;
 mod files;
 mod form;
+mod git_history;
 mod header;
 mod marks;
 mod palette;
@@ -68,7 +69,8 @@ pub fn bind_keys(cx: &mut App) {
 /// What shows beside the conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
-    /// What changed in the project's folder, as Git sees it.
+    /// The project's Git repository: what changed in its folder, and the
+    /// history of its branches.
     Changes,
     /// The project folder and its files.
     Files,
@@ -388,7 +390,7 @@ impl Workspace {
             unseen: HashSet::new(),
             revisiting: false,
             panel: None,
-            panels: panel::Panels::new(cx),
+            panels: panel::Panels::new(window, cx),
             files: files::Files::default(),
             width: crate::preferences::Width::default().pixels(),
             focus_handle: cx.focus_handle(),

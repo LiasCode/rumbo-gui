@@ -50,7 +50,7 @@ impl Workspace {
                 "panel-changes",
                 IconName::GitBranch,
                 Panel::Changes,
-                "Changes in the project's folder (Ctrl-Shift-G)",
+                "The project's Git changes and history (Ctrl-Shift-G)",
             ))
             .child(panel(
                 "panel-files",

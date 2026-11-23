@@ -1,6 +1,7 @@
-//! What shows beside the conversation: the changes in the project's folder,
-//! as Git sees them, which is how a person reviews what a run did to the
-//! files; the project file explorer; or the session's details.
+//! What shows beside the conversation: the project's Git repository, with
+//! the changes in its folder, which is how a person reviews what a run did
+//! to the files, and the history of its branches; the project file
+//! explorer; or the session's details.
 
 use std::path::PathBuf;
 
@@ -10,9 +11,10 @@ use gpui::{
 };
 use ui::{
     ActiveTheme as _, Button, Diff, DiffFile, DiffState, Icon, IconName, Sizable as _, Spinner,
-    h_flex, rems_from_px, v_flex,
+    Tab, Tabs, h_flex, rems_from_px, v_flex,
 };
 
+use super::git_history::GitHistory;
 use super::{Panel, Workspace, WorkspaceEvent};
 use crate::git;
 use crate::protocol;
@@ -40,6 +42,9 @@ struct Changed {
 
 pub(super) struct Panels {
     changes: Option<Read<Changed>>,
+    /// The Git panel shows the history of its branches, not the changes.
+    showing_history: bool,
+    pub(super) history: GitHistory,
     /// Every changed file, in one list.
     diff: Entity<DiffState>,
     /// Tells a reading of the changes from one asked for after it.
@@ -53,9 +58,11 @@ pub(super) struct Panels {
 }
 
 impl Panels {
-    pub(super) fn new(cx: &mut Context<Workspace>) -> Self {
+    pub(super) fn new(window: &mut Window, cx: &mut Context<Workspace>) -> Self {
         Panels {
             changes: None,
+            showing_history: false,
+            history: GitHistory::new(window, cx),
             diff: cx.new(|cx| DiffState::new(Vec::<DiffFile>::new(), cx)),
             reading: 0,
             status: None,
@@ -83,6 +90,7 @@ impl Workspace {
     /// session may have changed it.
     pub(super) fn refresh_panel(&mut self, cx: &mut Context<Self>) {
         match self.panel {
+            Some(Panel::Changes) if self.panels.showing_history => self.read_git_history(cx),
             Some(Panel::Changes) => self.read_changes(cx),
             Some(Panel::Files) => self.refresh_files(cx),
             Some(Panel::Details) => self.read_details(cx),
@@ -189,7 +197,10 @@ impl Workspace {
 
     pub(super) fn render_panel(&self, panel: Panel, cx: &mut Context<Self>) -> AnyElement {
         let (title, icon, body) = match panel {
-            Panel::Changes => ("Changes", IconName::GitBranch, self.render_changes(cx)),
+            Panel::Changes if self.panels.showing_history => {
+                ("Git", IconName::GitBranch, self.render_git_history(cx))
+            }
+            Panel::Changes => ("Git", IconName::GitBranch, self.render_changes(cx)),
             Panel::Files => ("Files", IconName::FolderOpen, self.render_files(cx)),
             Panel::Details => ("Session", IconName::Info, self.render_details(cx)),
         };
@@ -242,10 +253,32 @@ impl Workspace {
                             .child(Icon::new(icon).small())
                             .child(title),
                     )
+                    .when(panel == Panel::Changes, |header| {
+                        header.child(self.render_git_tabs(cx))
+                    })
                     .child(actions),
             )
             .child(div().flex_1().min_h_0().child(body))
             .into_any_element()
+    }
+
+    /// The Git panel's tabs: the changes in the folder, or the history of
+    /// its branches.
+    fn render_git_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Tabs::new("git-tabs")
+            .child(Tab::new("Changes"))
+            .child(Tab::new("History"))
+            .selected(usize::from(self.panels.showing_history))
+            .xsmall()
+            .on_change(cx.listener(|this, tab, _, cx| {
+                let showing_history = *tab == 1;
+
+                if this.panels.showing_history != showing_history {
+                    this.panels.showing_history = showing_history;
+                    this.refresh_panel(cx);
+                    cx.notify();
+                }
+            }))
     }
 
     fn render_changes(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -356,7 +389,7 @@ impl Workspace {
     }
 }
 
-fn centered() -> Div {
+pub(super) fn centered() -> Div {
     v_flex()
         .size_full()
         .p_6()
