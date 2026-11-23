@@ -44,8 +44,10 @@ conversation, and rumbo's settings, without a terminal.
 - **Change your mind.** Edit a message, or ask it again, in a branch that
   starts before it; the session you were in stays as it was.
 - **Review the work.** The Changes panel shows the diff of the project's
-  folder; the Details panel, how full the model's context is, the tokens
-  spent, and the skills the model is told of.
+  folder; the Files panel, its folders and files, each marked with what Git
+  says of it and opening in your editor; the Details panel, how full the
+  model's context is, the tokens spent, and the skills the model is told
+  of.
 - **Leave runs working.** Runs go on in other sessions and projects; the
   window tells you when one ends, and marks its session. Turn on Notify
   from the desktop in the settings, and the desktop tells you when one ends
@@ -91,6 +93,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Ctrl-B | Show or put away the sidebar |
 | Ctrl-F | Search the sessions |
 | Ctrl-Shift-G | What changed in the project's folder, as Git sees it |
+| Ctrl-Alt-E | Explore project files |
 | Ctrl-Alt-B | The session's details: its context, tokens, and skills |
 | Ctrl-Shift-E | Open the project in your editor |
 | Ctrl-O | Open a project |

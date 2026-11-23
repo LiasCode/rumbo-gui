@@ -134,9 +134,18 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   in that same view, without leaving the session or changing its transcript.
 - **panel** (`src/workspace/panel.rs`) shows, beside the conversation,
   what changed in the project's folder, read with **git** (`src/git.rs`)
-  on a background thread, or the session's details. rumbo keeps the
-  conversation and not the files, so Git is how a person reviews what a
-  run did to them; the window only reads.
+  on a background thread, the project's files, or the session's details.
+  rumbo keeps the conversation and not the files, so Git is how a person
+  reviews what a run did to them; the window only reads.
+- **files** (`src/workspace/files.rs`) lists the project's folder beside
+  the conversation, each folder read by **file_tree** (`src/file_tree.rs`)
+  on a background thread as it is opened, without following links; a file
+  pressed opens in the editor, and nothing is written. Each file and folder
+  is marked with what **git** says of it: in the project's repository, and
+  in any repository nested in it once its folder is opened, which speaks
+  for its own files. A folder shows the most of what it holds. The marks
+  are read again, with the folders open, when the panel is refreshed and
+  when a run ends.
 - **details** (`src/workspace/details.rs`) draws what the window knows of
   the session shown to be read at a glance: from the host's answers, its
   id and how it stands, its folder and its model; and from its runs'

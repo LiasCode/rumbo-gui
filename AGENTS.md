@@ -46,9 +46,10 @@ must not do. Both live in the rumbo repository.
   catalog's, which only lists every project and its sessions. Nothing reads
   rumbo's files.
 - **The project's files are only read.** The changes panel runs `git` in
-  the project's folder on a background thread and never writes there, and
-  a reply's images are read from the paths it names; the window edits no
-  file of the person's.
+  the project's folder on a background thread and never writes there, the
+  files panel lists its folders on a background thread too, as each is
+  opened, and a reply's images are read from the paths it names; the window
+  edits no file of the person's.
 - **An image of the web shows only once the person asks.** A reply's
   image could carry what the model read to whoever serves it, so nothing
   is fetched until its Show is pressed.
@@ -130,7 +131,12 @@ leaves none shown and none marked, and a new one started from there with
 Ctrl-N, a project's sessions after a run in an older one and after the
 project is opened, which stay in their order, a message changed and one asked
 again in a branch, the changes panel on a folder with edits and on one
-outside Git, a reply with code, formulas
+outside Git, the files panel with a folder opened inside another and a
+file opened in the editor, from its button and with Ctrl-Alt-E while the
+toolbar has the keyboard, its files and folders marked as Git sees them
+(modified, added, untracked, deleted, and in a repository nested in the
+project), and marked again after a refresh and after a run, a reply with
+code, formulas
 among words and on their own, a Mermaid diagram, and images from a file
 and from the web, the details panel (a session with runs and a new one,
 the skills with one left out, and everything rumbo reports opened), a session

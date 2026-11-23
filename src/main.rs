@@ -10,6 +10,7 @@ mod conversation;
 mod editor;
 mod environment;
 mod export;
+mod file_tree;
 mod git;
 mod history;
 mod host;

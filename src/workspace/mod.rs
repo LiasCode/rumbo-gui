@@ -10,6 +10,7 @@
 
 mod composer;
 mod details;
+mod files;
 mod form;
 mod header;
 mod marks;
@@ -69,6 +70,8 @@ pub fn bind_keys(cx: &mut App) {
 pub enum Panel {
     /// What changed in the project's folder, as Git sees it.
     Changes,
+    /// The project folder and its files.
+    Files,
     /// How the session stands, as the host says, and the skills it has.
     Details,
 }
@@ -299,6 +302,7 @@ pub struct Workspace {
     /// What shows beside the conversation, if anything.
     panel: Option<Panel>,
     panels: panel::Panels,
+    files: files::Files,
     /// The widest the conversation and the composer grow, in pixels.
     width: f32,
     focus_handle: FocusHandle,
@@ -385,6 +389,7 @@ impl Workspace {
             revisiting: false,
             panel: None,
             panels: panel::Panels::new(cx),
+            files: files::Files::default(),
             width: crate::preferences::Width::default().pixels(),
             focus_handle: cx.focus_handle(),
             start_again_focus: cx.focus_handle(),

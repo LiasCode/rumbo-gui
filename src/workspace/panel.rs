@@ -1,6 +1,6 @@
 //! What shows beside the conversation: the changes in the project's folder,
 //! as Git sees them, which is how a person reviews what a run did to the
-//! files; or the session's details, which `details` draws.
+//! files; the project file explorer; or the session's details.
 
 use std::path::PathBuf;
 
@@ -69,7 +69,7 @@ impl Panels {
 impl Workspace {
     /// Shows a panel beside the conversation, or puts it away when it is
     /// the one shown.
-    pub(super) fn toggle_panel(&mut self, panel: Panel, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn toggle_panel(&mut self, panel: Panel, _: &mut Window, cx: &mut Context<Self>) {
         self.panel = match self.panel == Some(panel) {
             true => None,
             false => Some(panel),
@@ -84,6 +84,7 @@ impl Workspace {
     pub(super) fn refresh_panel(&mut self, cx: &mut Context<Self>) {
         match self.panel {
             Some(Panel::Changes) => self.read_changes(cx),
+            Some(Panel::Files) => self.refresh_files(cx),
             Some(Panel::Details) => self.read_details(cx),
             None => {}
         }
@@ -188,7 +189,8 @@ impl Workspace {
 
     pub(super) fn render_panel(&self, panel: Panel, cx: &mut Context<Self>) -> AnyElement {
         let (title, icon, body) = match panel {
-            Panel::Changes => ("Changes", IconName::GitCompare, self.render_changes(cx)),
+            Panel::Changes => ("Changes", IconName::GitBranch, self.render_changes(cx)),
+            Panel::Files => ("Files", IconName::FolderOpen, self.render_files(cx)),
             Panel::Details => ("Session", IconName::Info, self.render_details(cx)),
         };
 

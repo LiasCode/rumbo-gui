@@ -30,7 +30,7 @@ use crate::environment::Environment;
 use crate::host::{Descriptors, Host};
 use crate::navigation::Navigation;
 use crate::preferences::{self, Preferences, Theme as Colors};
-use crate::workspace::{Workspace, WorkspaceEvent};
+use crate::workspace::{Panel, Workspace, WorkspaceEvent};
 
 use catalog::Catalog;
 use settings::{SettingsEvent, SettingsView};
@@ -44,6 +44,7 @@ actions!(
         CloseSettings,
         NewSession,
         ToggleSidebar,
+        ToggleFiles,
         OpenInEditor,
         FocusSearch,
         GoBack,
@@ -89,6 +90,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-o", OpenProject, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-n", NewSession, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-b", ToggleSidebar, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-alt-e", ToggleFiles, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-shift-e", OpenInEditor, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-f", FocusSearch, Some(KEY_CONTEXT)),
         KeyBinding::new("alt-left", GoBack, Some(KEY_CONTEXT)),
@@ -116,7 +118,7 @@ pub fn bind_keys(cx: &mut App) {
 
 /// The window's keys, for the person to read: the keys, and what they do.
 /// They are bound in `bind_keys` here and in the workspace's.
-pub const SHORTCUTS: [(&str, &str); 18] = [
+pub const SHORTCUTS: [(&str, &str); 19] = [
     ("Enter", "Send the task, or tell the run in progress"),
     ("Shift-Enter", "Start a new line"),
     ("Up / Down", "Bring back what was asked in the project"),
@@ -136,6 +138,7 @@ pub const SHORTCUTS: [(&str, &str); 18] = [
     ),
     ("Ctrl-B", "Show or put away the sidebar"),
     ("Ctrl-Shift-G", "Changes in the project's folder"),
+    ("Ctrl-Alt-E", "Explore the project files"),
     ("Ctrl-Alt-B", "The session's details"),
     ("Ctrl-Shift-E", "Open the project in the editor"),
     ("Ctrl-O", "Open a project"),
@@ -1333,6 +1336,16 @@ impl Shell {
         self.save_preferences(cx);
     }
 
+    fn toggle_files(&mut self, _: &ToggleFiles, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.is_none()
+            && let Some(workspace) = self.selected_workspace()
+        {
+            workspace.update(cx, |workspace, cx| {
+                workspace.toggle_panel(Panel::Files, window, cx)
+            });
+        }
+    }
+
     /// Opens the project shown in the editor.
     fn open_shown_in_editor(&mut self, _: &OpenInEditor, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.selected {
@@ -1583,6 +1596,7 @@ impl Render for Shell {
                 .on_action(cx.listener(Self::close_settings))
                 .on_action(cx.listener(Self::new_session_shown))
                 .on_action(cx.listener(Self::toggle_sidebar))
+                .on_action(cx.listener(Self::toggle_files))
                 .on_action(cx.listener(Self::open_shown_in_editor))
                 .on_action(cx.listener(Self::focus_search))
                 .on_action(cx.listener(Self::go_back))

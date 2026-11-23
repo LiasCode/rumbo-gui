@@ -32,6 +32,7 @@ enum Entry {
     /// Actions of the workspace.
     NewSession,
     Changes,
+    Files,
     Details,
     Export,
     Editor,
@@ -61,6 +62,7 @@ impl Workspace {
             Entry::NewSession,
             Entry::Picker,
             Entry::Changes,
+            Entry::Files,
             Entry::Details,
             Entry::Export,
             Entry::Editor,
@@ -339,6 +341,7 @@ fn chose_entry(
         Some(Entry::Picker) => this.open_picker(cx),
         Some(Entry::NewSession) => this.new_session(window, cx),
         Some(Entry::Changes) => this.toggle_panel(super::Panel::Changes, window, cx),
+        Some(Entry::Files) => this.toggle_panel(super::Panel::Files, window, cx),
         Some(Entry::Details) => this.toggle_panel(super::Panel::Details, window, cx),
         Some(Entry::Export) => this.export(window, cx),
         Some(Entry::Editor) => cx.emit(WorkspaceEvent::OpenInEditor {
@@ -375,6 +378,11 @@ fn item(entry: &Entry) -> CommandItem {
         Entry::Changes => (
             "Changes".into(),
             "What changed in the project's folder, as Git sees it (Ctrl-Shift-G)".into(),
+        ),
+
+        Entry::Files => (
+            "Files".into(),
+            "Explore the project files (Ctrl-Alt-E)".into(),
         ),
 
         Entry::Details => (

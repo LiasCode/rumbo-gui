@@ -48,13 +48,19 @@ impl Workspace {
             .gap_1()
             .child(panel(
                 "panel-changes",
-                IconName::GitCompare,
+                IconName::GitBranch,
                 Panel::Changes,
                 "Changes in the project's folder (Ctrl-Shift-G)",
             ))
             .child(panel(
+                "panel-files",
+                IconName::FolderOpen,
+                Panel::Files,
+                "Explore project files (Ctrl-Alt-E)",
+            ))
+            .child(panel(
                 "panel-details",
-                IconName::PanelRight,
+                IconName::Info,
                 Panel::Details,
                 "The session's details (Ctrl-Alt-B)",
             ))
