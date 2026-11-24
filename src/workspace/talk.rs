@@ -1,7 +1,9 @@
-//! A provider's function that talks with the person while it works, as a
-//! sign-in does: what it says shows in the conversation, what it asks opens
-//! a dialog, and Escape gives it up. A secret answer is not shown while it
-//! is typed, and is kept nowhere.
+//! A function of a provider or of an extension that talks with the person
+//! while it works, as a sign-in does: what it says shows in the
+//! conversation, what it asks opens a dialog, and Escape gives it up. A
+//! tool the model called can ask too, as one that asks before it runs a
+//! command: its question opens the same dialog, and is over with its run.
+//! A secret answer is not shown while it is typed, and is kept nowhere.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -13,14 +15,17 @@ use serde_json::json;
 use ui::{ActiveTheme as _, Input, InputState, Toast, rems_from_px, v_flex};
 
 use super::Workspace;
+use crate::conversation::Source;
 use crate::protocol::{self, AskParams, CODE_INTERNAL, CODE_INVALID_PARAMS, CancelParams};
 
-/// A function of the provider in progress, called from this window.
+/// A function of the provider or of an extension in progress, called from
+/// this window.
 pub(super) struct Talking {
-    /// The host whose provider it is of, and the id of its invoke request
-    /// there.
+    /// The host it was asked of, and the id of its invoke request there.
     pub(super) host: u64,
     pub(super) invoke: i64,
+    /// Whose it is: the provider's, or an extension's.
+    pub(super) source: Source,
     pub(super) name: String,
 }
 
@@ -50,8 +55,10 @@ impl Workspace {
         self.toast(said, cx);
     }
 
-    /// Asks the person what a function of the provider asks, and answers
-    /// the host with what they typed, or with an error when they give up.
+    /// Asks the person what a function asks, or a tool of a run of this
+    /// window, and answers the host with what they typed, or with an error
+    /// when they give up, which gives the function up too, and leaves the
+    /// tool to decide what no answer means.
     pub(super) fn asked(
         &mut self,
         serial: u64,
@@ -64,27 +71,52 @@ impl Workspace {
             return;
         };
 
-        let Some(talking) = self
+        let function = self
             .talking
             .as_ref()
             .filter(|talking| talking.host == serial && talking.invoke == params.invoke)
-        else {
-            let _ = connection.refuse(
-                id,
-                CODE_INVALID_PARAMS,
-                "this front end is not following that function, so it cannot answer for it",
-            );
+            .map(|talking| talking.name.clone());
 
-            return;
+        // A tool's question names its run, which is one of this window's.
+        let tool = params.invoke == 0 && self.runs.contains_key(&params.run);
+
+        let name = match function {
+            Some(name) => name,
+
+            None if tool => {
+                let session = self
+                    .runs
+                    .get(&params.run)
+                    .filter(|session| **session != self.current || self.blank)
+                    .map(|session| self.title_of(session));
+
+                match session {
+                    Some(title) => format!("{} asks, in “{title}”", params.name),
+                    None => format!("{} asks", params.name),
+                }
+            }
+
+            None => {
+                let _ = connection.refuse(
+                    id,
+                    CODE_INVALID_PARAMS,
+                    "this front end is not following that function or that run, so it cannot answer for it",
+                );
+
+                return;
+            }
         };
 
-        let name = talking.name.clone();
         let secret = params.secret;
         let field = cx.new(|cx| InputState::new(window, cx).masked(secret));
         let workspace = cx.weak_entity();
 
         // The dialog answers once, whichever way it closes.
         let answered = Rc::new(Cell::new(false));
+
+        if tool {
+            self.tool_question = Some((params.run, answered.clone()));
+        }
 
         let answer = {
             let field = field.clone();
@@ -116,7 +148,11 @@ impl Workspace {
                 }
 
                 let _ = connection.refuse(id, CODE_INTERNAL, "the person did not answer");
-                let _ = workspace.update(cx, |this, cx| this.give_up(cx));
+
+                // A run goes on without the answer; a function is given up.
+                if !tool {
+                    let _ = workspace.update(cx, |this, cx| this.give_up(cx));
+                }
 
                 true
             }
@@ -154,7 +190,10 @@ impl Workspace {
                                 ),
                         )
                         .on_ok("Answer", move |window, cx| answer(window, cx))
-                        .on_cancel("Give Up", move |window, cx| decline(window, cx))
+                        .on_cancel(
+                            if tool { "Decline" } else { "Give Up" },
+                            move |window, cx| decline(window, cx),
+                        )
                 },
                 window,
                 cx,

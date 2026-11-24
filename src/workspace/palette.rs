@@ -124,6 +124,24 @@ impl Workspace {
             sections.push(provider);
         }
 
+        // Two extensions can each have a function called the same, so each
+        // has a section of its own.
+        for extension in self.extensions() {
+            let functions: Vec<Entry> = commands::offered(&extension.functions)
+                .map(|function| {
+                    Entry::Function(Command {
+                        source: Source::Extension(extension.name.clone()),
+                        function: function.clone(),
+                    })
+                })
+                .collect();
+
+            if !functions.is_empty() {
+                labels.push(format!("Extension {}", extension.name));
+                sections.push(functions);
+            }
+        }
+
         let groups = labels
             .iter()
             .zip(&sections)
@@ -192,15 +210,15 @@ impl Workspace {
             .enumerate()
             .map(|(index, parameter)| Field {
                 parameter: parameter.clone(),
-                source: command.source,
+                source: command.source.clone(),
                 initial: initial.get(index).cloned().unwrap_or_default(),
                 empty: parameter.optional.then(|| "Leave out".to_string()),
                 heading: None,
             })
             .collect();
 
-        let provider_functions = self.provider_functions().unwrap_or_default();
-        let form = self.open_form(fields, provider_functions, window, cx);
+        let other_functions = self.functions_of(&command.source);
+        let form = self.open_form(fields, other_functions, window, cx);
         let command = Rc::new(command);
         let workspace = cx.weak_entity();
         let dialogs = self.dialogs.clone();
@@ -362,10 +380,7 @@ fn chose_entry(
 /// does below.
 fn item(entry: &Entry) -> CommandItem {
     let (name, description): (String, String) = match entry {
-        Entry::Function(command) => (
-            command.function.name.clone(),
-            command.function.description.clone(),
-        ),
+        Entry::Function(command) => (command.name(), command.function.description.clone()),
 
         Entry::Picker => (
             "model".into(),
@@ -431,4 +446,30 @@ fn item(entry: &Entry) -> CommandItem {
     };
 
     CommandItem::new(name).description(description)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::Function;
+
+    #[test]
+    fn an_extension_command_can_be_found_by_its_extension_name() {
+        let command = Command {
+            source: Source::Extension("linear".into()),
+            function: Function {
+                name: "logout".into(),
+                ..Function::default()
+            },
+        };
+
+        assert_eq!(
+            item(&Entry::Function(command.clone())).name.as_ref(),
+            "linear-logout"
+        );
+        assert_eq!(
+            commands::invoke(&command.source, &command.function.name, None).name,
+            "logout"
+        );
+    }
 }

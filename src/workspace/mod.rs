@@ -23,7 +23,9 @@ mod picker;
 mod rows;
 mod talk;
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter, FocusHandle,
@@ -45,8 +47,7 @@ use crate::host::Host;
 use crate::picture::{self, Picture};
 use crate::protocol::{
     self, CancelParams, DescribeResult, Event, Function, HistoryResult, HostResult, HostState,
-    InvokeParams, ProcessesResult, RecallResult, RpcError, RunParams, RunResult, SteerParams,
-    Value,
+    ProcessesResult, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
 };
 use crate::usage::Spent;
 
@@ -301,6 +302,9 @@ pub struct Workspace {
     forms: u64,
     /// The provider's function in progress, called from this window.
     talking: Option<talk::Talking>,
+    /// The question a tool of a run asks, open in a dialog: the run, and
+    /// whether it was answered.
+    tool_question: Option<(i64, Rc<Cell<bool>>)>,
     history: History,
     /// Why the host of the session shown is gone, once it is.
     ended: Option<String>,
@@ -384,6 +388,7 @@ impl Workspace {
             form: None,
             forms: 0,
             talking: None,
+            tool_question: None,
             history: History::default(),
             ended: None,
             unseen: HashSet::new(),
@@ -722,11 +727,7 @@ impl Workspace {
 
         self.request(
             protocol::METHOD_INVOKE,
-            InvokeParams {
-                name: name.into(),
-                params,
-                target: protocol::TARGET_HOST,
-            },
+            commands::invoke(&Source::Host, name, params),
             Pending::Then(then),
         )
         .is_some()
@@ -884,11 +885,7 @@ impl Workspace {
 
         self.request(
             protocol::METHOD_INVOKE,
-            InvokeParams {
-                name: name.into(),
-                params,
-                target: protocol::TARGET_HOST,
-            },
+            commands::invoke(&Source::Host, name, params),
             Pending::Reply(reply),
         )
         .is_some()
@@ -1109,35 +1106,29 @@ impl Workspace {
         feedback: Feedback,
         cx: &mut Context<Self>,
     ) {
-        let target = match command.source {
-            Source::Host => protocol::TARGET_HOST,
-            Source::Provider => "",
-        };
-
         let pending = Pending::Call {
-            source: command.source,
+            source: command.source.clone(),
             name: command.function.name.clone(),
             feedback,
         };
 
         let called = self.request(
             protocol::METHOD_INVOKE,
-            InvokeParams {
-                name: command.function.name.clone(),
-                params,
-                target,
-            },
+            commands::invoke(&command.source, &command.function.name, params),
             pending,
         );
 
-        // A function of the provider may talk with the person while it
-        // works; it is followed until it answers.
-        if let (Some(invoke), Source::Provider, Some(host)) =
-            (called, command.source, self.here().map(|held| held.serial))
-        {
+        // A function of the provider or of an extension may talk with the
+        // person while it works; it is followed until it answers.
+        if let (Some(invoke), true, Some(host)) = (
+            called,
+            command.source != Source::Host,
+            self.here().map(|held| held.serial),
+        ) {
             self.talking = Some(talk::Talking {
                 host,
                 invoke,
+                source: command.source.clone(),
                 name: command.function.name.clone(),
             });
             self.set_hint(cx);
@@ -1212,18 +1203,9 @@ impl Workspace {
         let wanted = form.update(cx, |form, cx| form.wanted(cx));
 
         for wanted in wanted {
-            let target = match wanted.source {
-                Source::Host => protocol::TARGET_HOST,
-                Source::Provider => "",
-            };
-
             self.request(
                 protocol::METHOD_INVOKE,
-                InvokeParams {
-                    name: wanted.function,
-                    params: wanted.params,
-                    target,
-                },
+                commands::invoke(&wanted.source, &wanted.function, wanted.params),
                 Pending::Listed {
                     form: serial,
                     field: wanted.field,
@@ -1362,18 +1344,19 @@ impl Workspace {
             }
 
             Pending::Describe => {
-                let offered = match answer {
+                let (offered, extensions) = match answer {
                     Ok(result) => {
                         let described: DescribeResult =
                             serde_json::from_value(result).unwrap_or_default();
-                        Ok(described.offers.functions)
+                        (Ok(described.offers.functions), described.extensions)
                     }
 
-                    Err(error) => Err(error.message),
+                    Err(error) => (Err(error.message), Vec::new()),
                 };
 
                 if let Some(held) = self.held_mut(serial) {
                     held.provider_functions = offered;
+                    held.extensions = extensions;
                 }
             }
 
@@ -1412,7 +1395,7 @@ impl Workspace {
                 };
 
                 let listed = answer
-                    .map(|result| commands::listed(source, result))
+                    .map(|result| commands::listed(&source, result))
                     .map_err(|error| error.message);
 
                 open.form.update(cx, |form, cx| {
@@ -1452,12 +1435,20 @@ impl Workspace {
         &mut self,
         id: i64,
         answer: Result<Json, RpcError>,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(key) = self.runs.remove(&id) else {
             return;
         };
+
+        // What a tool of the run asked is over with the run.
+        if let Some((_, answered)) = self.tool_question.take_if(|(run, _)| *run == id)
+            && !answered.replace(true)
+        {
+            self.dialogs
+                .update(cx, |dialogs, cx| dialogs.close(window, cx));
+        }
 
         let (status, error, session) = match answer {
             Ok(result) => {
@@ -1600,17 +1591,16 @@ impl Workspace {
         answer: Result<Json, RpcError>,
         cx: &mut Context<Self>,
     ) {
-        if source == Source::Provider
-            && self
-                .talking
-                .as_ref()
-                .is_some_and(|talking| talking.name == name)
+        if self
+            .talking
+            .as_ref()
+            .is_some_and(|talking| talking.source == source && talking.name == name)
         {
             self.talking = None;
             self.set_hint(cx);
         }
 
-        let (text, failed) = match (answer, source) {
+        let (text, failed) = match (answer, &source) {
             (Err(error), _) => (error.message, true),
 
             (Ok(result), Source::Host) => {
@@ -1621,12 +1611,29 @@ impl Workspace {
                 (commands::host_answer(&result), false)
             }
 
-            (Ok(result), Source::Provider) => (commands::provider_answer(&result), false),
+            (Ok(result), Source::Provider | Source::Extension(_)) => {
+                (commands::provider_answer(&result), false)
+            }
         };
 
         if source == Source::Host {
             self.refresh_sessions(cx);
             cx.emit(WorkspaceEvent::Answered);
+
+            // What the extensions offer may have changed with a function
+            // on them, such as one registered.
+            let on_extensions = self
+                .host_function(&name)
+                .is_some_and(|function| function.group == protocol::GROUP_EXTENSION);
+
+            if on_extensions {
+                self.request_of(
+                    serial,
+                    protocol::METHOD_DESCRIBE,
+                    Json::Null,
+                    Pending::Describe,
+                );
+            }
         }
 
         // With no session shown, there is no conversation to answer in.
@@ -1698,15 +1705,22 @@ impl Workspace {
     }
 
     fn event(&mut self, serial: u64, event: Event, window: &mut Window, cx: &mut Context<Self>) {
-        // What a provider's function says while it works, in the session
-        // it was called from.
+        // What a function of the provider or of an extension says while it
+        // works, in the session it was called from.
         if event.invoke != 0 {
             let Some(session) = self.held(serial).map(|held| held.session.clone()) else {
                 return;
             };
 
+            let source = self
+                .talking
+                .as_ref()
+                .filter(|talking| talking.host == serial && talking.invoke == event.invoke)
+                .map(|talking| talking.source.clone())
+                .unwrap_or(Source::Provider);
+
             let change = self.view(&session, cx).conversation.push(Kind::Log {
-                source: Source::Provider,
+                source,
                 text: event.text,
             });
 

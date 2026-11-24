@@ -60,6 +60,7 @@ pub fn markdown(title: &str, items: &[Item]) -> String {
                 let from = match source {
                     Source::Host => "host",
                     Source::Provider => "provider",
+                    Source::Extension(_) => "extension",
                 };
 
                 out.push_str(&format!("_[{from}] {}_\n", first_line(text)));
@@ -178,6 +179,7 @@ mod tests {
                 summary: "bash ls".into(),
                 args: "command: ls".into(),
                 change: Vec::new(),
+                progress: String::new(),
                 result: Some("a.txt\nb.txt".into()),
                 failed: false,
             })),

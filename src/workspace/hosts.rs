@@ -16,9 +16,10 @@ use super::{Pending, Workspace, WorkspaceEvent};
 use crate::config;
 use crate::connection::Incoming;
 use crate::conversation::ItemId;
+use crate::conversation::Source;
 use crate::environment::Environment;
 use crate::host::Host;
-use crate::protocol::{self, Function, ProcessUsage};
+use crate::protocol::{self, ExtensionOffer, Function, ProcessUsage};
 use crate::rumbos::{Rumbo, Standing};
 use crate::sessions;
 
@@ -51,6 +52,8 @@ pub(super) struct Attached {
     pub(super) model: String,
     /// What the provider can be asked, or why that is not known.
     pub(super) provider_functions: Result<Vec<Function>, String>,
+    /// The extensions that offer functions, as the host said last.
+    pub(super) extensions: Vec<ExtensionOffer>,
     /// The host's processes, as it said them last, or why it did not; none
     /// until it was asked and answered.
     pub(super) processes: Option<Result<Vec<ProcessUsage>, String>>,
@@ -93,6 +96,7 @@ impl Workspace {
             provider: initialize.provider,
             model: initialize.model,
             provider_functions: Ok(Vec::new()),
+            extensions: Vec::new(),
             processes: None,
             left: Instant::now(),
             _reading: reading,
@@ -194,6 +198,29 @@ impl Workspace {
         self.here()
             .map(|held| held.provider_functions.clone())
             .unwrap_or_else(|| Ok(Vec::new()))
+    }
+
+    /// The extensions of the session shown that offer functions.
+    pub(super) fn extensions(&self) -> &[ExtensionOffer] {
+        self.here()
+            .map(|held| held.extensions.as_slice())
+            .unwrap_or_default()
+    }
+
+    /// The functions of whoever a command is of, which list the values of
+    /// its parameters: the provider's, or those of the extension named.
+    /// The host's are the same for every session, and kept apart.
+    pub(super) fn functions_of(&self, source: &Source) -> Vec<Function> {
+        match source {
+            Source::Host => Vec::new(),
+            Source::Provider => self.provider_functions().unwrap_or_default(),
+            Source::Extension(name) => self
+                .extensions()
+                .iter()
+                .find(|extension| extension.name == *name)
+                .map(|extension| extension.functions.clone())
+                .unwrap_or_default(),
+        }
     }
 
     /// Sends a request to one of the hosts, whose answer the workspace

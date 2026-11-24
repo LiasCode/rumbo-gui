@@ -30,7 +30,8 @@ use crate::protocol::{Function, Parameter, Value};
 pub(super) struct Field {
     pub(super) parameter: Parameter,
     /// Whose functions list its values: the host's for a parameter of the
-    /// host, the provider's for one of its options or functions.
+    /// host, the provider's for one of its options or functions, and an
+    /// extension's for one of its functions.
     pub(super) source: Source,
     /// What the field holds when the form opens.
     pub(super) initial: String,
@@ -55,7 +56,7 @@ pub(super) struct Changed;
 pub(super) struct Form {
     rows: Vec<Row>,
     host_functions: Vec<Function>,
-    provider_functions: Vec<Function>,
+    other_functions: Vec<Function>,
     /// The first field takes the keyboard once its list arrives.
     focus_when_listed: bool,
 }
@@ -116,14 +117,14 @@ impl Form {
     pub(super) fn new(
         fields: Vec<Field>,
         host_functions: Vec<Function>,
-        provider_functions: Vec<Function>,
+        other_functions: Vec<Function>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut form = Form {
             rows: Vec::new(),
             host_functions,
-            provider_functions,
+            other_functions,
             focus_when_listed: false,
         };
 
@@ -174,10 +175,10 @@ impl Form {
                 continue;
             }
 
-            let source = self.rows[index].field.source;
+            let source = self.rows[index].field.source.clone();
             let functions = match source {
                 Source::Host => &self.host_functions,
-                Source::Provider => &self.provider_functions,
+                Source::Provider | Source::Extension(_) => &self.other_functions,
             };
 
             let given: Vec<(&str, &str)> = self.rows[..index]

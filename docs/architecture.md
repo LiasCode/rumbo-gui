@@ -101,7 +101,8 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   and 4. It takes them first thing in `main`, before the window opens files
   that could get those numbers.
 - **connection** (`src/connection.rs`) is the protocol: it answers the
-  host's `initialize`, sends requests and notifications, and delivers
+  host's `initialize`, refusing a setting rumbo holds for the window, which
+  has none there, sends requests and notifications, and delivers
   everything the host sends on one channel, in order. One order matters: a
   run's last events arrive before the answer that ends it.
 - **workspace** (`src/workspace/`) is one project: the sessions rumbo
@@ -145,8 +146,11 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   protocol, and the conversation, which shows them. The
   model and the options belong to the session, which keeps them: the picker
   changes them with the host's `use` and `session-set`, and every run
-  gets what its session has. The workspace follows the provider's function
-  it called, answering the questions asked for it and refusing any other.
+  gets what its session has. The workspace follows the function of a
+  provider or of an extension it called, showing what it says and
+  answering the questions asked for it, and answers what a tool of one of
+  its runs asks, until that run ends; it refuses any other question
+  (`src/workspace/talk.rs`).
   What the window asks of the host for itself, as the settings do, goes
   through the workspace too, with what to do with the answer.
   Consecutive tool calls share a collapsible conversation row. Grouping is
@@ -215,7 +219,7 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   from the protocol's messages alone and tested without GPUI: the items of a
   conversation, and what waits for a run after them, the tokens spent, what
   was entered in the composer and what the host recalls, the functions of
-  the host and the provider as commands,
+  the host, the provider, and the extensions as commands,
   by what they act on, with their parameters, the values those take, and
   their answers, the changes the picker asks of the host, the shape of
   what the host says in words, and the order a project's sessions are

@@ -23,7 +23,9 @@ conversation, and rumbo's settings, without a terminal.
   the Changes panel shows what Git sees changed in the project's folder,
   and Open in Editor hands it to your editor. The window only reads them.
 - **Nothing is hard-coded.** Commands, forms, and pickers come from what
-  rumbo and the provider describe, so a new function shows up by itself.
+  rumbo, the provider, and your extensions describe, so a new function
+  shows up by itself. What a function, or a tool the model called, asks
+  you opens a dialog.
 
 ## What you can do
 
@@ -87,7 +89,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 |---|---|
 | Enter / Shift-Enter | Send the task, or tell the run in progress something / new line |
 | Up, Down | What was asked before, in any session of the project |
-| Escape | Give up a provider's function in progress, else cancel the run; leave the settings |
+| Escape | Give up a function of a provider or an extension in progress, else cancel the run; leave the settings |
 | Ctrl-K, Ctrl-P | Commands, and the project's sessions to show one |
 | Ctrl-N | New session; with no project open, in your home folder |
 | Ctrl-1 … Ctrl-9 | The project's sessions, in the order the sidebar lists them |

@@ -11,7 +11,7 @@ use gpui::{
 };
 use ui::{
     ActiveTheme as _, Button, Icon, IconName, Markdown, Message, Sizable as _, Spinner, h_flex,
-    v_flex,
+    rems_from_px, v_flex,
 };
 
 use super::Workspace;
@@ -127,14 +127,14 @@ pub(super) fn render_row(
                         div()
                             .flex_shrink_0()
                             .text_color(muted)
-                            .child(this.label(*source)),
+                            .child(this.label(source)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .text_color(match source {
-                                Source::Provider => colors.warning,
+                                Source::Provider | Source::Extension(_) => colors.warning,
                                 Source::Host => muted,
                             })
                             .child(text.clone()),
@@ -201,7 +201,7 @@ pub(super) fn render_row(
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child(format!("{} {command}", this.label(*source))),
+                            .child(format!("{} {command}", this.label(source))),
                     )
                     .child(
                         div()
@@ -220,10 +220,13 @@ pub(super) fn render_row(
 
 impl Workspace {
     /// Where a line comes from, as rumbo's front ends mark it.
-    fn label(&self, source: Source) -> String {
+    fn label(&self, source: &Source) -> String {
         match source {
             Source::Host => "[host]".into(),
             Source::Provider => format!("[provider {}]", self.provider()),
+            // A line of an extension's own output starts with its name.
+            Source::Extension(name) if name.is_empty() => "[extension]".into(),
+            Source::Extension(name) => format!("[extension {name}]"),
         }
     }
 }
@@ -480,6 +483,17 @@ fn tool_line(tool: &Tool, cx: &App) -> Div {
                 .font_family(cx.theme().mono_family.clone())
                 .child(tool.summary.clone()),
         )
+        .when(tool.is_open() && !tool.progress.is_empty(), |line| {
+            line.child(
+                div()
+                    .flex_shrink_0()
+                    .max_w(rems_from_px(280.))
+                    .truncate()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(crate::conversation::first_line(&tool.progress)),
+            )
+        })
         .child(status)
 }
 

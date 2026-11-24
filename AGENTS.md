@@ -34,8 +34,9 @@ must not do. Both live in the rumbo repository.
   read for meaning: the details panel lays out what `status` and `skills`
   say by its shape alone, with `outline.rs` (headings, `label: value`
   lines, and lines set in under another), and keeps every word, so other
-  words still show as words. Every command comes from the descriptions the host and
-  the provider give, and a parameter's values from the function it names;
+  words still show as words. Every command comes from the descriptions the host,
+  the provider, and the extensions give (`describe`), each extension's in
+  a section of its own, and a parameter's values from the function it names;
   a function marked `lists` is there for those values, and is no command.
   A list a function makes may not hold every value a parameter takes, so
   a field can always be typed instead.
@@ -122,7 +123,9 @@ that works and one of another project, measured again, a command from Ctrl-P wit
 one with a confirmation, a parameter whose values depend on the one before (the models
 `use` lists for the provider chosen), the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given
-up with Escape, a second project opened beside the first with each one's
+up with Escape, an extension's function from Ctrl-P that says and asks
+something, a tool that asks before it runs (rumbo's `examples/guard.py`),
+answered and declined, an extension removed and its commands gone, a second project opened beside the first with each one's
 sessions under it, every project in one list, those rumbo holds with
 their sessions and one opened from it, a session of one, chosen in the
 sidebar, which goes from the press to the session without the list folding

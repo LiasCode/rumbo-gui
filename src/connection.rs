@@ -99,6 +99,25 @@ impl Connection {
             }),
         };
 
+        // The window keeps what the person prefers of it itself, so it has
+        // no field rumbo could set for it, and says so instead of starting
+        // as if one had been taken.
+        if let Some(field) = params
+            .config
+            .as_ref()
+            .and_then(Json::as_object)
+            .and_then(|fields| fields.keys().next())
+        {
+            let problem = format!(
+                "rumbo-gui has no setting {field}: what it keeps is in its own settings (Ctrl-,); \
+                 rumbo frontend set gui {field}= takes it out"
+            );
+
+            connection.refuse(id, protocol::CODE_INVALID_PARAMS, &problem)?;
+
+            return Err(invalid(&problem));
+        }
+
         connection.answer(
             id,
             InitializeResult {
@@ -354,6 +373,21 @@ mod tests {
         let error = connect(frame).err().expect("version 1 was accepted");
 
         assert!(error.to_string().contains("protocol 1"), "{error}");
+    }
+
+    #[test]
+    fn refuses_a_setting_it_does_not_have() {
+        let mut frame = initialize();
+        frame["params"]["config"] = json!({"theme": "dark"});
+
+        let error = connect(frame).err().expect("the setting was taken");
+
+        assert!(error.to_string().contains("no setting theme"), "{error}");
+
+        let mut frame = initialize();
+        frame["params"]["config"] = json!({});
+
+        assert!(connect(frame).is_ok());
     }
 
     #[test]

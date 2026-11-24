@@ -6,7 +6,8 @@ use serde_json::{Map, Value as Json};
 
 use crate::conversation::Source;
 use crate::protocol::{
-    self, Function, HostResult, Parameter, TYPE_BOOLEAN, TYPE_NUMBER, Value, ValuesResult,
+    self, Function, HostResult, InvokeParams, Parameter, TYPE_BOOLEAN, TYPE_NUMBER, Value,
+    ValuesResult,
 };
 
 /// A function someone offers, and whose it is.
@@ -14,6 +15,17 @@ use crate::protocol::{
 pub struct Command {
     pub source: Source,
     pub function: Function,
+}
+
+impl Command {
+    /// The name shown in the palette, qualified for extension commands as
+    /// in the terminal UI. The function's own name still goes to the host.
+    pub fn name(&self) -> String {
+        match &self.source {
+            Source::Extension(name) => format!("{name}-{}", self.function.name),
+            _ => self.function.name.clone(),
+        }
+    }
 }
 
 /// Where the values a parameter takes come from.
@@ -76,9 +88,26 @@ pub fn passed(lister: Option<&Function>, given: &[(&str, &str)]) -> Option<Json>
     (!params.is_empty()).then_some(Json::Object(params))
 }
 
+/// The call of a function of `source`, by name.
+pub fn invoke(source: &Source, name: &str, params: Option<Json>) -> InvokeParams {
+    let (target, extension) = match source {
+        Source::Host => (protocol::TARGET_HOST, String::new()),
+        Source::Provider => ("", String::new()),
+        Source::Extension(name) => (protocol::TARGET_EXTENSION, name.clone()),
+    };
+
+    InvokeParams {
+        name: name.to_string(),
+        params,
+        target,
+        extension,
+    }
+}
+
 /// The values a function listed, and what it said with them: a function of
-/// the host answers as all of them do, and a provider's with its values.
-pub fn listed(source: Source, answer: Json) -> (Vec<Value>, String) {
+/// the host answers as all of them do, and a provider's or an extension's
+/// with its values.
+pub fn listed(source: &Source, answer: Json) -> (Vec<Value>, String) {
     match source {
         Source::Host => {
             let result: HostResult = serde_json::from_value(answer).unwrap_or_default();
@@ -86,7 +115,7 @@ pub fn listed(source: Source, answer: Json) -> (Vec<Value>, String) {
             (result.values, result.text)
         }
 
-        Source::Provider => {
+        Source::Provider | Source::Extension(_) => {
             let result: ValuesResult = serde_json::from_value(answer).unwrap_or_default();
 
             (result.values, String::new())
@@ -124,6 +153,7 @@ fn group_title(group: &str) -> String {
         protocol::GROUP_SYSTEM => "System".into(),
         protocol::GROUP_SESSION => "Session".into(),
         protocol::GROUP_PROVIDER => "Providers".into(),
+        protocol::GROUP_EXTENSION => "Extensions".into(),
         "" => "rumbo".into(),
         other => capitalized(other),
     }
@@ -367,16 +397,16 @@ mod tests {
         let host = json!({"text": "the models toy offers:", "values": [{"value": "big", "label": "Big"}], "state": {}});
         let provider = json!({"values": [{"value": "small"}]});
 
-        let (values, text) = listed(Source::Host, host);
+        let (values, text) = listed(&Source::Host, host);
 
         assert_eq!(values[0].label, "Big");
         assert_eq!(text, "the models toy offers:");
 
-        let (values, text) = listed(Source::Provider, provider);
+        let (values, text) = listed(&Source::Provider, provider);
 
         assert_eq!(values[0].value, "small");
         assert!(text.is_empty());
-        assert!(listed(Source::Provider, json!("odd")).0.is_empty());
+        assert!(listed(&Source::Provider, json!("odd")).0.is_empty());
     }
 
     #[test]

@@ -13,11 +13,15 @@ use crate::protocol::{self, Event};
 /// position.
 pub type ItemId = u64;
 
-/// Where a diagnostic comes from, which says who can fix what it reports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whose a function, an answer, or a diagnostic is, which says who can fix
+/// what it reports: the host, the session's provider, or an extension, by
+/// its name, which is empty for a line of an extension's own output, since
+/// that line starts with the name.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     Host,
     Provider,
+    Extension(String),
 }
 
 /// One line of what a call changes in a file.
@@ -37,6 +41,8 @@ pub struct Tool {
     /// What the call changes in a file, when its arguments say: the text it
     /// replaces and the text it puts instead, or what it writes.
     pub change: Vec<Line>,
+    /// What the call says it is doing while it works, when its tool says.
+    pub progress: String,
     /// What the model received, once the call finished.
     pub result: Option<String>,
     /// The call failed, or never finished because its run ended first.
@@ -271,9 +277,19 @@ impl Conversation {
                 summary: summary(&event.name, event.args.as_ref()),
                 args: layout(event.args.as_ref()),
                 change: change(event.args.as_ref()),
+                progress: String::new(),
                 result: None,
                 failed: false,
             })),
+
+            protocol::EVENT_TOOL_PROGRESS => match self.open_call(&event.name) {
+                Some((index, tool)) => {
+                    tool.progress = event.text.clone();
+                    Change::Updated(index)
+                }
+
+                None => Change::Nothing,
+            },
 
             protocol::EVENT_TOOL_FINISHED => self.finish(event),
 
@@ -296,10 +312,10 @@ impl Conversation {
             protocol::EVENT_CONTEXT => self.push(Kind::Context(event.sections.clone())),
 
             protocol::EVENT_LOG => {
-                let source = if event.source == protocol::SOURCE_PROVIDER {
-                    Source::Provider
-                } else {
-                    Source::Host
+                let source = match event.source.as_str() {
+                    protocol::SOURCE_PROVIDER => Source::Provider,
+                    protocol::SOURCE_EXTENSION => Source::Extension(String::new()),
+                    _ => Source::Host,
                 };
 
                 self.push(Kind::Log {
@@ -428,22 +444,23 @@ impl Conversation {
     /// Gives its result to the oldest unfinished call of the tool. The
     /// events name the tool but not the call, and calls finish in the
     /// order they started.
-    fn finish(&mut self, event: &Event) -> Change {
-        let found =
-            self.items
-                .iter_mut()
-                .enumerate()
-                .find_map(|(index, item)| match &mut item.kind {
-                    Kind::Tool(tool) if tool.name == event.name && tool.is_open() => {
-                        Some((index, tool))
-                    }
-                    _ => None,
-                });
+    /// The first call of a tool that may still finish, and its row.
+    fn open_call(&mut self, name: &str) -> Option<(usize, &mut Tool)> {
+        self.items
+            .iter_mut()
+            .enumerate()
+            .find_map(|(index, item)| match &mut item.kind {
+                Kind::Tool(tool) if tool.name == name && tool.is_open() => Some((index, tool)),
+                _ => None,
+            })
+    }
 
-        let Some((index, tool)) = found else {
+    fn finish(&mut self, event: &Event) -> Change {
+        let Some((index, tool)) = self.open_call(&event.name) else {
             return Change::Nothing;
         };
 
+        tool.progress.clear();
         tool.result = Some(event.result.clone());
         tool.failed = event.failed;
 
@@ -544,6 +561,70 @@ mod tests {
             .iter()
             .map(|item| item.kind.clone())
             .collect()
+    }
+
+    #[test]
+    fn a_call_says_what_it_is_doing_until_it_finishes() {
+        let mut conversation = Conversation::default();
+
+        conversation.apply(&event(
+            json!({"type": "tool_started", "name": "bash", "args": {"command": "make"}}),
+        ));
+
+        assert_eq!(
+            conversation.apply(&event(
+                json!({"type": "tool_progress", "name": "bash", "text": "compiling"})
+            )),
+            Change::Updated(0)
+        );
+        assert!(
+            matches!(&conversation.items()[0].kind, Kind::Tool(tool) if tool.progress == "compiling")
+        );
+
+        conversation.apply(&event(
+            json!({"type": "tool_finished", "name": "bash", "result": "ok"}),
+        ));
+
+        assert!(
+            matches!(&conversation.items()[0].kind, Kind::Tool(tool) if tool.progress.is_empty())
+        );
+
+        // Progress of a call that is not open changes nothing.
+        assert_eq!(
+            conversation.apply(&event(
+                json!({"type": "tool_progress", "name": "bash", "text": "late"})
+            )),
+            Change::Nothing
+        );
+    }
+
+    #[test]
+    fn a_log_says_whose_it_is() {
+        let mut conversation = Conversation::default();
+
+        for source in ["provider", "extension", "host"] {
+            conversation.apply(&event(
+                json!({"type": "log", "source": source, "text": "a line"}),
+            ));
+        }
+
+        let sources: Vec<Source> = conversation
+            .items()
+            .iter()
+            .filter_map(|item| match &item.kind {
+                Kind::Log { source, .. } => Some(source.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            sources,
+            vec![
+                Source::Provider,
+                Source::Extension(String::new()),
+                Source::Host
+            ]
+        );
     }
 
     #[test]

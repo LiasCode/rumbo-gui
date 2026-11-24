@@ -27,14 +27,20 @@ pub const METHOD_HISTORY: &str = "history";
 pub const METHOD_RECALL: &str = "recall";
 pub const METHOD_PROCESSES: &str = "processes";
 
-/// The `target` of an invoke that calls a function of the host.
+/// The `target` of an invoke that calls a function of the host, and of one
+/// that calls a function of an extension, which `extension` then names.
+/// Without a target the function is the provider's.
 pub const TARGET_HOST: &str = "host";
+pub const TARGET_EXTENSION: &str = "extension";
 
 /// What a function of the host acts on. A front end lists them apart, and
 /// takes a group it does not know for one more.
 pub const GROUP_SYSTEM: &str = "system";
 pub const GROUP_SESSION: &str = "session";
 pub const GROUP_PROVIDER: &str = "provider";
+/// A function of this group may change what the extensions offer, so
+/// `describe` is asked again after one.
+pub const GROUP_EXTENSION: &str = "extension";
 
 /// The functions of the host the window offers in a place of its own: the
 /// sidebar and the session's menu rename a session, and the menu and the
@@ -63,6 +69,7 @@ pub const EVENT_CONTEXT: &str = "context";
 pub const EVENT_TEXT: &str = "text";
 pub const EVENT_TOOL_STARTED: &str = "tool_started";
 pub const EVENT_TOOL_FINISHED: &str = "tool_finished";
+pub const EVENT_TOOL_PROGRESS: &str = "tool_progress";
 pub const EVENT_TURN: &str = "turn";
 pub const EVENT_LOG: &str = "log";
 pub const EVENT_OBJECTIVE: &str = "objective";
@@ -73,8 +80,11 @@ pub const RUN_DONE: &str = "done";
 pub const RUN_CANCELLED: &str = "cancelled";
 pub const RUN_FAILED: &str = "failed";
 
-/// The `source` of a log event that is the provider's own output.
+/// The `source` of a log event that is the provider's own output, and of
+/// one that is an extension's, whose text starts with the extension's name.
+/// Any other is the host's.
 pub const SOURCE_PROVIDER: &str = "provider";
+pub const SOURCE_EXTENSION: &str = "extension";
 
 /// JSON-RPC error codes this front end answers with.
 pub const CODE_METHOD_NOT_FOUND: i64 = -32601;
@@ -98,6 +108,8 @@ pub struct InitializeParams {
     pub model: String,
     pub objective: String,
     pub resume: bool,
+    /// What the user chose for this front end in rumbo's configuration.
+    pub config: Option<Json>,
     /// What the host itself can be asked, whatever the provider.
     pub functions: Vec<Function>,
 }
@@ -161,12 +173,19 @@ pub struct CancelParams {
     pub invoke: i64,
 }
 
-/// A question the host asks the person for a provider's function.
+/// A question the host asks the person: for a function of a provider or
+/// of an extension, named by its invoke request, or for a tool the model
+/// called, which names its run, the run's session, and the tool instead.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct AskParams {
     /// The id of the invoke request of the function that asks.
     pub invoke: i64,
+    /// The id of the run request of the run whose tool asks, its session,
+    /// and the tool.
+    pub run: i64,
+    pub session: String,
+    pub name: String,
     pub text: String,
     /// The answer is not shown while it is typed, nor kept.
     pub secret: bool,
@@ -244,7 +263,8 @@ pub struct Parameter {
     pub optional: bool,
 }
 
-/// Calls a function of the provider, or of the host with `target`.
+/// Calls a function of the provider, of the host with `target`, or of the
+/// extension `extension` names.
 #[derive(Debug, Clone, Serialize)]
 pub struct InvokeParams {
     pub name: String,
@@ -252,6 +272,8 @@ pub struct InvokeParams {
     pub params: Option<Json>,
     #[serde(skip_serializing_if = "str::is_empty")]
     pub target: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub extension: String,
 }
 
 /// The answer of a function of the host.
@@ -300,6 +322,18 @@ pub struct DescribeResult {
     pub model: String,
     pub options: Option<Json>,
     pub offers: Description,
+    /// The extensions that offer functions, by name; none when they did
+    /// not all start, which a log event says.
+    pub extensions: Vec<ExtensionOffer>,
+}
+
+/// What an extension offers the person: its functions, described as a
+/// provider's are.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct ExtensionOffer {
+    pub name: String,
+    pub functions: Vec<Function>,
 }
 
 /// What a provider says can be chosen and asked of it.
@@ -425,13 +459,25 @@ mod tests {
             name: "models".into(),
             params: None,
             target: "",
+            extension: String::new(),
+        };
+        let extension = InvokeParams {
+            name: "forget".into(),
+            params: None,
+            target: TARGET_EXTENSION,
+            extension: "notes".into(),
         };
         let host = InvokeParams {
             name: "open".into(),
             params: Some(serde_json::json!({"session": "x"})),
             target: TARGET_HOST,
+            extension: String::new(),
         };
 
+        assert_eq!(
+            serde_json::to_string(&extension).unwrap(),
+            r#"{"name":"forget","target":"extension","extension":"notes"}"#
+        );
         assert_eq!(
             serde_json::to_string(&provider).unwrap(),
             r#"{"name":"models"}"#
