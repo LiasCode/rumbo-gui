@@ -1,0 +1,9 @@
+# rumbo-gui as a rumbo plugin: rumbo builds it from this source where it is
+# added, so it needs Rust's cargo on that machine.
+name: gui
+description: A desktop window for rumbo, as its front end.
+build: [cargo, build, --release, --locked]
+
+frontends:
+  gui:
+    command: ["{plugin}/target/release/rumbo-gui", --attached]

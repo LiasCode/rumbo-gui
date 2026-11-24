@@ -61,6 +61,8 @@ install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
                            # with Exec set to the binary's path if it is not on PATH
 ```
 
+Or have rumbo build it, as a plugin: see [As rumbo's front end](#as-rumbos-front-end).
+
 rumbo must be installed apart: a version later than 0.5, whose
 configuration is in `config.yaml` and whose host offers `config`,
 `system-set`, `session-set`, and `provider-set`. With an earlier one, the
@@ -108,6 +110,25 @@ is cancelled and recorded.
 
 rumbo can start the window itself, as it starts its terminal UI. The window
 then works only in that rumbo's project, and closes with it.
+
+It is a rumbo plugin, `gui`, which brings the front end `gui`. With rumbo
+0.9.0 or later, which builds a plugin where it is added, and cargo:
+
+```sh
+rumbo plugin add <address of this repository>   # or the path of a copy of it
+rumbo -f gui "a task"      # or: rumbo system set frontend gui
+```
+
+rumbo copies the repository and builds it (`plugin.yaml` says how), which
+takes a while the first time. `rumbo plugin update gui` brings it up to
+date and builds it again. The window it built is also the one to start by
+itself: `rumbo plugin show gui` says where the copy is, and the binary is
+its `target/release/rumbo-gui`.
+
+If you registered it by hand before, as `gui`, the plugin is refused while
+that registration is there. Take out the line `command:` under
+`frontends:`, `gui:` in rumbo's `config.yaml`, and add the plugin: what you
+set for it is kept. Without plugins, register the binary you built:
 
 ```sh
 rumbo frontend add gui /path/to/rumbo-gui --attached
