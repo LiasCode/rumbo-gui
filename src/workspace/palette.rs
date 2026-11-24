@@ -40,6 +40,7 @@ enum Entry {
     /// Commands of the window around the workspace.
     OpenProject,
     OpenSettings,
+    Rumbos,
     CloseProject,
     /// Why the provider's functions are not known.
     Unavailable(String),
@@ -67,6 +68,7 @@ impl Workspace {
             Entry::Editor,
             Entry::OpenProject,
             Entry::OpenSettings,
+            Entry::Rumbos,
             Entry::CloseProject,
         ]];
 
@@ -349,6 +351,7 @@ fn chose_entry(
         Some(Entry::Session(id, _, _)) => this.open_session(&id, window, cx),
         Some(Entry::OpenProject) => cx.emit(WorkspaceEvent::OpenProject),
         Some(Entry::OpenSettings) => cx.emit(WorkspaceEvent::OpenSettings),
+        Some(Entry::Rumbos) => cx.emit(WorkspaceEvent::OpenRumbos),
         Some(Entry::CloseProject) => cx.emit(WorkspaceEvent::CloseProject),
         _ => {}
     });
@@ -409,6 +412,12 @@ fn item(entry: &Entry) -> CommandItem {
         Entry::OpenSettings => (
             "Settings…".into(),
             "The theme, and rumbo's settings and providers".into(),
+        ),
+
+        Entry::Rumbos => (
+            "Rumbos…".into(),
+            "What the rumbo of each session open uses: processes, memory, and processor time"
+                .into(),
         ),
 
         Entry::CloseProject => (

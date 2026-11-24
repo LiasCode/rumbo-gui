@@ -47,7 +47,9 @@ must not do. Both live in the rumbo repository.
   shown last, and closes all of them with the project. What no host says,
   the sessions there are and deleting one, is asked of rumbo's command
   line, `rumbo sessions -json` and `rumbo sessions rm`, in
-  `src/sessions.rs` alone. Nothing reads rumbo's files. The ids of the
+  `src/sessions.rs` alone. Nothing reads rumbo's files. What the hosts
+  cost is what each says of its own processes (`processes`), counted in
+  `src/rumbos.rs`, never read from the system by the window. The ids of the
   requests of every host come from one counter, so one names its request
   among them all.
 - **The project's files are only read.** The changes panel runs `git` in
@@ -115,7 +117,8 @@ the toolbar's arrows and with Alt-Left and Alt-Right, and past a session
 deleted, a run left working in another session, each session opened in a
 `rumbo serve` of its own (`pgrep -af "[r]umbo serve"`), the oldest of
 those left unused closed once there are more than two, and its session
-read again when it is shown again, a command from Ctrl-P with a form and
+read again when it is shown again, Rumbos from Ctrl-P with a session
+that works and one of another project, measured again, a command from Ctrl-P with a form and
 one with a confirmation, a parameter whose values depend on the one before (the models
 `use` lists for the provider chosen), the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given

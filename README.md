@@ -31,7 +31,10 @@ conversation, and rumbo's settings, without a terminal.
   rename, branch, compact, export as Markdown, or delete it from its menu.
   Every project is in the sidebar, its sessions newest first, each staying
   where it is when you use it; pin the projects you use most to its top.
-  New Session there starts one in your home folder.
+  New Session there starts one in your home folder. Each session open is
+  a rumbo of its own; Rumbos, in the commands, says what each uses, its
+  processes, their memory, and their processor time, and what they use
+  together.
 - **Go back and forward.** As in a browser, between the sessions, projects,
   and settings you went to, with the arrows in the toolbar, Alt-Left and
   Alt-Right, or the mouse's back and forward buttons.

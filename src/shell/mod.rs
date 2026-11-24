@@ -6,6 +6,7 @@
 //! ends every host.
 
 mod catalog;
+mod rumbos;
 mod settings;
 mod sidebar;
 mod toolbar;
@@ -654,6 +655,8 @@ impl Shell {
             WorkspaceEvent::OpenProject => self.choose_folder(window, cx),
 
             WorkspaceEvent::OpenSettings => self.open_settings(&OpenSettings, window, cx),
+
+            WorkspaceEvent::OpenRumbos => self.open_rumbos(window, cx),
 
             WorkspaceEvent::CloseProject => self.close_project(id, window, cx),
 

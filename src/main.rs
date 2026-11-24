@@ -20,6 +20,7 @@ mod outline;
 mod picture;
 mod preferences;
 mod protocol;
+mod rumbos;
 mod sessions;
 mod shell;
 mod usage;

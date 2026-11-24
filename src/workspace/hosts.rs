@@ -18,7 +18,8 @@ use crate::connection::Incoming;
 use crate::conversation::ItemId;
 use crate::environment::Environment;
 use crate::host::Host;
-use crate::protocol::{self, Function};
+use crate::protocol::{self, Function, ProcessUsage};
+use crate::rumbos::{Rumbo, Standing};
 use crate::sessions;
 
 /// How many hosts are kept with nothing to do: neither shown nor working.
@@ -50,6 +51,9 @@ pub(super) struct Attached {
     pub(super) model: String,
     /// What the provider can be asked, or why that is not known.
     pub(super) provider_functions: Result<Vec<Function>, String>,
+    /// The host's processes, as it said them last, or why it did not; none
+    /// until it was asked and answered.
+    pub(super) processes: Option<Result<Vec<ProcessUsage>, String>>,
     /// When the session last stopped being shown.
     left: Instant,
     _reading: Task<()>,
@@ -89,6 +93,7 @@ impl Workspace {
             provider: initialize.provider,
             model: initialize.model,
             provider_functions: Ok(Vec::new()),
+            processes: None,
             left: Instant::now(),
             _reading: reading,
         });
@@ -117,6 +122,49 @@ impl Workspace {
 
     pub(super) fn held_mut(&mut self, serial: u64) -> Option<&mut Attached> {
         self.hosts.iter_mut().find(|held| held.serial == serial)
+    }
+
+    /// Asks every host of the project what its processes use, which
+    /// `rumbos` says once each answers.
+    pub fn measure(&mut self) {
+        let serials: Vec<u64> = self.hosts.iter().map(|held| held.serial).collect();
+
+        for serial in serials {
+            self.request_of(
+                serial,
+                protocol::METHOD_PROCESSES,
+                Json::Null,
+                Pending::Processes,
+            );
+        }
+    }
+
+    /// The rumbos the project holds, one for each session open, with what
+    /// each said it uses.
+    pub fn rumbos(&self) -> Vec<Rumbo> {
+        self.hosts
+            .iter()
+            .map(|held| {
+                let shown = self.here().is_some_and(|here| here.serial == held.serial);
+
+                let standing = match (self.is_working(&held.session), shown) {
+                    (true, _) => Standing::Working,
+                    (false, true) => Standing::Shown,
+                    (false, false) => Standing::Open,
+                };
+
+                let title = match held.session.is_empty() {
+                    true => "New session".to_string(),
+                    false => self.title_of(&held.session),
+                };
+
+                Rumbo {
+                    title,
+                    standing,
+                    processes: held.processes.clone(),
+                }
+            })
+            .collect()
     }
 
     /// The host that holds a session: for a new one, the one nothing was

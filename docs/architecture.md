@@ -123,7 +123,11 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   left with nothing to do, neither shown, nor working, nor with a run
   that ended unseen, are closed past the two shown last, since each costs
   its own processes; what the window showed of such a session goes with
-  its host, and is read again when it is shown again. Once the session
+  its host, and is read again when it is shown again. What the hosts the
+  window holds use, each asked with `processes`, shows in Rumbos, from the
+  palette: one row for each session open in any project, and what they
+  use together, each process counted once (`src/rumbos.rs`,
+  `src/shell/rumbos.rs`). Once the session
   shown is deleted, the workspace shows none until the person opens a
   session or starts a new one. It keeps a view of each session a host is
   open for, and sends each event to the view of the session it belongs

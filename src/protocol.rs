@@ -25,6 +25,7 @@ pub const METHOD_DESCRIBE: &str = "describe";
 pub const METHOD_INVOKE: &str = "invoke";
 pub const METHOD_HISTORY: &str = "history";
 pub const METHOD_RECALL: &str = "recall";
+pub const METHOD_PROCESSES: &str = "processes";
 
 /// The `target` of an invoke that calls a function of the host.
 pub const TARGET_HOST: &str = "host";
@@ -325,6 +326,30 @@ pub struct HistoryResult {
 #[serde(default)]
 pub struct RecallResult {
     pub asked: Vec<String>,
+}
+
+/// One process of a host and what it uses of the machine: `role` says what
+/// it is, and `name` which provider or extension; `parent` is the process
+/// that started it; `memory` is what it holds now, in bytes, and `cpu` the
+/// processor time it has used, in seconds.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct ProcessUsage {
+    pub pid: i64,
+    pub parent: i64,
+    pub role: String,
+    pub name: String,
+    pub command: String,
+    pub memory: i64,
+    pub cpu: f64,
+}
+
+/// The processes of a host, itself first and each of the others after the
+/// one that started it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ProcessesResult {
+    pub processes: Vec<ProcessUsage>,
 }
 
 /// A JSON-RPC error object.

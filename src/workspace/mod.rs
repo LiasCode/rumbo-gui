@@ -45,7 +45,8 @@ use crate::host::Host;
 use crate::picture::{self, Picture};
 use crate::protocol::{
     self, CancelParams, DescribeResult, Event, Function, HistoryResult, HostResult, HostState,
-    InvokeParams, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
+    InvokeParams, ProcessesResult, RecallResult, RpcError, RunParams, RunResult, SteerParams,
+    Value,
 };
 use crate::usage::Spent;
 
@@ -89,6 +90,7 @@ pub enum WorkspaceEvent {
     /// The person chose a command of the window in the palette.
     OpenProject,
     OpenSettings,
+    OpenRumbos,
     CloseProject,
     /// A function of the host answered, so what the settings show may have
     /// changed.
@@ -144,6 +146,8 @@ enum Pending {
     Recall,
     /// What the provider offers, for the palette.
     Describe,
+    /// What a host's processes use, for the window's count of them.
+    Processes,
     /// What the provider offers, for the picker of the model and options.
     Picker,
     /// A list a field of the open form asked for.
@@ -1371,6 +1375,22 @@ impl Workspace {
                 if let Some(held) = self.held_mut(serial) {
                     held.provider_functions = offered;
                 }
+            }
+
+            Pending::Processes => {
+                let said = answer
+                    .map(|result| {
+                        serde_json::from_value::<ProcessesResult>(result)
+                            .unwrap_or_default()
+                            .processes
+                    })
+                    .map_err(|error| error.message);
+
+                if let Some(held) = self.held_mut(serial) {
+                    held.processes = Some(said);
+                }
+
+                cx.notify();
             }
 
             Pending::Picker => {
