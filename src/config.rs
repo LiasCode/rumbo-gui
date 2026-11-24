@@ -4,17 +4,18 @@ use std::path::PathBuf;
 
 pub const USAGE: &str = "\
 usage: rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
-       rumbo-gui --attached
+       rumbo-gui --attached [--rumbo PATH]
 
 Opens a window on a rumbo host working in DIR, or asks for a folder when
-DIR is left out. FLAGS go to `rumbo serve` as they are, such as -c to
-continue the latest session, -s ID for another, -p PROVIDER and -m MODEL,
-or -single.
+DIR is left out. FLAGS go to the `rumbo serve` of the first session as
+they are, such as -c to continue the latest session, -s ID for another,
+or -p PROVIDER and -m MODEL. Each other session opened is a rumbo of its
+own, which the window starts.
 
   --rumbo PATH   the rumbo executable, when it is not on PATH
   --attached     be the front end rumbo starts: register it with
-                 `rumbo frontend add gui rumbo-gui --attached`, then
-                 run `rumbo -f gui` in a project
+                 `rumbo frontend add gui rumbo-gui --attached --rumbo '{self}'`,
+                 then run `rumbo -f gui` in a project
 ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,12 +28,16 @@ pub struct Config {
     pub serve_flags: Vec<String>,
 }
 
+const ATTACHED_ALONE: &str =
+    "--attached takes nothing else but --rumbo and its path: rumbo gives the folder and its flags";
+
 /// What the command line asks for.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
     Open(Config),
-    /// rumbo started this front end, and gives it the protocol.
-    Attached,
+    /// rumbo started this front end, and gives it the protocol. The path is
+    /// the rumbo executable the window starts for the other sessions.
+    Attached(PathBuf),
     Help,
 }
 
@@ -42,13 +47,17 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     let args: Vec<String> = args.into_iter().collect();
 
     if args.iter().any(|arg| arg == "--attached") {
-        if args.len() > 1 {
-            return Err(
-                "--attached takes nothing else: rumbo gives the folder and its flags".into(),
-            );
-        }
+        let rest: Vec<&str> = args
+            .iter()
+            .map(String::as_str)
+            .filter(|arg| *arg != "--attached")
+            .collect();
 
-        return Ok(Parsed::Attached);
+        return match rest.as_slice() {
+            [] => Ok(Parsed::Attached("rumbo".into())),
+            ["--rumbo", path] => Ok(Parsed::Attached(path.into())),
+            _ => Err(ATTACHED_ALONE.into()),
+        };
     }
 
     let mut args = args.into_iter();
@@ -105,35 +114,20 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     }))
 }
 
-/// The flags that start a host again in `session` after the one before it
-/// ended. What the first start asked for once, such as an objective or
-/// `-r`, is not asked again, and `-single` stays, since it is how the person
-/// chose to work.
-pub fn continuing(flags: &[String], session: &str) -> Vec<String> {
-    let mut again = Vec::new();
-
-    if flags
-        .iter()
-        .any(|flag| flag == "-single" || flag == "--single")
-    {
-        again.push("-single".to_string());
+/// The flags that start the host of `session`, or of a new one when it
+/// names none. What the first start asked for once, such as an objective
+/// or `-r`, is not asked again.
+pub fn continuing(session: &str) -> Vec<String> {
+    match session.is_empty() {
+        true => Vec::new(),
+        false => vec!["-s".to_string(), session.to_string()],
     }
-
-    if !session.is_empty() {
-        again.extend(["-s".to_string(), session.to_string()]);
-    }
-
-    again
 }
 
 /// The flags that start a host in another project, in the session used
-/// last there. What the first start asked for once is not asked again; how
-/// the person works is.
-pub fn continuing_latest(flags: &[String]) -> Vec<String> {
-    let mut again = continuing(flags, "");
-
-    again.push("-c".to_string());
-    again
+/// last there.
+pub fn continuing_latest() -> Vec<String> {
+    vec!["-c".to_string()]
 }
 
 #[cfg(test)]
@@ -161,29 +155,20 @@ mod tests {
         let here = std::env::current_dir().unwrap().canonicalize().unwrap();
 
         assert_eq!(
-            parsed(&["--rumbo", "/opt/rumbo", ".", "--", "-c", "-single"]),
+            parsed(&["--rumbo", "/opt/rumbo", ".", "--", "-c", "-p", "toy"]),
             Ok(Parsed::Open(Config {
                 rumbo: "/opt/rumbo".into(),
                 dir: Some(here),
-                serve_flags: vec!["-c".into(), "-single".into()],
+                serve_flags: vec!["-c".into(), "-p".into(), "toy".into()],
             }))
         );
     }
 
     #[test]
     fn continues_the_session_without_asking_again() {
-        let flags: Vec<String> = ["-single", "-r", "-m", "x/y", "fix it"]
-            .iter()
-            .map(|flag| flag.to_string())
-            .collect();
-
-        assert_eq!(
-            continuing(&flags, "4cf0261c"),
-            ["-single", "-s", "4cf0261c"]
-        );
-        assert!(continuing(&[], "").is_empty());
-        assert_eq!(continuing_latest(&flags), ["-single", "-c"]);
-        assert_eq!(continuing_latest(&[]), ["-c"]);
+        assert_eq!(continuing("4cf0261c"), ["-s", "4cf0261c"]);
+        assert!(continuing("").is_empty());
+        assert_eq!(continuing_latest(), ["-c"]);
     }
 
     #[test]
@@ -197,11 +182,23 @@ mod tests {
         );
         assert!(parsed(&[".", "."]).unwrap_err().contains("second"));
         assert_eq!(parsed(&["--help"]), Ok(Parsed::Help));
-        assert_eq!(parsed(&["--attached"]), Ok(Parsed::Attached));
+        assert_eq!(
+            parsed(&["--attached"]),
+            Ok(Parsed::Attached("rumbo".into()))
+        );
+        assert_eq!(
+            parsed(&["--attached", "--rumbo", "/opt/rumbo"]),
+            Ok(Parsed::Attached("/opt/rumbo".into()))
+        );
+        assert_eq!(
+            parsed(&["--rumbo", "/opt/rumbo", "--attached"]),
+            Ok(Parsed::Attached("/opt/rumbo".into()))
+        );
         assert!(
             parsed(&["--attached", "."])
                 .unwrap_err()
                 .contains("nothing else")
         );
+        assert!(parsed(&["--attached", "--rumbo"]).is_err());
     }
 }

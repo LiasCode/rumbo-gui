@@ -1,12 +1,13 @@
-//! One project of the window, attached to a host of its own: its sessions,
-//! the conversation of the one shown, and the composer. The window around
-//! it lists the sessions and opens them through it.
+//! One project of the window: its sessions, each attached to a host of its
+//! own once it is opened, the conversation of the one shown, and the
+//! composer. The window around it lists the sessions and opens them
+//! through it.
 //!
-//! The workspace shows the host's current session, or none once the one
-//! shown is deleted, until the person chooses one or starts one. Runs
-//! started in other sessions go on in the background, and their events go
-//! to the session they work in, so each session's conversation is whole
-//! when it is shown again.
+//! The workspace shows one session, or none once the one shown is deleted,
+//! until the person chooses one or starts one. Runs started in other
+//! sessions go on in the background, each in its own host, and their
+//! events go to the session they work in, so each session's conversation
+//! is whole when it is shown again.
 
 mod composer;
 mod details;
@@ -14,6 +15,7 @@ mod files;
 mod form;
 mod git_history;
 mod header;
+mod hosts;
 mod marks;
 mod palette;
 mod panel;
@@ -42,12 +44,15 @@ use crate::history::History;
 use crate::host::Host;
 use crate::picture::{self, Picture};
 use crate::protocol::{
-    self, CancelParams, DescribeResult, Event, Function, HistoryParams, HistoryResult, HostResult,
-    HostState, InvokeParams, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
+    self, CancelParams, DescribeResult, Event, Function, HistoryResult, HostResult, HostState,
+    InvokeParams, RecallResult, RpcError, RunParams, RunResult, SteerParams, Value,
 };
 use crate::usage::Spent;
 
 use form::{Changed, Field, Form};
+use hosts::{Arrived, Attached};
+
+pub use hosts::Launcher;
 
 actions!(workspace, [CancelRun, ToggleChanges, ToggleDetails]);
 
@@ -81,10 +86,6 @@ pub enum Panel {
 
 /// What the workspace asks of the window around it.
 pub enum WorkspaceEvent {
-    /// Start a host again, in this session, after the last one ended.
-    StartAgain {
-        session: String,
-    },
     /// The person chose a command of the window in the palette.
     OpenProject,
     OpenSettings,
@@ -141,8 +142,6 @@ enum Pending {
     History(String),
     /// What the person asked in the project's sessions, for the composer.
     Recall,
-    /// The project's sessions, for the sidebar.
-    Sessions,
     /// What the provider offers, for the palette.
     Describe,
     /// What the provider offers, for the picker of the model and options.
@@ -165,8 +164,6 @@ enum Pending {
     /// A function of the host the workspace asked for itself, to go on
     /// once it has answered.
     Then(Then),
-    /// A session shown again, as going back or forward does.
-    Revisit,
 }
 
 /// Where the answer of a function called for the person shows.
@@ -177,9 +174,6 @@ pub enum Feedback {
     /// In a notification, as the settings' and the picker's changes say
     /// they were made, which the conversation does not record.
     Toast,
-    /// Nowhere unless it fails, as opening a session from the sidebar,
-    /// which shows the session instead.
-    Quiet,
 }
 
 /// The form in a dialog, whose lists arrive as answers.
@@ -261,17 +255,21 @@ impl SessionView {
 }
 
 pub struct Workspace {
-    host: Host,
-    /// What the window is attached to, as the host said last.
+    /// The hosts of the project, one for each session the window has open,
+    /// and how many it has held, which numbers them.
+    hosts: Vec<Attached>,
+    serials: u64,
+    /// How the hosts of the other sessions are started, and the session
+    /// one is starting for, while it does.
+    launcher: Launcher,
+    opening: Option<String>,
+    /// The project's folder, as its hosts say.
     dir: String,
-    provider: String,
-    model: String,
-    /// The session shown, which is the host's current one. It is empty for
-    /// a new session until its first run makes it.
+    /// The session shown. It is empty for a new session until its first
+    /// run makes it.
     current: String,
     /// Whether no session is shown, as once the one shown is deleted, until
-    /// the person chooses one or starts one. The host's current session is
-    /// a new one meanwhile.
+    /// the person chooses one or starts one.
     blank: bool,
     views: HashMap<String, SessionView>,
     /// The session each run of this window works in, by the id of its run
@@ -279,14 +277,14 @@ pub struct Workspace {
     runs: HashMap<i64, String>,
     /// When each run of this window started.
     started: HashMap<i64, std::time::Instant>,
-    pending: HashMap<i64, Pending>,
+    /// The requests not answered yet, each with the host it was sent to.
+    /// Their ids come from one counter for every host.
+    pending: HashMap<i64, (u64, Pending)>,
     /// The project's sessions, in the order they were first listed, the
     /// newest first.
     listed: Vec<Value>,
-    /// What the host can be asked, whatever the provider.
+    /// What a host can be asked, whatever the provider.
     host_functions: Vec<Function>,
-    /// What the provider can be asked, or why that is not known.
-    provider_functions: Result<Vec<Function>, String>,
     composer: Entity<InputState>,
     /// The images pasted into the composer, which go with what is sent
     /// next.
@@ -300,7 +298,7 @@ pub struct Workspace {
     /// The provider's function in progress, called from this window.
     talking: Option<talk::Talking>,
     history: History,
-    /// Why the host is gone, once it is.
+    /// Why the host of the session shown is gone, once it is.
     ended: Option<String>,
     /// Sessions whose run ended while another was shown, until they are.
     unseen: HashSet<String>,
@@ -325,13 +323,14 @@ pub struct Workspace {
     /// its own in.
     dialogs: Entity<Dialogs>,
     toasts: Entity<Toasts>,
-    _reading: Task<()>,
+    _listing: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Workspace {
     pub fn new(
         host: Host,
+        launcher: Launcher,
         dialogs: Entity<Dialogs>,
         toasts: Entity<Toasts>,
         window: &mut Window,
@@ -358,26 +357,14 @@ impl Workspace {
             },
         )];
 
-        let incoming = host.incoming.clone();
-
-        let reading = cx.spawn_in(window, async move |this, cx| {
-            while let Ok(message) = incoming.recv().await {
-                let closed = matches!(message, Incoming::Closed);
-                let kept = this.update_in(cx, |this, window, cx| this.receive(message, window, cx));
-
-                if kept.is_err() || closed {
-                    break;
-                }
-            }
-        });
-
         let initialize = host.initialize.clone();
 
         let mut workspace = Workspace {
-            host,
+            hosts: Vec::new(),
+            serials: 0,
+            launcher,
+            opening: None,
             dir: initialize.dir,
-            provider: initialize.provider,
-            model: initialize.model,
             current: String::new(),
             blank: false,
             views: HashMap::new(),
@@ -386,7 +373,6 @@ impl Workspace {
             pending: HashMap::new(),
             listed: Vec::new(),
             host_functions: initialize.functions,
-            provider_functions: Ok(Vec::new()),
             composer,
             pasted: Vec::new(),
             palette,
@@ -408,19 +394,20 @@ impl Workspace {
             blank_focus: cx.focus_handle(),
             dialogs,
             toasts,
-            _reading: reading,
+            _listing: None,
             _subscriptions: subscriptions,
         };
+
+        let first = workspace.hold(host, window, cx);
 
         // The history is asked for first: it is answered before the run
         // that follows starts, so nothing of that run is in it.
         workspace.show_session(initialize.session, window, cx);
-        workspace.refresh_sessions();
-        workspace.describe();
+        workspace.refresh_sessions(cx);
 
         // A host without it answers that it does not know it, and the
         // composer brings back only what is entered here.
-        workspace.request(protocol::METHOD_RECALL, json!({}), Pending::Recall);
+        workspace.request_of(first, protocol::METHOD_RECALL, json!({}), Pending::Recall);
 
         // What the command line already asked for runs without asking again.
         if initialize.resume {
@@ -457,8 +444,9 @@ impl Workspace {
         self.views.get_mut(key).expect("the view was just made")
     }
 
-    /// Shows a session, asking for its history the first time. A new
-    /// session starts empty, unless a run is already making it.
+    /// Shows a session one of the hosts holds, asking that host for its
+    /// history the first time. A new session starts empty, unless a run is
+    /// already making it.
     fn show_session(&mut self, session: String, _: &mut Window, cx: &mut Context<Self>) {
         let known = self.views.contains_key(&session);
         let busy = self
@@ -470,20 +458,26 @@ impl Workspace {
             self.views.remove(&session);
         }
 
-        if !session.is_empty() && !known {
-            self.request(
-                protocol::METHOD_HISTORY,
-                HistoryParams {
-                    session: session.clone(),
-                },
-                Pending::History(session.clone()),
-            );
-        }
-
+        self.leave();
         self.view(&session, cx);
         self.unseen.remove(&session);
         self.current = session.clone();
         self.blank = false;
+        self.ended = None;
+
+        if let (false, false, Some(serial)) = (
+            session.is_empty(),
+            known,
+            self.here().map(|held| held.serial),
+        ) {
+            self.request_of(
+                serial,
+                protocol::METHOD_HISTORY,
+                json!({}),
+                Pending::History(session.clone()),
+            );
+        }
+
         self.set_hint(cx);
         self.refresh_panel(cx);
         cx.emit(WorkspaceEvent::Shown {
@@ -498,28 +492,13 @@ impl Workspace {
     /// shown stays the session deleted, which going back and forward pass
     /// over.
     fn show_nothing(&mut self, cx: &mut Context<Self>) {
+        self.leave();
         self.current = String::new();
         self.blank = true;
+        self.ended = None;
         self.set_hint(cx);
         self.refresh_panel(cx);
         cx.notify();
-    }
-
-    /// Asks for the project's sessions, which the sidebar lists.
-    fn refresh_sessions(&mut self) {
-        if self.host_function(protocol::FUNCTION_SESSIONS).is_none() {
-            return;
-        }
-
-        self.request(
-            protocol::METHOD_INVOKE,
-            InvokeParams {
-                name: protocol::FUNCTION_SESSIONS.into(),
-                params: None,
-                target: protocol::TARGET_HOST,
-            },
-            Pending::Sessions,
-        );
     }
 
     /// A function the host described in `initialize`, by name.
@@ -529,15 +508,15 @@ impl Workspace {
             .find(|function| function.name == name)
     }
 
-    /// The project's sessions as the host lists them, in the order they were
+    /// The project's sessions as rumbo lists them, in the order they were
     /// first listed, the newest first.
     pub fn sessions(&self) -> &[Value] {
         &self.listed
     }
 
     /// Lists the project's sessions in the order the window listed them
-    /// before it opened the project, until the host lists them, so opening
-    /// it moves none.
+    /// before it opened the project, until rumbo lists them again, so
+    /// opening it moves none.
     pub fn keep_order(&mut self, listed: Vec<Value>) {
         if self.listed.is_empty() {
             self.listed = listed;
@@ -564,7 +543,8 @@ impl Workspace {
         self.runs.len()
     }
 
-    /// Whether the host is gone; the window can start it again.
+    /// Whether the host of the session shown is gone; the workspace can
+    /// start it again.
     pub fn has_ended(&self) -> bool {
         self.ended.is_some()
     }
@@ -575,7 +555,7 @@ impl Workspace {
         self.unseen.contains(session)
     }
 
-    /// The folder the host works in, as it said last.
+    /// The folder the project's hosts work in, as they said last.
     pub fn dir(&self) -> &str {
         &self.dir
     }
@@ -620,12 +600,7 @@ impl Workspace {
     /// else the first line of its first task, as a new one has until the
     /// host lists it, else its id.
     fn title_of(&self, session: &str) -> String {
-        let titled = self
-            .listed
-            .iter()
-            .find(|listed| listed.value == session)
-            .map(|listed| listed.label.clone())
-            .filter(|label| !label.is_empty());
+        let titled = self.titled(session);
 
         let asked = || {
             self.views.get(session).and_then(|view| {
@@ -643,13 +618,34 @@ impl Workspace {
         titled.or_else(asked).unwrap_or_else(|| session.to_string())
     }
 
-    /// The title the host gives the session shown, once it has one.
-    pub fn session_title(&self) -> Option<String> {
-        self.listed
+    /// The title of a session, once it has one: what its host says, which
+    /// knows of a new name first, else what rumbo lists of it.
+    fn titled(&self, session: &str) -> Option<String> {
+        if session.is_empty() {
+            return None;
+        }
+
+        let said = self
+            .hosts
             .iter()
-            .find(|session| session.value == self.current && !self.current.is_empty())
-            .map(|session| session.label.clone())
-            .filter(|label| !label.is_empty())
+            .find(|held| held.session == session)
+            .map(|held| held.title.clone());
+
+        let listed = || {
+            self.listed
+                .iter()
+                .find(|listed| listed.value == session)
+                .map(|listed| listed.label.clone())
+        };
+
+        said.filter(|title| !title.is_empty())
+            .or_else(listed)
+            .filter(|title| !title.is_empty())
+    }
+
+    /// The title of the session shown, once it has one.
+    pub fn session_title(&self) -> Option<String> {
+        self.titled(&self.current)
     }
 
     /// Gives the keyboard to the composer, or, while no session is shown, to
@@ -664,35 +660,30 @@ impl Workspace {
             .update(cx, |state, cx| state.focus(window, cx));
     }
 
-    /// Makes another session the current one. A run working in the one left
-    /// behind goes on in the background.
-    pub fn open_session(&mut self, id: &str, cx: &mut Context<Self>) {
-        if id == self.current || self.ended.is_some() {
+    /// Shows another session, in a host of its own, which is started the
+    /// first time. A run working in the one left behind goes on in the
+    /// background.
+    pub fn open_session(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if id == self.current && !self.blank {
             return;
         }
 
-        self.call_host(
-            protocol::FUNCTION_OPEN,
-            Some(json!({ "session": id })),
-            Feedback::Quiet,
-            cx,
-        );
+        self.reach(id, true, None, window, cx);
     }
 
-    /// Makes the next task start a new session. While no session is shown,
-    /// the host's current one is new already, and is shown.
+    /// Makes the next task start a new session, in a host of its own.
     pub fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.blank && self.ended.is_none() {
-            self.show_session(String::new(), window, cx);
-            self.focus(window, cx);
+        if self.current.is_empty() && !self.blank && self.ended.is_none() {
             return;
         }
 
-        if self.current.is_empty() || self.ended.is_some() {
-            return;
-        }
-
-        self.call_host(protocol::FUNCTION_NEW, None, Feedback::Quiet, cx);
+        self.reach(
+            "",
+            true,
+            Some(Box::new(|this, window, cx| this.focus(window, cx))),
+            window,
+            cx,
+        );
     }
 
     /// Shows a session again, empty for a new one, as going back or forward
@@ -700,43 +691,11 @@ impl Workspace {
     /// one. A session that cannot be shown leaves the one shown as it is,
     /// and is told as the place arrived at instead.
     pub fn revisit(&mut self, session: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if session == self.current {
-            // While no session is shown, the host's current one is new
-            // already.
-            if self.blank {
-                self.revisiting = true;
-                self.show_session(String::new(), window, cx);
-                self.revisiting = false;
-            }
-
+        if session == self.current && !self.blank {
             return;
         }
 
-        let (name, params) = match session.is_empty() {
-            true => (protocol::FUNCTION_NEW, None),
-            false => (protocol::FUNCTION_OPEN, Some(json!({ "session": session }))),
-        };
-
-        let asked = self.ended.is_none()
-            && self.host_function(name).is_some()
-            && self
-                .request(
-                    protocol::METHOD_INVOKE,
-                    InvokeParams {
-                        name: name.into(),
-                        params,
-                        target: protocol::TARGET_HOST,
-                    },
-                    Pending::Revisit,
-                )
-                .is_some();
-
-        if !asked {
-            cx.emit(WorkspaceEvent::Shown {
-                session: self.current.clone(),
-                went: false,
-            });
-        }
+        self.reach(session, false, None, window, cx);
     }
 
     /// Asks a function of the host for the workspace itself, and goes on
@@ -770,8 +729,7 @@ impl Workspace {
     }
 
     /// Runs `action` in a session: at once in the one shown, or once the
-    /// host has made it current, since the host's functions act on the
-    /// current session.
+    /// session is, since a host's functions act on its own session.
     fn in_session(
         &mut self,
         session: &str,
@@ -779,17 +737,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if session == self.current {
+        if session == self.current && !self.blank {
             action(self, window, cx);
             return;
         }
 
-        self.then_host(
-            protocol::FUNCTION_OPEN,
-            Some(json!({ "session": session })),
-            Box::new(move |this, _, window, cx| action(this, window, cx)),
-            cx,
-        );
+        self.reach(session, true, Some(Box::new(action)), window, cx);
     }
 
     /// Asks for a new title for a session, which is shown for it.
@@ -812,18 +765,6 @@ impl Workspace {
                     cx,
                 )
             },
-            window,
-            cx,
-        );
-    }
-
-    /// Deletes a session for good, once the person confirms it as the host
-    /// asks.
-    pub fn delete(&mut self, session: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.offer(
-            protocol::FUNCTION_DELETE,
-            &[("session", session.to_string())],
-            false,
             window,
             cx,
         );
@@ -874,9 +815,10 @@ impl Workspace {
     }
 
     /// Goes on in a branch of the session shown: a copy of it as it is, or
-    /// as it was before the person's message numbered `point`. With `then`,
-    /// what that message said is written again in the branch, to change
-    /// and send, or, with `send`, sent as it is.
+    /// as it was before the person's message numbered `point`, which its
+    /// host makes and another host goes on in. With `again`, what that
+    /// message said is written again in the branch, to change and send, or
+    /// sent as it is.
     pub fn branch(
         &mut self,
         point: Option<usize>,
@@ -890,12 +832,16 @@ impl Workspace {
             protocol::FUNCTION_BRANCH,
             params,
             Box::new(move |this, answer, window, cx| {
-                this.toast(
-                    Toast::new(commands::capitalized(&commands::host_answer(&answer))),
-                    cx,
-                );
+                // The host answers with the session it made.
+                let Some(made) = answer.values.first().map(|made| made.value.clone()) else {
+                    this.toast(
+                        Toast::new(commands::capitalized(&commands::host_answer(&answer))),
+                        cx,
+                    );
+                    return;
+                };
 
-                match again {
+                let arrived: Arrived = Box::new(move |this, window, cx| match again {
                     Some((text, images, true)) => this.start(
                         RunParams {
                             objective: text.clone(),
@@ -915,7 +861,10 @@ impl Workspace {
                     }
 
                     None => {}
-                }
+                });
+
+                this.refresh_sessions(cx);
+                this.reach(&made, true, Some(arrived), window, cx);
             }),
             cx,
         );
@@ -987,27 +936,18 @@ impl Workspace {
         }
     }
 
-    /// Asks what the provider offers, which the palette lists.
-    fn describe(&mut self) {
-        self.request(protocol::METHOD_DESCRIBE, Json::Null, Pending::Describe);
-    }
-
-    /// Sends a request whose answer the workspace waits for. A request that
-    /// cannot be sent means the host is gone, which the reader says.
+    /// Sends a request to the host of the session shown, whose answer the
+    /// workspace waits for. None when the session has no host, or the host
+    /// is gone, which its reader says.
     fn request(
         &mut self,
         method: &str,
         params: impl serde::Serialize,
         pending: Pending,
     ) -> Option<i64> {
-        match self.host.connection.request(method, params) {
-            Ok(id) => {
-                self.pending.insert(id, pending);
-                Some(id)
-            }
+        let serial = self.here()?.serial;
 
-            Err(_) => None,
-        }
+        self.request_of(serial, method, params, pending)
     }
 
     /// Sends what the composer holds: a task, or, during a run, something
@@ -1140,7 +1080,11 @@ impl Workspace {
             return;
         };
 
-        if let Err(error) = self
+        let Some(held) = self.here() else {
+            return;
+        };
+
+        if let Err(error) = held
             .host
             .connection
             .notify(protocol::METHOD_CANCEL, CancelParams { run, invoke: 0 })
@@ -1184,8 +1128,11 @@ impl Workspace {
 
         // A function of the provider may talk with the person while it
         // works; it is followed until it answers.
-        if let (Some(invoke), Source::Provider) = (called, command.source) {
+        if let (Some(invoke), Source::Provider, Some(host)) =
+            (called, command.source, self.here().map(|held| held.serial))
+        {
             self.talking = Some(talk::Talking {
+                host,
                 invoke,
                 name: command.function.name.clone(),
             });
@@ -1350,15 +1297,22 @@ impl Workspace {
         true
     }
 
-    fn receive(&mut self, message: Incoming, window: &mut Window, cx: &mut Context<Self>) {
+    /// Takes in what one of the hosts sent.
+    fn receive(
+        &mut self,
+        serial: u64,
+        message: Incoming,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match message {
             Incoming::Answer { id, answer } => self.answered(id, answer, window, cx),
 
-            Incoming::Event(event) => self.event(*event, window, cx),
+            Incoming::Event(event) => self.event(serial, *event, window, cx),
 
-            Incoming::Ask { id, params } => self.asked(id, params, window, cx),
+            Incoming::Ask { id, params } => self.asked(serial, id, params, window, cx),
 
-            Incoming::Closed => self.closed(window, cx),
+            Incoming::Closed => self.closed(serial, window, cx),
         }
 
         cx.notify();
@@ -1371,7 +1325,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(pending) = self.pending.remove(&id) else {
+        let Some((serial, pending)) = self.pending.remove(&id) else {
             return;
         };
 
@@ -1403,15 +1357,8 @@ impl Workspace {
                 }
             }
 
-            Pending::Sessions => {
-                if let Ok(result) = answer {
-                    let listed: HostResult = serde_json::from_value(result).unwrap_or_default();
-                    self.listed = crate::order::kept(&self.listed, listed.values);
-                }
-            }
-
             Pending::Describe => {
-                self.provider_functions = match answer {
+                let offered = match answer {
                     Ok(result) => {
                         let described: DescribeResult =
                             serde_json::from_value(result).unwrap_or_default();
@@ -1420,6 +1367,10 @@ impl Workspace {
 
                     Err(error) => Err(error.message),
                 };
+
+                if let Some(held) = self.held_mut(serial) {
+                    held.provider_functions = offered;
+                }
             }
 
             Pending::Picker => {
@@ -1453,7 +1404,7 @@ impl Workspace {
                 source,
                 name,
                 feedback,
-            } => self.call_answered(source, name, feedback, answer, window, cx),
+            } => self.call_answered(serial, source, name, feedback, answer, cx),
 
             Pending::Reply(reply) => {
                 let answer = answer
@@ -1467,35 +1418,13 @@ impl Workspace {
                 Ok(result) => {
                     let result: HostResult = serde_json::from_value(result).unwrap_or_default();
 
-                    self.attached(result.state.clone(), window, cx);
-                    self.refresh_sessions();
+                    self.attached(serial, result.state.clone(), cx);
+                    self.refresh_sessions(cx);
                     then(self, result, window, cx);
                 }
 
                 Err(error) => self.toast(Toast::new(error.message).danger(), cx),
             },
-
-            Pending::Revisit => {
-                match answer {
-                    Ok(result) => {
-                        let result: HostResult = serde_json::from_value(result).unwrap_or_default();
-
-                        self.revisiting = true;
-                        self.attached(result.state, window, cx);
-                        self.revisiting = false;
-                        self.refresh_sessions();
-                    }
-
-                    Err(error) => self.toast(Toast::new(error.message).danger(), cx),
-                }
-
-                // Whatever the host answered, the place arrived at is the
-                // session shown now.
-                cx.emit(WorkspaceEvent::Shown {
-                    session: self.current.clone(),
-                    went: false,
-                });
-            }
         }
     }
 
@@ -1561,8 +1490,12 @@ impl Workspace {
             shown,
         });
 
-        self.refresh_sessions();
+        self.refresh_sessions(cx);
         self.refresh_panel(cx);
+
+        // A session left behind has nothing to do now, and a host may be
+        // one too many.
+        self.tidy();
     }
 
     fn steered(
@@ -1640,11 +1573,11 @@ impl Workspace {
 
     fn call_answered(
         &mut self,
+        serial: u64,
         source: Source,
         name: String,
         feedback: Feedback,
         answer: Result<Json, RpcError>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if source == Source::Provider
@@ -1662,21 +1595,8 @@ impl Workspace {
 
             (Ok(result), Source::Host) => {
                 let result: HostResult = serde_json::from_value(result).unwrap_or_default();
-                let session = &result.state.session;
 
-                // Deleting the session shown leaves none shown, rather than
-                // the new one the host makes current; asking for a new one
-                // shows it.
-                if name == protocol::FUNCTION_DELETE
-                    && session.is_empty()
-                    && !self.current.is_empty()
-                {
-                    self.show_nothing(cx);
-                } else if name == protocol::FUNCTION_NEW && self.blank {
-                    self.show_session(String::new(), window, cx);
-                }
-
-                self.attached(result.state.clone(), window, cx);
+                self.attached(serial, result.state.clone(), cx);
 
                 (commands::host_answer(&result), false)
             }
@@ -1685,7 +1605,7 @@ impl Workspace {
         };
 
         if source == Source::Host {
-            self.refresh_sessions();
+            self.refresh_sessions(cx);
             cx.emit(WorkspaceEvent::Answered);
         }
 
@@ -1696,7 +1616,7 @@ impl Workspace {
         };
 
         match feedback {
-            Feedback::Toast | Feedback::Quiet if failed => {
+            Feedback::Toast if failed => {
                 self.toast(Toast::new(text).danger(), cx);
                 return;
             }
@@ -1710,8 +1630,6 @@ impl Workspace {
 
                 return;
             }
-
-            Feedback::Quiet => return,
 
             Feedback::Conversation if text.is_empty() => return,
 
@@ -1729,40 +1647,54 @@ impl Workspace {
         self.show(&current, change, cx);
     }
 
-    /// Takes in what a function of the host left the window attached to.
-    fn attached(&mut self, state: HostState, window: &mut Window, cx: &mut Context<Self>) {
-        if !state.dir.is_empty() {
-            self.dir = state.dir;
-        }
+    /// Takes in what a function of a host left its session with: another
+    /// provider or model.
+    fn attached(&mut self, serial: u64, state: HostState, cx: &mut Context<Self>) {
+        let Some(held) = self.held_mut(serial) else {
+            return;
+        };
+
+        let changed = state.provider != held.provider;
 
         // What was described was for the provider in use.
-        if state.provider != self.provider {
-            self.provider_functions = Ok(Vec::new());
-            self.describe();
+        if changed {
+            held.provider_functions = Ok(Vec::new());
         }
 
-        self.provider = state.provider;
-        self.model = state.model;
+        held.provider = state.provider;
+        held.model = state.model;
+        held.title = state.title;
 
-        if state.session != self.current {
-            self.show_session(state.session, window, cx);
+        if changed {
+            self.request_of(
+                serial,
+                protocol::METHOD_DESCRIBE,
+                Json::Null,
+                Pending::Describe,
+            );
         }
+
+        cx.notify();
     }
 
-    fn event(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
-        // What a provider's function says while it works.
+    fn event(&mut self, serial: u64, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+        // What a provider's function says while it works, in the session
+        // it was called from.
         if event.invoke != 0 {
-            let current = self.current.clone();
-            let change = self.view(&current, cx).conversation.push(Kind::Log {
+            let Some(session) = self.held(serial).map(|held| held.session.clone()) else {
+                return;
+            };
+
+            let change = self.view(&session, cx).conversation.push(Kind::Log {
                 source: Source::Provider,
                 text: event.text,
             });
 
-            self.show(&current, change, cx);
+            self.show(&session, change, cx);
             return;
         }
 
-        let Some(key) = self.session_of(&event, window, cx) else {
+        let Some(key) = self.session_of(serial, &event, window, cx) else {
             return;
         };
 
@@ -1779,11 +1711,12 @@ impl Workspace {
     }
 
     /// The session whose view an event belongs to: the session of the run
-    /// it names, the session it names, or the one shown for what names
-    /// neither, such as a provider's diagnostics. None for a session the
-    /// window has not opened: its history will tell it.
+    /// it names, or the session of the host that sent it, for what names
+    /// no run, such as a provider's diagnostics. None for a host the window
+    /// let go of.
     fn session_of(
         &mut self,
+        serial: u64,
         event: &Event,
         _: &mut Window,
         cx: &mut Context<Self>,
@@ -1805,13 +1738,7 @@ impl Workspace {
             return Some(key);
         }
 
-        if event.session.is_empty() {
-            return Some(self.current.clone());
-        }
-
-        self.views
-            .contains_key(&event.session)
-            .then(|| event.session.clone())
+        self.held(serial).map(|held| held.session.clone())
     }
 
     /// Gives the new session its id, once a run has made it.
@@ -1820,11 +1747,16 @@ impl Workspace {
             self.views.insert(session.to_string(), view);
         }
 
+        // The host a run is making the session in is the one that had none.
+        if let Some(held) = self.hosts.iter_mut().find(|held| held.session.is_empty()) {
+            held.session = session.to_string();
+        }
+
         for key in self.runs.values_mut().filter(|key| key.is_empty()) {
             *key = session.to_string();
         }
 
-        for pending in self.pending.values_mut() {
+        for (_, pending) in self.pending.values_mut() {
             if let Pending::Steer { session: key, .. } = pending
                 && key.is_empty()
             {
@@ -1832,8 +1764,7 @@ impl Workspace {
             }
         }
 
-        // While no session is shown, the new one the host has current is
-        // another.
+        // While no session is shown, the new one is another.
         if self.current.is_empty() && !self.blank {
             self.current = session.to_string();
             cx.emit(WorkspaceEvent::Shown {
@@ -1842,70 +1773,7 @@ impl Workspace {
             });
         }
 
-        self.refresh_sessions();
-    }
-
-    fn closed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The rumbo that started this window is gone, and cannot be started
-        // again from here.
-        if self.host.is_attached() {
-            cx.quit();
-            return;
-        }
-
-        let said = self.host.stderr();
-
-        self.ended = Some(if said.is_empty() {
-            "The host ended.".into()
-        } else {
-            format!("The host ended: {said}")
-        });
-
-        // What still waited for a run never reaches it.
-        let waiting: Vec<(String, ItemId)> = self
-            .pending
-            .drain()
-            .filter_map(|(_, pending)| match pending {
-                Pending::Steer { session, item } => Some((session, item)),
-                _ => None,
-            })
-            .collect();
-
-        self.start_again_focus.focus(window, cx);
-
-        let runs: Vec<String> = self.runs.drain().map(|(_, key)| key).collect();
-
-        self.started.clear();
-
-        for key in runs {
-            let view = self.view(&key, cx);
-
-            view.run = None;
-
-            let change = view
-                .conversation
-                .end(protocol::RUN_FAILED, "The host ended before the run did.");
-
-            self.show(&key, change, cx);
-        }
-
-        for (session, item) in waiting {
-            let Some((text, _, change)) = self
-                .views
-                .get_mut(&session)
-                .and_then(|view| view.conversation.withdraw(item))
-            else {
-                continue;
-            };
-
-            self.show(&session, change, cx);
-            self.toast(
-                Toast::new(format!("The host ended before the run read: {text}")).danger(),
-                cx,
-            );
-        }
-
-        self.set_hint(cx);
+        self.refresh_sessions(cx);
     }
 
     fn toggle(&mut self, key: &str, id: ItemId, group: bool, cx: &mut Context<Self>) {
@@ -1956,7 +1824,7 @@ impl Workspace {
     fn steers_waiting(&self) -> usize {
         self.pending
             .values()
-            .filter(|pending| matches!(pending, Pending::Steer { session, .. } if *session == self.current))
+            .filter(|(_, pending)| matches!(pending, Pending::Steer { session, .. } if *session == self.current))
             .count()
     }
 
@@ -1964,7 +1832,7 @@ impl Workspace {
     fn reading_history(&self, session: &str) -> bool {
         self.pending
             .values()
-            .any(|pending| matches!(pending, Pending::History(asked) if asked == session))
+            .any(|(_, pending)| matches!(pending, Pending::History(asked) if asked == session))
     }
 
     fn render_conversation(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -2106,10 +1974,10 @@ impl Workspace {
     /// A session can start before its model is chosen, which the picker
     /// does, and a task is refused until then.
     fn model_name(&self) -> String {
-        if self.model.is_empty() {
-            format!("{} · no model yet", self.provider)
+        if self.model().is_empty() {
+            format!("{} · no model yet", self.provider())
         } else {
-            format!("{} · {}", self.provider, self.model)
+            format!("{} · {}", self.provider(), self.model())
         }
     }
 }
@@ -2173,6 +2041,6 @@ impl EventEmitter<WorkspaceEvent> for Workspace {}
 
 impl Drop for Workspace {
     fn drop(&mut self) {
-        self.host.stop();
+        self.close_all();
     }
 }

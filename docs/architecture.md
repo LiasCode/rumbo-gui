@@ -1,10 +1,10 @@
 # Architecture
 
 rumbo-gui is a front end of rumbo, and nothing more: rumbo's host owns the
-sessions, the tools, the loop, and everything that is recorded. The window
-starts a host for each project it opens, and one more that only lists what
-rumbo holds; it sends them what the person asks, and draws what they
-report. The only thing it keeps itself is the person's preferences for
+sessions, the tools, the loop, and everything that is recorded. A host is
+one session, so the window starts one for each session it opens, and asks
+rumbo's command line for the sessions there are; it sends the hosts what
+the person asks, and draws what they report. The only thing it keeps itself is the person's preferences for
 the window, such as the theme, the sidebar, the size it is drawn at, and
 the editor; it keeps no state it would need to restore, since the host
 records everything as it happens. Besides the hosts, it reads two things
@@ -21,14 +21,15 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
 
 ```
  main ── config, preferences ── shell ─────────────── settings, catalog, navigation (pure; tested)
-                                 │  │  one workspace per project
+                                 │  │  one workspace per project, with a host per session open
                                  │  └───────────────── workspace ── conversation, usage, history,
                                  │ starts or attaches   │             commands, choices, outline, order (pure; tested)
                                  ▼                      │
                                host ── connection ◄─────┘
                                  │        │  one ordered channel of what the host sent
                                  ▼        ▼
-                          rumbo serve (stdin/stdout), one per project and one that lists
+                          rumbo serve (stdin/stdout), one for each session open
+                          rumbo sessions -json, which lists them (sessions, catalog)
 ```
 
 - **config** (`src/config.rs`) reads the command line once, at startup.
@@ -40,14 +41,16 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   where the window is, the session's panels and menu, the commands, and the
   settings; the projects open in the window, each
   with its sessions, in the sidebar; and the work of the project shown, or
-  the settings in its place. Each project has a workspace and a host of its
-  own, started in the background when the project is opened, and its runs
-  go on while another project is shown. The shell says why a host did not
-  start, and starts it again when its workspace asks. The window can start
+  the settings in its place. Each project has a workspace of its own, and
+  the host of the session it opens with, started in the background when
+  the project is opened; its runs go on while another project is shown.
+  The shell says why that host did not start, and starts it again when
+  asked. The window can start
   with no project, and opens as many as the person asks, from a folder or
   from what rumbo holds; a new session asked for with no project open
   opens the person's home folder as one. Started by rumbo, it attaches to
-  that rumbo instead, and works only in its project. Ctrl-+ and Ctrl--
+  that rumbo instead, works only in its project, and starts the hosts of
+  that project's other sessions with the rumbo `--rumbo` names. Ctrl-+ and Ctrl--
   draw the whole window bigger or smaller, and Ctrl-0 at its own size, by
   the window's rem size, which the preferences keep. When a run ends where
   the person may not see it, the shell says so: in a notification of the
@@ -62,13 +65,16 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   Going somewhere is a place; going back or forward is not, and neither is
   a new session getting its id from its first run, which stays the same
   place. A workspace says which is which when it shows another session,
-  since only it knows why the host made it current. The places last as
+  since only it knows why it did. The places last as
   long as the window, and start again once no project is open.
-- **catalog** (`src/shell/catalog.rs`) is what rumbo holds in every project:
-  the projects that have sessions, and the sessions of each, asked of a
-  host the window starts in the person's home only to list them. It runs
-  nothing, follows no function, and is asked again when the window comes
-  to the front or a project is closed.
+- **sessions** (`src/sessions.rs`) asks rumbo's command line what no host
+  says: `rumbo sessions -json` lists the sessions of a folder, or of every
+  one, and `rumbo sessions rm` deletes one. It runs on a background
+  thread, and reads none of rumbo's files.
+- **catalog** (`src/shell/catalog.rs`) is what rumbo holds in every folder:
+  the projects that have sessions, and the sessions of each, from
+  **sessions**. It is asked again when the window comes to the front or a
+  project is closed.
 - **sidebar** (`src/shell/sidebar.rs`) lists every project in one list,
   those open in the window and those rumbo holds, each with its sessions,
   narrowed by the search at its top, with what the host offers to do with
@@ -98,8 +104,9 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   host's `initialize`, sends requests and notifications, and delivers
   everything the host sends on one channel, in order. One order matters: a
   run's last events arrive before the answer that ends it.
-- **workspace** (`src/workspace/`) is one project attached to its host:
-  the sessions the host lists, the conversation of the one shown, the
+- **workspace** (`src/workspace/`) is one project: the sessions rumbo
+  lists in its folder, a host for each of them that is open
+  (`src/workspace/hosts.rs`), the conversation of the one shown, the
   session's menu and the buttons of the panels, which the toolbar shows,
   the composer, with how full the model's context is and the tokens
   spent, a panel beside them, and the command palette. How a run stands
@@ -109,15 +116,25 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   answers that the run has it, and then stays where the run read it.
   Anything else the workspace has to say, such as what went wrong, shows
   in a notification. The
-  shell lists the sessions and opens them through it. Once the session
-  shown is deleted, the workspace shows none, though the host makes a new
-  one current, until the person opens a session or starts a new one. It
-  keeps a view of each session it has shown, and sends each event to the
-  view of the session it belongs to: the session of the run it names, by
-  the id of the run request, or the session it names. A run in a new
-  session learns the session's id from its first event. A session shown
-  for the first time asks the host for its history, which comes before
-  anything that happens in it after. The
+  shell lists the sessions and opens them through it. Showing a session
+  no host of the window holds starts one for it, with `-s`, or with
+  nothing for a new one, and the session shows once that host has spoken;
+  the session left behind keeps its host, and its runs go on. The hosts
+  left with nothing to do, neither shown, nor working, nor with a run
+  that ended unseen, are closed past the two shown last, since each costs
+  its own processes; what the window showed of such a session goes with
+  its host, and is read again when it is shown again. Once the session
+  shown is deleted, the workspace shows none until the person opens a
+  session or starts a new one. It keeps a view of each session a host is
+  open for, and sends each event to the view of the session it belongs
+  to: the session of the run it names, by the id of the run request,
+  which comes from one counter for every host, or the session of the host
+  that sent it. A run in a new session learns the session's id from its
+  first event. A session shown for the first time asks its host for its
+  history, which comes before anything that happens in it after. A host
+  that ends by itself leaves its session as it was: its runs are told as
+  failed, and the workspace offers to start it again when it is the one
+  shown; the window ends with the rumbo that started it. The
   composer starts with what the host recalls of the project's sessions,
   and keeps the images pasted into it, which go with what is sent next;
   **picture** (`src/picture.rs`) carries them between the clipboard, the
@@ -165,12 +182,17 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   asked for. What the host says in words is laid out by **outline**
   (`src/outline.rs`) by its shape alone, keeping its words: headings,
   `label: value` lines as rows, and lines set in under another as items.
-- **The session's actions** rename, delete, branch, and compact through
-  the host's functions. They act on the current session, so one asked for
-  another session first makes it current with `open`, and goes on once the
-  host has answered. Changing or asking again something the person wrote
-  is a `branch` before that message, numbered as the host numbers branch
-  points: the person's tasks, in order.
+- **The session's actions** rename, branch, and compact through the
+  functions of the session's host, which act on its own session, so one
+  asked for another session shows it first, and goes on once it is shown.
+  A branch is another session, which its host answers with and the
+  workspace shows in a host of its own. Changing or asking again
+  something the person wrote is a `branch` before that message, numbered
+  as the host numbers branch points: the person's tasks, in order.
+  Deleting is the window's: no host deletes its session, so the workspace
+  closes the session's host and asks `rumbo sessions rm`, once the person
+  agrees; the session of the rumbo that started the window is held by it,
+  and cannot be deleted from there.
 - **export** (`src/export.rs`) writes a session's conversation as Markdown
   from what the window shows, and **editor** (`src/editor.rs`) says which
   editor opens a project's folder: the person's choice, or one found on
@@ -240,31 +262,31 @@ one is looked at before a view uses it.
 
 ## Projects
 
-A host works in the sessions of one project, but lists those of any: its
-`projects` lists the projects that have sessions, by their root, and its
-`sessions` the sessions of any of them. So the sidebar's one list holds
-two kinds of project. Those open in the window have a host of their own, whose
-workspace lists their sessions and marks those working. The others rumbo
-holds come from the catalog, and opening one, or one of its sessions,
-starts its host: with `-s` for a session, with `-c` for the project, and
-with neither for a new session, since a host started with `-s` works in
-that session's project wherever it starts. A project open in the window is
-told from the catalog's by its folder, or by its sessions being listed
-under a root, never by reading what the host says.
+A project is a folder: the root of the sessions started in it, which is
+how rumbo lists them and how the window groups them. The sidebar's one
+list holds two kinds of project. Those open in the window have a
+workspace, which lists their sessions, marks those working, and holds a
+host for each one open. The others rumbo holds come from the catalog, and
+opening one, or one of its sessions, opens the project with the host of
+that session: started with `-s` for a session, with `-c` for the
+project's latest, and with neither for a new session. A project open in
+the window is told from the catalog's by its folder.
 
-A host without `projects` lists nothing in the catalog, which then stops
-it, and the sidebar shows only the projects open in the window.
+When rumbo's command line cannot list, the sidebar says why, and shows
+only the projects open in the window.
 
 ## Threads
 
 Each connection reads on a thread of its own. Each workspace receives on
 the UI thread, in one task that applies each message in order and redraws.
 Starting a host blocks until it speaks, so the shell does it on a
-background executor and attaches the project's workspace when it is done.
+background executor and attaches the project's workspace when it is done,
+and so does a workspace for the host of each other session.
 
 ## Ending
 
-Closing the connection ends the host. The app closes a project's when the
-project is closed, and every one when the window closes, and the operating
+Closing the connection ends the host. The app closes a session's when the
+session is left unused or deleted, a project's when the project is
+closed, and every one when the window closes, and the operating
 system does when the process exits; each host then cancels and records its
 runs, stops its providers, and exits.

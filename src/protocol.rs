@@ -1,5 +1,6 @@
-//! The messages of the Agent Frontend Protocol, version 1, as rumbo specifies
-//! them in `docs/frontend-protocol.md` and its Go package `protocol`.
+//! The messages of the Agent Frontend Protocol, version 2, as rumbo specifies
+//! them in `docs/frontend-protocol.md` and its Go package `protocol`. In it
+//! a host is one session, so nothing here names a session to a host.
 //!
 //! Only what this front end sends or reads is here. Fields it does not know
 //! are ignored when reading, as the protocol asks, so a newer host still
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
 /// The protocol version this front end speaks.
-pub const VERSION: i64 = 1;
+pub const VERSION: i64 = 2;
 
 /// The name this front end gives the host.
 pub const NAME: &str = "rumbo-gui";
@@ -35,19 +36,14 @@ pub const GROUP_SESSION: &str = "session";
 pub const GROUP_PROVIDER: &str = "provider";
 
 /// The functions of the host the window offers in a place of its own: the
-/// sidebar lists every project and its sessions, and opens, starts, renames,
-/// and deletes sessions; the session's menu and its messages rename,
-/// branch, and compact it; the details panel shows its status and skills;
+/// sidebar and the session's menu rename a session, and the menu and the
+/// person's messages branch and compact it; the details panel shows its
+/// status and skills;
 /// the picker changes the model and the options a session keeps; and the
 /// settings show everything that is set, with `config`, and change the
 /// system settings and the providers. Each is offered only when
 /// `initialize` lists it, and called with the parameters it describes there.
-pub const FUNCTION_SESSIONS: &str = "sessions";
-pub const FUNCTION_PROJECTS: &str = "projects";
-pub const FUNCTION_OPEN: &str = "open";
-pub const FUNCTION_NEW: &str = "new";
 pub const FUNCTION_RENAME: &str = "rename";
-pub const FUNCTION_DELETE: &str = "delete";
 pub const FUNCTION_BRANCH: &str = "branch";
 pub const FUNCTION_COMPACT: &str = "compact";
 pub const FUNCTION_STATUS: &str = "status";
@@ -95,6 +91,8 @@ pub struct InitializeParams {
     pub protocol: i64,
     pub dir: String,
     pub session: String,
+    /// What the session is called, once it has a title.
+    pub title: String,
     pub provider: String,
     pub model: String,
     pub objective: String,
@@ -270,6 +268,8 @@ pub struct HostResult {
 pub struct HostState {
     pub dir: String,
     pub session: String,
+    /// What the session is called, which a function may have changed.
+    pub title: String,
     pub provider: String,
     pub model: String,
 }
@@ -309,13 +309,6 @@ pub struct Description {
     pub model: Option<Parameter>,
     pub options: Vec<Parameter>,
     pub functions: Vec<Function>,
-}
-
-/// Asks what a session holds; the current one without `session`.
-#[derive(Debug, Clone, Serialize)]
-pub struct HistoryParams {
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub session: String,
 }
 
 /// A session told in events, oldest first.
@@ -384,7 +377,7 @@ mod tests {
 
     #[test]
     fn reads_functions_as_the_host_describes_them() {
-        let line = r#"{"protocol":1,"dir":"/p","provider":"anthropic","model":"m","functions":[
+        let line = r#"{"protocol":2,"dir":"/p","provider":"anthropic","model":"m","functions":[
             {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string","values":"sessions"}],"confirm":"Delete it?","group":"session"},
             {"name":"status","params":[{"name":"session","optional":true}]},
             {"name":"session-values","group":"session","lists":true}]}"#;

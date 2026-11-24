@@ -63,13 +63,10 @@ install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
 
 Or have rumbo build it, as a plugin: see [As rumbo's front end](#as-rumbos-front-end).
 
-rumbo must be installed apart: a version later than 0.5, whose
-configuration is in `config.yaml` and whose host offers `config`,
-`system-set`, `session-set`, and `provider-set`. With an earlier one, the
-window still works, without the settings it does not offer. The projects
-rumbo holds, besides those open in the window, need a rumbo whose host
-offers `projects`; without it, the sidebar lists only the projects open in
-the window.
+rumbo must be installed apart: a version later than 0.9, where a rumbo is
+one session and speaks version 2 of the front end protocol, and whose
+`rumbo sessions -json` lists the sessions. An earlier one is refused when
+the window starts it, saying so.
 
 ## Use
 
@@ -80,7 +77,7 @@ rumbo-gui [--rumbo PATH] [DIR] [-- FLAGS]
 | Argument | |
 |---|---|
 | `DIR` | The first project. Without it, the window starts with none. |
-| `FLAGS` | Passed to `rumbo serve`: `-c`, `-s ID`, `-p`, `-m`, `-o name=value`, `-single`, or a first task. |
+| `FLAGS` | Passed to the `rumbo serve` of the first session: `-c`, `-s ID`, `-p`, `-m`, `-o name=value`, or a first task. |
 | `--rumbo PATH` | The rumbo executable, when it is not on `PATH`. |
 
 | Key | Does |
@@ -109,10 +106,12 @@ is cancelled and recorded.
 ## As rumbo's front end
 
 rumbo can start the window itself, as it starts its terminal UI. The window
-then works only in that rumbo's project, and closes with it.
+then works only in that rumbo's project, and closes with it. That rumbo is
+the session it started in; the window starts a rumbo of its own for each
+other session of the project it shows.
 
-It is a rumbo plugin, `gui`, which brings the front end `gui`. With rumbo
-0.9.0 or later, which builds a plugin where it is added, and cargo:
+It is a rumbo plugin, `gui`, which brings the front end `gui`. With a rumbo
+later than 0.9, which builds a plugin where it is added, and cargo:
 
 ```sh
 rumbo plugin add <address of this repository>   # or the path of a copy of it
@@ -131,7 +130,7 @@ that registration is there. Take out the line `command:` under
 set for it is kept. Without plugins, register the binary you built:
 
 ```sh
-rumbo frontend add gui /path/to/rumbo-gui --attached
+rumbo frontend add gui /path/to/rumbo-gui --attached --rumbo '{self}'
 rumbo -f gui "a task"      # or: rumbo system set frontend gui
 ```
 

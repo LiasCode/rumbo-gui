@@ -17,7 +17,9 @@ use crate::protocol::{self, AskParams, CODE_INTERNAL, CODE_INVALID_PARAMS, Cance
 
 /// A function of the provider in progress, called from this window.
 pub(super) struct Talking {
-    /// The id of its invoke request.
+    /// The host whose provider it is of, and the id of its invoke request
+    /// there.
+    pub(super) host: u64,
     pub(super) invoke: i64,
     pub(super) name: String,
 }
@@ -34,7 +36,11 @@ impl Workspace {
             invoke: talking.invoke,
         };
 
-        let said = match self.host.connection.notify(protocol::METHOD_CANCEL, cancel) {
+        let Some(held) = self.held(talking.host) else {
+            return;
+        };
+
+        let said = match held.host.connection.notify(protocol::METHOD_CANCEL, cancel) {
             Err(error) => {
                 Toast::new(format!("The cancel could not reach the host: {error}")).danger()
             }
@@ -48,17 +54,22 @@ impl Workspace {
     /// the host with what they typed, or with an error when they give up.
     pub(super) fn asked(
         &mut self,
+        serial: u64,
         id: i64,
         params: AskParams,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let Some(connection) = self.held(serial).map(|held| held.host.connection.clone()) else {
+            return;
+        };
+
         let Some(talking) = self
             .talking
             .as_ref()
-            .filter(|talking| talking.invoke == params.invoke)
+            .filter(|talking| talking.host == serial && talking.invoke == params.invoke)
         else {
-            let _ = self.host.connection.refuse(
+            let _ = connection.refuse(
                 id,
                 CODE_INVALID_PARAMS,
                 "this front end is not following that function, so it cannot answer for it",
@@ -70,7 +81,6 @@ impl Workspace {
         let name = talking.name.clone();
         let secret = params.secret;
         let field = cx.new(|cx| InputState::new(window, cx).masked(secret));
-        let connection = self.host.connection.clone();
         let workspace = cx.weak_entity();
 
         // The dialog answers once, whichever way it closes.

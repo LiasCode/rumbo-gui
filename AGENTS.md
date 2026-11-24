@@ -24,9 +24,8 @@ must not do. Both live in the rumbo repository.
 - **Nothing opens a file before `--attached` takes descriptors 3 and 4.**
   Whatever opens first can get those numbers.
 - **Known by name only where the window gives it a place.** The sidebar
-  calls the host's `projects`, `sessions`, `open`, `new`, `rename`, and
-  `delete`; the session's menu and the person's messages `rename`,
-  `branch`, `compact`, and `delete`; the details panel `status` and
+  calls the host's `rename`; the session's menu and the person's messages
+  `rename`, `branch`, and `compact`; the details panel `status` and
   `skills`; the picker `use` and `session-set`; and the settings `config`,
   `system-set`, and the functions of the providers; their names are in
   `protocol.rs`. Each is
@@ -40,11 +39,17 @@ must not do. Both live in the rumbo repository.
   a function marked `lists` is there for those values, and is no command.
   A list a function makes may not hold every value a parameter takes, so
   a field can always be typed instead.
-- **One host per project, and one that lists.** A host works only in its
-  project's sessions, so the window starts one for each project it opens
-  and closes it with the project; and one more in the person's home, the
-  catalog's, which only lists every project and its sessions. Nothing reads
-  rumbo's files.
+- **One host per session.** A rumbo host is one session, so the window
+  starts one for each session it opens, with `rumbo serve`, and never asks
+  a host about another session. A workspace holds the hosts of its
+  project's sessions (`src/workspace/hosts.rs`), keeps those that work or
+  that the person has not seen the end of, closes the others past the two
+  shown last, and closes all of them with the project. What no host says,
+  the sessions there are and deleting one, is asked of rumbo's command
+  line, `rumbo sessions -json` and `rumbo sessions rm`, in
+  `src/sessions.rs` alone. Nothing reads rumbo's files. The ids of the
+  requests of every host come from one counter, so one names its request
+  among them all.
 - **The project's files are only read.** The changes panel runs `git` in
   the project's folder on a background thread and never writes there, the
   files panel lists its folders on a background thread too, as each is
@@ -107,8 +112,11 @@ and one sent alone, Escape to cancel, Up and Down in the composer, bringing back
 in another session, a session opened with its history, going back and
 forward between sessions, projects, a new session, and the settings, with
 the toolbar's arrows and with Alt-Left and Alt-Right, and past a session
-deleted, a run left working in another session, a command from Ctrl-P with a form and one with a
-confirmation, a parameter whose values depend on the one before (the models
+deleted, a run left working in another session, each session opened in a
+`rumbo serve` of its own (`pgrep -af "[r]umbo serve"`), the oldest of
+those left unused closed once there are more than two, and its session
+read again when it is shown again, a command from Ctrl-P with a form and
+one with a confirmation, a parameter whose values depend on the one before (the models
 `use` lists for the provider chosen), the model and options picker and a run
 that uses what it chose, a provider's function that asks a secret, given
 up with Escape, a second project opened beside the first with each one's
@@ -122,8 +130,9 @@ kept for the next start, a search that finds a session under a project
 folded, a new session started from the sidebar, which opens the home
 folder whatever project is shown, and Ctrl-N, which starts one in the
 project shown, a
-project closed and listed again, the window with a rumbo that has no
-`projects`, the settings with the theme and the conversation width changed
+project closed and listed again, the window with a rumbo that cannot
+list its sessions (a `--rumbo` that is no rumbo), which says why in the
+sidebar, the settings with the theme and the conversation width changed
 and kept for the next start, the window made bigger and smaller with
 Ctrl-+ and Ctrl--, kept for the next start, and back with Ctrl-0, the
 sidebar searched, dragged wider, and put away with Ctrl-B, a session

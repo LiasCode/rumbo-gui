@@ -80,7 +80,9 @@ impl Workspace {
             offers(protocol::FUNCTION_RENAME),
             offers(protocol::FUNCTION_BRANCH),
             offers(protocol::FUNCTION_COMPACT),
-            offers(protocol::FUNCTION_DELETE),
+            // The window deletes a session itself, with rumbo's command
+            // line, since no host deletes its own.
+            made,
         );
         let exportable = !self.blank
             && self

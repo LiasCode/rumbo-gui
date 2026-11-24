@@ -44,8 +44,12 @@ pub struct Connection {
 struct Shared {
     /// None once the front end closed the connection.
     writer: Mutex<Option<Box<dyn Write + Send>>>,
-    next_id: AtomicI64,
 }
+
+/// The ids of the requests of every connection come from one counter, so
+/// that one names its request among those of all the hosts the window
+/// holds, one for each session it has open.
+static NEXT_ID: AtomicI64 = AtomicI64::new(1);
 
 #[derive(Deserialize)]
 struct Frame {
@@ -92,7 +96,6 @@ impl Connection {
         let connection = Connection {
             shared: Arc::new(Shared {
                 writer: Mutex::new(Some(Box::new(writer))),
-                next_id: AtomicI64::new(1),
             }),
         };
 
@@ -117,7 +120,7 @@ impl Connection {
 
     /// Sends a request and returns its id, which its answer will carry.
     pub fn request(&self, method: &str, params: impl Serialize) -> io::Result<i64> {
-        let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
         self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
 
@@ -325,7 +328,7 @@ mod tests {
 
     fn initialize() -> Json {
         json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocol": 1, "dir": "/project", "session": "4cf0261c",
+            "protocol": 2, "dir": "/project", "session": "4cf0261c",
             "provider": "anthropic", "model": "claude-opus-5-5", "functions": []
         }})
     }
@@ -339,18 +342,18 @@ mod tests {
         assert_eq!(params.provider, "anthropic");
         assert_eq!(
             host.receive(),
-            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 1, "name": "rumbo-gui", "config": {}}})
+            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 2, "name": "rumbo-gui", "config": {}}})
         );
     }
 
     #[test]
     fn refuses_another_protocol_version() {
         let mut frame = initialize();
-        frame["params"]["protocol"] = json!(2);
+        frame["params"]["protocol"] = json!(1);
 
-        let error = connect(frame).err().expect("version 2 was accepted");
+        let error = connect(frame).err().expect("version 1 was accepted");
 
-        assert!(error.to_string().contains("protocol 2"), "{error}");
+        assert!(error.to_string().contains("protocol 1"), "{error}");
     }
 
     #[test]

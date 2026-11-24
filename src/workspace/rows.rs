@@ -223,7 +223,7 @@ impl Workspace {
     fn label(&self, source: Source) -> String {
         match source {
             Source::Host => "[host]".into(),
-            Source::Provider => format!("[provider {}]", self.provider),
+            Source::Provider => format!("[provider {}]", self.provider()),
         }
     }
 }

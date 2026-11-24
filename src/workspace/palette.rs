@@ -20,7 +20,6 @@ use super::form::Field;
 use super::{Feedback, Workspace, WorkspaceEvent};
 use crate::commands::{self, Command};
 use crate::conversation::Source;
-use crate::protocol;
 
 /// One row of the palette.
 #[derive(Clone)]
@@ -85,7 +84,7 @@ impl Workspace {
             })
             .collect();
 
-        if !sessions.is_empty() && self.host_function(protocol::FUNCTION_OPEN).is_some() {
+        if !sessions.is_empty() {
             labels.push("Sessions".to_string());
             sections.push(sessions);
         }
@@ -105,7 +104,7 @@ impl Workspace {
             );
         }
 
-        let provider: Vec<Entry> = match &self.provider_functions {
+        let provider: Vec<Entry> = match &self.provider_functions() {
             Ok(functions) => commands::offered(functions)
                 .map(|function| {
                     Entry::Function(Command {
@@ -119,7 +118,7 @@ impl Workspace {
         };
 
         if !provider.is_empty() {
-            labels.push(format!("Provider {}", self.provider));
+            labels.push(format!("Provider {}", self.provider()));
             sections.push(provider);
         }
 
@@ -198,7 +197,7 @@ impl Workspace {
             })
             .collect();
 
-        let provider_functions = self.provider_functions.clone().unwrap_or_default();
+        let provider_functions = self.provider_functions().unwrap_or_default();
         let form = self.open_form(fields, provider_functions, window, cx);
         let command = Rc::new(command);
         let workspace = cx.weak_entity();
@@ -347,7 +346,7 @@ fn chose_entry(
         Some(Entry::Editor) => cx.emit(WorkspaceEvent::OpenInEditor {
             path: this.dir.clone(),
         }),
-        Some(Entry::Session(id, _, _)) => this.open_session(&id, cx),
+        Some(Entry::Session(id, _, _)) => this.open_session(&id, window, cx),
         Some(Entry::OpenProject) => cx.emit(WorkspaceEvent::OpenProject),
         Some(Entry::OpenSettings) => cx.emit(WorkspaceEvent::OpenSettings),
         Some(Entry::CloseProject) => cx.emit(WorkspaceEvent::CloseProject),

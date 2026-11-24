@@ -16,7 +16,7 @@ use ui::{
     rems_from_px, v_flex,
 };
 
-use super::{CancelRun, Workspace, WorkspaceEvent};
+use super::{CancelRun, Workspace};
 use crate::picture::{self, Picture};
 
 impl Workspace {
@@ -33,8 +33,6 @@ impl Workspace {
         let muted = cx.theme().colors.muted_foreground;
 
         if let Some(ended) = &self.ended {
-            let session = self.current.clone();
-
             return column
                 .items_center()
                 .gap_2()
@@ -53,11 +51,7 @@ impl Workspace {
                         .icon(IconName::RotateCw)
                         .label("Start Again")
                         .tooltip("Start rumbo again in this session")
-                        .on_click(cx.listener(move |_, _, _, cx| {
-                            cx.emit(WorkspaceEvent::StartAgain {
-                                session: session.clone(),
-                            })
-                        })),
+                        .on_click(cx.listener(|this, _, window, cx| this.start_again(window, cx))),
                 )
                 .into_any_element();
         }

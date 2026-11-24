@@ -1,7 +1,9 @@
 //! The window: a toolbar, the projects open in it with their sessions, and
-//! the work of the session shown, or the settings. Each project has a host
-//! of its own, started when the project is opened, whose runs go on while
-//! another project is shown. Closing the window ends every host.
+//! the work of the session shown, or the settings. A host is one session,
+//! so each project has one for each session open in it: the first started
+//! when the project is opened, and the others by its workspace. Their runs
+//! go on while another session or project is shown. Closing the window
+//! ends every host.
 
 mod catalog;
 mod settings;
@@ -30,7 +32,7 @@ use crate::environment::Environment;
 use crate::host::{Descriptors, Host};
 use crate::navigation::Navigation;
 use crate::preferences::{self, Preferences, Theme as Colors};
-use crate::workspace::{Panel, Workspace, WorkspaceEvent};
+use crate::workspace::{Launcher, Panel, Workspace, WorkspaceEvent};
 
 use catalog::Catalog;
 use settings::{SettingsEvent, SettingsView};
@@ -154,8 +156,9 @@ pub enum Start {
     /// It starts `rumbo serve` itself, as the command line asks, in this
     /// environment.
     Desktop(Config, Environment),
-    /// rumbo started it, and gives it the protocol.
-    Attached(Descriptors),
+    /// rumbo started it, and gives it the protocol; the path is the rumbo
+    /// it starts for the other sessions of the project.
+    Attached(Descriptors, PathBuf),
 }
 
 /// What the person prefers, as read at startup.
@@ -218,8 +221,11 @@ pub struct Shell {
     /// What the command line asked for; none when rumbo started the window,
     /// which then works only in the project rumbo gave it.
     config: Option<Config>,
+    /// The rumbo the window starts, as the host of each session it opens,
+    /// and asks for the sessions there are.
+    rumbo: PathBuf,
     /// What the hosts the window starts run in; the window's own when rumbo
-    /// started it, as it then starts none.
+    /// started it.
     environment: Environment,
     projects: Vec<Project>,
     next_id: ProjectId,
@@ -305,6 +311,7 @@ impl Shell {
 
         let mut shell = Shell {
             config: None,
+            rumbo: PathBuf::from("rumbo"),
             environment: Environment::inherited(),
             projects: Vec::new(),
             next_id: 1,
@@ -323,7 +330,10 @@ impl Shell {
         };
 
         match start {
-            Start::Attached(descriptors) => shell.connect(descriptors, window, cx),
+            Start::Attached(descriptors, rumbo) => {
+                shell.rumbo = rumbo;
+                shell.connect(descriptors, window, cx)
+            }
 
             Start::Desktop(config, environment) => {
                 let named = config.dir.clone();
@@ -331,16 +341,14 @@ impl Shell {
                 let rumbo = config.rumbo.clone();
                 let listing = environment.clone();
 
-                let catalog = cx.new(|cx| {
-                    Catalog::start(rumbo, listing, catalog::home(), cx);
-                    Catalog::new()
-                });
+                let catalog = cx.new(|cx| Catalog::new(rumbo.clone(), listing, cx));
 
                 shell
                     ._subscriptions
                     .push(cx.observe(&catalog, |_, _, cx| cx.notify()));
                 shell.catalog = Some(catalog);
                 shell.config = Some(config);
+                shell.rumbo = rumbo;
                 shell.environment = environment;
 
                 match named {
@@ -381,30 +389,21 @@ impl Shell {
 
     fn refresh_catalog(&self, cx: &mut Context<Self>) {
         if let Some(catalog) = &self.catalog {
-            catalog.update(cx, |catalog, _| catalog.refresh());
+            catalog.update(cx, |catalog, cx| catalog.refresh(cx));
         }
     }
 
-    /// The root rumbo lists an open project by: its folder, when that is
-    /// one, or the root its sessions are listed under.
+    /// The root rumbo lists an open project by, which is its folder, once
+    /// it has a session there.
     fn root_of(&self, project: &Project, cx: &App) -> Option<String> {
         let catalog = self.catalog.as_ref()?.read(cx);
         let dir = project.dir.to_string_lossy();
 
-        if let Some(listed) = catalog.projects().iter().find(|listed| listed.value == dir) {
-            return Some(listed.value.clone());
-        }
-
-        let State::Working { workspace, .. } = &project.state else {
-            return None;
-        };
-
-        workspace
-            .read(cx)
-            .sessions()
+        catalog
+            .projects()
             .iter()
-            .find_map(|session| catalog.root_of(&session.value))
-            .map(str::to_string)
+            .find(|listed| listed.value == dir)
+            .map(|listed| listed.value.clone())
     }
 
     /// Opens a project rumbo lists, or shows it when it is open already.
@@ -431,16 +430,10 @@ impl Shell {
             return;
         }
 
-        let base = self
-            .config
-            .as_ref()
-            .map(|config| config.serve_flags.clone())
-            .unwrap_or_default();
-
         let flags = match &opening {
-            Opening::Latest => config::continuing_latest(&base),
-            Opening::Session(session) => config::continuing(&base, session),
-            Opening::New => config::continuing(&base, ""),
+            Opening::Latest => config::continuing_latest(),
+            Opening::Session(session) => config::continuing(session),
+            Opening::New => config::continuing(""),
         };
 
         self.open_project(PathBuf::from(root), flags, Some(opening), window, cx);
@@ -573,8 +566,12 @@ impl Shell {
         let panel_width = self.preferred.preferences.panel_width;
         let dialogs = self.dialogs.clone();
         let toasts = self.toasts.clone();
+        let launcher = Launcher {
+            rumbo: self.rumbo.clone(),
+            environment: self.environment.clone(),
+        };
         let workspace = cx.new(|cx| {
-            let mut workspace = Workspace::new(host, dialogs, toasts, window, cx);
+            let mut workspace = Workspace::new(host, launcher, dialogs, toasts, window, cx);
 
             workspace.set_width(width, cx);
             workspace.set_panel_width(panel_width, cx);
@@ -654,18 +651,6 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         match event {
-            WorkspaceEvent::StartAgain { session } => {
-                if let Some(project) = self.project_mut(id) {
-                    project.flags = config::continuing(&project.flags, session);
-                    project.opening = Some(match session.is_empty() {
-                        true => Opening::New,
-                        false => Opening::Session(session.clone()),
-                    });
-                }
-
-                self.start(id, window, cx);
-            }
-
             WorkspaceEvent::OpenProject => self.choose_folder(window, cx),
 
             WorkspaceEvent::OpenSettings => self.open_settings(&OpenSettings, window, cx),
@@ -814,12 +799,12 @@ impl Shell {
         };
 
         let shown = workspace.read(cx);
-        let follows = shown.current() != session
-            && !shown.has_ended()
-            && shown.offers(crate::protocol::FUNCTION_OPEN);
+        let follows = shown.current() != session || shown.is_blank();
 
         match follows {
-            true => workspace.update(cx, |workspace, cx| workspace.open_session(&session, cx)),
+            true => workspace.update(cx, |workspace, cx| {
+                workspace.open_session(&session, window, cx)
+            }),
             false => self.record(cx),
         }
     }
@@ -834,11 +819,7 @@ impl Shell {
         };
 
         let shown = workspace.read(cx);
-
-        // While no session is shown, the host's current one is new already.
-        let follows = !shown.has_ended()
-            && (shown.is_blank()
-                || (!shown.current().is_empty() && shown.offers(crate::protocol::FUNCTION_NEW)));
+        let follows = shown.is_blank() || shown.has_ended() || !shown.current().is_empty();
 
         match follows {
             true => workspace.update(cx, |workspace, cx| workspace.new_session(window, cx)),
@@ -1133,12 +1114,8 @@ impl Shell {
             let _ = this.update_in(cx, |this, window, cx| match chosen {
                 Ok(Ok(Some(paths))) if !paths.is_empty() => {
                     // What the command line asked for once is not asked
-                    // again in another project; how the person works is.
-                    let flags = this
-                        .config
-                        .as_ref()
-                        .map(|config| config::continuing(&config.serve_flags, ""))
-                        .unwrap_or_default();
+                    // again in another project.
+                    let flags = config::continuing("");
 
                     this.open_project(paths[0].clone(), flags, Some(Opening::New), window, cx);
                 }

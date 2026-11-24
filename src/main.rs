@@ -20,6 +20,7 @@ mod outline;
 mod picture;
 mod preferences;
 mod protocol;
+mod sessions;
 mod shell;
 mod usage;
 mod workspace;
@@ -41,8 +42,8 @@ fn main() {
 
         // Taken before the window opens anything that could get their
         // numbers.
-        Ok(Parsed::Attached) => match Descriptors::take() {
-            Ok(descriptors) => Start::Attached(descriptors),
+        Ok(Parsed::Attached(rumbo)) => match Descriptors::take() {
+            Ok(descriptors) => Start::Attached(descriptors, rumbo),
 
             Err(message) => {
                 eprintln!("rumbo-gui: {message}");

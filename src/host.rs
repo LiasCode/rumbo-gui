@@ -43,7 +43,7 @@ impl Descriptors {
         });
 
         if !pipes {
-            return Err("--attached is for rumbo to start this front end, with the protocol on file descriptors 3 and 4. Register it with `rumbo frontend add gui rumbo-gui --attached`, and run `rumbo -f gui` in a project.".into());
+            return Err("--attached is for rumbo to start this front end, with the protocol on file descriptors 3 and 4. Register it with `rumbo frontend add gui rumbo-gui --attached --rumbo '{self}'`, and run `rumbo -f gui` in a project.".into());
         }
 
         // SAFETY: both descriptors are open pipes, as checked above, which

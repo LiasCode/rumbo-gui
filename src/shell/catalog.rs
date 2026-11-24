@@ -1,116 +1,101 @@
-//! What rumbo holds in every project: the projects that have sessions, and
-//! the sessions of each. A host works in one project, but lists any
-//! project's sessions, so the window starts one only to ask it; it works in
-//! nothing and runs nothing. A host without `projects` lists nothing here.
+//! What rumbo holds in every folder: the projects that have sessions, and
+//! the sessions of each. A host is one session and lists no other, so the
+//! window asks rumbo's command line, `rumbo sessions -json -all`, on a
+//! background thread, and reads none of rumbo's files.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use gpui::{AppContext as _, Context, Task};
-use serde_json::{Value as Json, json};
 
-use crate::commands;
-use crate::connection::Incoming;
-use crate::conversation::Source;
 use crate::environment::Environment;
-use crate::host::Host;
-use crate::protocol::{self, CODE_INVALID_PARAMS, InvokeParams, Value};
-
-/// What a request of the catalog asked.
-enum Asked {
-    Projects,
-    /// The sessions of the project with this root.
-    Sessions(String),
-}
+use crate::protocol::Value;
+use crate::sessions;
 
 pub(super) struct Catalog {
-    host: Option<Host>,
-    pending: HashMap<i64, Asked>,
+    /// The rumbo that lists, and what it runs in.
+    rumbo: PathBuf,
+    environment: Environment,
     /// The projects that have sessions, most recently used first, by root.
     projects: Vec<Value>,
     /// The sessions of each project, by root, in the order they were first
     /// listed, the newest first.
     sessions: HashMap<String, Vec<Value>>,
-    /// Why there is nothing to list: rumbo did not start, or stopped.
+    /// Why there is nothing to list: rumbo did not start, or did not list.
     problem: Option<String>,
-    _reading: Option<Task<()>>,
+    _listing: Option<Task<()>>,
 }
 
 impl Catalog {
-    pub(super) fn new() -> Self {
-        Catalog {
-            host: None,
-            pending: HashMap::new(),
+    pub(super) fn new(rumbo: PathBuf, environment: Environment, cx: &mut Context<Self>) -> Self {
+        let mut catalog = Catalog {
+            rumbo,
+            environment,
             projects: Vec::new(),
             sessions: HashMap::new(),
             problem: None,
-            _reading: None,
-        }
-    }
+            _listing: None,
+        };
 
-    /// Starts the host that lists, in the background. It works in `dir`,
-    /// where it makes nothing until a run, and runs none.
-    pub(super) fn start(
-        rumbo: PathBuf,
-        environment: Environment,
-        dir: PathBuf,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn(async move |this, cx| {
-            let started = cx
-                .background_spawn(async move { Host::start(&rumbo, &dir, &[], &environment) })
-                .await;
-
-            let _ = this.update(cx, |this, cx| match started {
-                Ok(host) => this.attach(host, cx),
-
-                Err(problem) => {
-                    this.problem = Some(problem);
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-    }
-
-    fn attach(&mut self, host: Host, cx: &mut Context<Self>) {
-        let offered = [protocol::FUNCTION_PROJECTS, protocol::FUNCTION_SESSIONS]
-            .iter()
-            .all(|name| {
-                host.initialize
-                    .functions
-                    .iter()
-                    .any(|function| function.name == *name)
-            });
-
-        // An older rumbo cannot list other projects; its host would only
-        // wait.
-        if !offered {
-            host.stop();
-            return;
-        }
-
-        let incoming = host.incoming.clone();
-
-        self._reading = Some(cx.spawn(async move |this, cx| {
-            while let Ok(message) = incoming.recv().await {
-                let closed = matches!(message, Incoming::Closed);
-                let kept = this.update(cx, |this, cx| this.receive(message, cx));
-
-                if kept.is_err() || closed {
-                    break;
-                }
-            }
-        }));
-
-        self.host = Some(host);
-        self.refresh();
+        catalog.refresh(cx);
+        catalog
     }
 
     /// Asks again what rumbo holds, as it can change from anywhere: another
-    /// front end may have made a session.
-    pub(super) fn refresh(&mut self) {
-        self.ask(protocol::FUNCTION_PROJECTS, None, Asked::Projects);
+    /// front end may have made a session. One asked while another is on its
+    /// way takes its place.
+    pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
+        let rumbo = self.rumbo.clone();
+        let environment = self.environment.clone();
+
+        self._listing = Some(cx.spawn(async move |this, cx| {
+            let listed = cx
+                .background_spawn(
+                    async move { sessions::list(&rumbo, &home(), true, &environment) },
+                )
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                this.listed(listed);
+                cx.notify();
+            });
+        }));
+    }
+
+    fn listed(&mut self, listed: Result<Vec<sessions::Listed>, String>) {
+        let listed = match listed {
+            Ok(listed) => listed,
+
+            Err(problem) => {
+                self.problem = Some(problem);
+                return;
+            }
+        };
+
+        let folders = sessions::by_folder(&listed);
+
+        self.problem = None;
+        self.projects = folders
+            .iter()
+            .map(|(root, sessions)| Value {
+                value: root.clone(),
+                label: folder_name(root),
+                description: match sessions.len() {
+                    1 => "1 session".to_string(),
+                    count => format!("{count} sessions"),
+                },
+            })
+            .collect();
+
+        let mut kept = HashMap::new();
+
+        for (root, sessions) in folders {
+            let now = sessions.iter().map(sessions::Listed::value).collect();
+
+            kept.insert(root.clone(), crate::order::kept(self.sessions(&root), now));
+        }
+
+        self.sessions = kept;
     }
 
     pub(super) fn projects(&self) -> &[Value] {
@@ -127,117 +112,93 @@ impl Catalog {
     pub(super) fn problem(&self) -> Option<&str> {
         self.problem.as_deref()
     }
-
-    /// The root of the project a session belongs to, as listed.
-    pub(super) fn root_of(&self, session: &str) -> Option<&str> {
-        self.sessions
-            .iter()
-            .find(|(_, sessions)| sessions.iter().any(|listed| listed.value == session))
-            .map(|(root, _)| root.as_str())
-    }
-
-    fn ask(&mut self, name: &str, params: Option<Json>, asked: Asked) {
-        let Some(host) = &self.host else {
-            return;
-        };
-
-        let sent = host.connection.request(
-            protocol::METHOD_INVOKE,
-            InvokeParams {
-                name: name.into(),
-                params,
-                target: protocol::TARGET_HOST,
-            },
-        );
-
-        if let Ok(id) = sent {
-            self.pending.insert(id, asked);
-        }
-    }
-
-    fn receive(&mut self, message: Incoming, cx: &mut Context<Self>) {
-        match message {
-            Incoming::Answer { id, answer } => {
-                let Some(asked) = self.pending.remove(&id) else {
-                    return;
-                };
-
-                let Ok(answer) = answer else {
-                    return;
-                };
-
-                let (values, _) = commands::listed(Source::Host, answer);
-
-                match asked {
-                    Asked::Projects => {
-                        for project in &values {
-                            let params = json!({ "project": project.value });
-
-                            self.ask(
-                                protocol::FUNCTION_SESSIONS,
-                                Some(params),
-                                Asked::Sessions(project.value.clone()),
-                            );
-                        }
-
-                        self.projects = values;
-                    }
-
-                    Asked::Sessions(root) => {
-                        let kept = crate::order::kept(self.sessions(&root), values);
-
-                        self.sessions.insert(root, kept);
-                    }
-                }
-            }
-
-            // It runs nothing, and follows no function.
-            Incoming::Event(_) => return,
-
-            Incoming::Ask { id, .. } => {
-                if let Some(host) = &self.host {
-                    let _ = host.connection.refuse(
-                        id,
-                        CODE_INVALID_PARAMS,
-                        "this front end is not following that function, so it cannot answer for it",
-                    );
-                }
-
-                return;
-            }
-
-            Incoming::Closed => {
-                let said = self
-                    .host
-                    .take()
-                    .map(|host| host.stderr())
-                    .unwrap_or_default();
-
-                self.problem = Some(if said.is_empty() {
-                    "rumbo stopped listing the projects.".into()
-                } else {
-                    format!("rumbo stopped listing the projects: {said}")
-                });
-            }
-        }
-
-        cx.notify();
-    }
 }
 
-impl Drop for Catalog {
-    fn drop(&mut self) {
-        if let Some(host) = &self.host {
-            host.stop();
-        }
-    }
+/// What a project is called: its folder's name, or its path when it has
+/// none, as the root of the file system.
+fn folder_name(root: &str) -> String {
+    Path::new(root)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| root.to_string())
 }
 
-/// Where the host that lists works: the person's home, or the root of the
-/// file system without one. It makes nothing there until a run.
+/// The person's home, where a session asked for with no project open
+/// starts, and where rumbo is run to list: the root of the file system
+/// without one.
 pub(super) fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|home| home.is_dir())
         .unwrap_or_else(|| Path::new("/").to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listed(session: &str, dir: &str) -> sessions::Listed {
+        sessions::Listed {
+            session: session.into(),
+            dir: dir.into(),
+            ..sessions::Listed::default()
+        }
+    }
+
+    fn catalog() -> Catalog {
+        Catalog {
+            rumbo: PathBuf::from("rumbo"),
+            environment: Environment::inherited(),
+            projects: Vec::new(),
+            sessions: HashMap::new(),
+            problem: None,
+            _listing: None,
+        }
+    }
+
+    fn ids(values: &[Value]) -> Vec<&str> {
+        values.iter().map(|value| value.value.as_str()).collect()
+    }
+
+    #[test]
+    fn lists_the_projects_and_keeps_the_order_of_their_sessions() {
+        let mut catalog = catalog();
+
+        catalog.listed(Ok(vec![
+            listed("b", "/home/me/site"),
+            listed("a", "/home/me/site"),
+        ]));
+
+        assert_eq!(ids(catalog.projects()), ["/home/me/site"]);
+        assert_eq!(catalog.projects()[0].label, "site");
+        assert_eq!(ids(catalog.sessions("/home/me/site")), ["b", "a"]);
+
+        // A run in the older one lists it first; it stays where it was, and
+        // a new one comes first.
+        catalog.listed(Ok(vec![
+            listed("a", "/home/me/site"),
+            listed("c", "/home/me/site"),
+            listed("b", "/home/me/site"),
+            listed("z", "/"),
+        ]));
+
+        assert_eq!(ids(catalog.sessions("/home/me/site")), ["c", "b", "a"]);
+        assert_eq!(catalog.projects()[1].label, "/");
+    }
+
+    #[test]
+    fn says_why_nothing_is_listed_and_keeps_what_was() {
+        let mut catalog = catalog();
+
+        catalog.listed(Ok(vec![listed("a", "/p")]));
+        catalog.listed(Err("rumbo was not found".into()));
+
+        assert_eq!(catalog.problem(), Some("rumbo was not found"));
+        assert_eq!(ids(catalog.projects()), ["/p"]);
+
+        catalog.listed(Ok(Vec::new()));
+
+        assert_eq!(catalog.problem(), None);
+        assert!(catalog.projects().is_empty());
+    }
 }

@@ -6,4 +6,6 @@ build: [cargo, build, --release, --locked]
 
 frontends:
   gui:
-    command: ["{plugin}/target/release/rumbo-gui", --attached]
+    # The window starts a rumbo for each other session of the project, and
+    # is told which one started it.
+    command: ["{plugin}/target/release/rumbo-gui", --attached, --rumbo, "{self}"]

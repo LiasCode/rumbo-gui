@@ -57,7 +57,7 @@ impl Workspace {
 
         let (provider, model) = match &described {
             Ok(described) => (described.provider.clone(), described.model.clone()),
-            Err(_) => (self.provider.clone(), self.model.clone()),
+            Err(_) => (self.provider().to_string(), self.model().to_string()),
         };
 
         let mut fields = Vec::new();

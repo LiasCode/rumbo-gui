@@ -499,9 +499,11 @@ impl Shell {
 
         let current = workspace.current().to_string();
         let blank = workspace.is_blank();
-        let can_open = workspace.offers(protocol::FUNCTION_OPEN);
+        // The workspace opens a session in a host of its own, and deletes
+        // one with rumbo's command line; renaming is the host's to offer.
+        let can_open = true;
         let can_rename = workspace.offers(protocol::FUNCTION_RENAME);
-        let can_delete = workspace.offers(protocol::FUNCTION_DELETE);
+        let can_delete = true;
         let mark = cx.theme().colors.primary;
         let mut sessions = Vec::new();
 
