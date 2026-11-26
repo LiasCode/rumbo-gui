@@ -117,6 +117,14 @@ pub(super) fn render_row(
             ))
             .into_any_element(),
 
+        Kind::Files(files) => row
+            .child(note(
+                IconName::FileText,
+                format!("Files given: {}", files.join(", ")),
+                muted,
+            ))
+            .into_any_element(),
+
         Kind::Log { source, text } => row
             .text_xs()
             .child(

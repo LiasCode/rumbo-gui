@@ -1,4 +1,4 @@
-//! The messages of the Agent Frontend Protocol, version 2, as rumbo specifies
+//! The messages of the Agent Frontend Protocol, version 3, as rumbo specifies
 //! them in `docs/frontend-protocol.md` and its Go package `protocol`. In it
 //! a host is one session, so nothing here names a session to a host.
 //!
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
 /// The protocol version this front end speaks.
-pub const VERSION: i64 = 2;
+pub const VERSION: i64 = 3;
 
 /// The name this front end gives the host.
 pub const NAME: &str = "rumbo-gui";
@@ -123,26 +123,19 @@ pub struct InitializeResult {
     pub config: Json,
 }
 
-/// Starts a run on `objective`, and the images given with it, or continues
+/// Starts a run on `objective`, and the files given with it, or continues
 /// the session's last one. The run uses the model and the options its
 /// session keeps.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RunParams {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub objective: String,
+    /// The paths of the files given with it, where the host runs, which
+    /// the model reads with its tools.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<Image>,
+    pub files: Vec<String>,
     #[serde(skip_serializing_if = "is_false")]
     pub resume: bool,
-}
-
-/// An image the person gave, as the protocol carries one: its media type,
-/// such as `image/png`, and the encoded file in base64.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Image {
-    pub media_type: String,
-    pub data: String,
 }
 
 /// How a run ended.
@@ -154,13 +147,13 @@ pub struct RunResult {
     pub session: String,
 }
 
-/// What the person tells a run while it works, and the images given with it.
+/// What the person tells a run while it works, and the files given with it.
 #[derive(Debug, Clone, Serialize)]
 pub struct SteerParams {
     pub run: i64,
     pub text: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<Image>,
+    pub files: Vec<String>,
 }
 
 /// Names the run to cancel by the id of its run request.
@@ -222,8 +215,9 @@ pub struct Event {
     pub window: i64,
     pub usage: Option<Usage>,
     pub status: String,
-    /// The images given with an objective or a steer, in a history.
-    pub images: Vec<Image>,
+    /// The paths of the files given with an objective or a steer, in a
+    /// history.
+    pub files: Vec<String>,
 }
 
 /// A function of the host or of the provider, which a front end offers
@@ -436,7 +430,7 @@ mod tests {
 
     #[test]
     fn reads_functions_as_the_host_describes_them() {
-        let line = r#"{"protocol":2,"dir":"/p","provider":"anthropic","model":"m","functions":[
+        let line = r#"{"protocol":3,"dir":"/p","provider":"anthropic","model":"m","functions":[
             {"name":"delete","description":"Delete a session","params":[{"name":"session","type":"string","values":"sessions"}],"confirm":"Delete it?","group":"session"},
             {"name":"status","params":[{"name":"session","optional":true}]},
             {"name":"session-values","group":"session","lists":true}]}"#;

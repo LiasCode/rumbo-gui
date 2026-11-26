@@ -62,6 +62,9 @@ pub enum Kind {
     Tool(Tool),
     /// The names of the ambient context sections sent to the model.
     Context(Vec<String>),
+    /// The paths of files given with the message before it that are no
+    /// image the window shows, such as a PDF given from the terminal UI.
+    Files(Vec<String>),
     Log {
         source: Source,
         text: String,
@@ -224,6 +227,16 @@ impl Conversation {
         Change::Inserted(self.items.len() - 1)
     }
 
+    /// Names, after a message, the files given with it that are no image,
+    /// and gives back the message's change.
+    fn name_files(&mut self, others: Vec<String>, change: Change) -> Change {
+        if !others.is_empty() {
+            self.push(Kind::Files(others));
+        }
+
+        change
+    }
+
     /// Shows what the person told a run at once, after everything else,
     /// until the run reads it.
     pub fn wait(&mut self, text: String, images: Vec<Picture>) -> (ItemId, Change) {
@@ -294,18 +307,22 @@ impl Conversation {
             protocol::EVENT_TOOL_FINISHED => self.finish(event),
 
             // A new objective starts a new run, so the one before is over.
+            // Both come only in a history, which shows no change one by one.
             protocol::EVENT_OBJECTIVE => {
                 self.settle();
-                self.push(Kind::Task(
-                    event.text.clone(),
-                    picture::from_all(&event.images),
-                ))
+
+                let (pictures, others) = picture::given(&event.files);
+                let change = self.push(Kind::Task(event.text.clone(), pictures));
+
+                self.name_files(others, change)
             }
 
-            protocol::EVENT_STEER => self.push(Kind::Steer(
-                event.text.clone(),
-                picture::from_all(&event.images),
-            )),
+            protocol::EVENT_STEER => {
+                let (pictures, others) = picture::given(&event.files);
+                let change = self.push(Kind::Steer(event.text.clone(), pictures));
+
+                self.name_files(others, change)
+            }
 
             protocol::EVENT_ENDED => self.end(&event.status, &event.text),
 
@@ -955,16 +972,17 @@ mod tests {
     }
 
     #[test]
-    fn a_history_gives_back_the_images_a_person_gave() {
-        let png = protocol::Image {
-            media_type: "image/png".into(),
-            data: "cG5n".into(),
-        };
+    fn a_history_gives_back_the_files_a_person_gave() {
+        let dir = std::env::temp_dir().join(format!("rumbo-gui-history-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("shot.png").to_string_lossy().into_owned();
+        std::fs::write(&png, b"png").unwrap();
+
         let mut conversation = Conversation::default();
 
         conversation.earlier(&[
-            event(json!({"type": "objective", "text": "what is this?", "images": [png]})),
-            event(json!({"type": "steer", "text": "", "images": [png, png]})),
+            event(json!({"type": "objective", "text": "what is this?", "files": [png, "/srv/plan.pdf"]})),
+            event(json!({"type": "steer", "text": "", "files": [png, png]})),
         ]);
 
         let kinds = kinds(&conversation);
@@ -972,9 +990,12 @@ mod tests {
         assert!(
             matches!(&kinds[0], Kind::Task(text, images) if text == "what is this?" && images.len() == 1)
         );
+        assert_eq!(kinds[1], Kind::Files(vec!["/srv/plan.pdf".into()]));
         assert!(
-            matches!(&kinds[1], Kind::Steer(text, images) if text.is_empty() && images.len() == 2)
+            matches!(&kinds[2], Kind::Steer(text, images) if text.is_empty() && images.len() == 2)
         );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

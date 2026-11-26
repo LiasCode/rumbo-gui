@@ -850,7 +850,7 @@ impl Workspace {
                     Some((text, images, true)) => this.start(
                         RunParams {
                             objective: text.clone(),
-                            images: images.iter().map(picture::to_protocol).collect(),
+                            files: picture::paths(&images),
                             ..RunParams::default()
                         },
                         text,
@@ -968,7 +968,7 @@ impl Workspace {
             .update(cx, |state, cx| state.set_value("", window, cx));
 
         let images = std::mem::take(&mut self.pasted);
-        let sent = images.iter().map(picture::to_protocol).collect();
+        let sent = picture::paths(&images);
         let current = self.current.clone();
 
         match self.view(&current, cx).run {
@@ -988,7 +988,7 @@ impl Workspace {
                 let params = SteerParams {
                     run,
                     text,
-                    images: sent,
+                    files: sent,
                 };
 
                 if self
@@ -1004,7 +1004,7 @@ impl Workspace {
             None => self.start(
                 RunParams {
                     objective: text.clone(),
-                    images: sent,
+                    files: sent,
                     ..RunParams::default()
                 },
                 text,
@@ -1569,6 +1569,20 @@ impl Workspace {
 
     /// Puts what a session held before the window opened it in its view.
     fn told(&mut self, session: &str, events: &[Event], cx: &mut Context<Self>) {
+        // A file given by a relative path is in the session's directory.
+        let events: Vec<Event> = events
+            .iter()
+            .cloned()
+            .map(|mut event| {
+                event.files = event
+                    .files
+                    .iter()
+                    .map(|file| picture::in_dir(&self.dir, file))
+                    .collect();
+                event
+            })
+            .collect();
+        let events = events.as_slice();
         let view = self.view(session, cx);
         view.conversation.earlier(events);
 

@@ -142,8 +142,10 @@ steer, and provider mean what rumbo's `docs/glossary.md` says.
   shown; the window ends with the rumbo that started it. The
   composer starts with what the host recalls of the project's sessions,
   and keeps the images pasted into it, which go with what is sent next;
-  **picture** (`src/picture.rs`) carries them between the clipboard, the
-  protocol, and the conversation, which shows them. The
+  **picture** (`src/picture.rs`) saves each in a file of the window's, gives
+  a run its path, and reads back the images a history names by theirs, so
+  the conversation shows them; a file given that is no image, as one the
+  terminal UI gave, is named. The
   model and the options belong to the session, which keeps them: the picker
   changes them with the host's `use` and `session-set`, and every run
   gets what its session has. The workspace follows the function of a

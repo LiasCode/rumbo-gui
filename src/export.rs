@@ -56,6 +56,10 @@ pub fn markdown(title: &str, items: &[Item]) -> String {
                 out.push_str(&format!("_Context sent: {}_\n", sections.join(", ")));
             }
 
+            Kind::Files(files) => {
+                out.push_str(&format!("_Files given: {}_\n", files.join(", ")));
+            }
+
             Kind::Log { source, text } => {
                 let from = match source {
                     Source::Host => "host",
@@ -198,10 +202,10 @@ mod tests {
 
     #[test]
     fn names_the_images_a_person_gave() {
-        let png = Picture::new(gpui::Image::from_bytes(
-            gpui::ImageFormat::Png,
-            b"png".to_vec(),
-        ));
+        let png = Picture::new(
+            gpui::Image::from_bytes(gpui::ImageFormat::Png, b"png".to_vec()),
+            "/tmp/pasted.png".into(),
+        );
         let items = [item(Kind::Task("What is this?".into(), vec![png]))];
 
         assert_eq!(

@@ -56,14 +56,17 @@ must not do. Both live in the rumbo repository.
 - **The project's files are only read.** The changes panel runs `git` in
   the project's folder on a background thread and never writes there, the
   files panel lists its folders on a background thread too, as each is
-  opened, and reads the file it shows there as well, and a reply's images
-  are read from the paths it names; the window edits no file of the
-  person's.
+  opened, and reads the file it shows there as well, and a reply's images,
+  and those a history says were given, are read from the paths they name;
+  the window edits no file of the person's.
 - **An image of the web shows only once the person asks.** A reply's
   image could carry what the model read to whoever serves it, so nothing
   is fetched until its Show is pressed.
 - **The window keeps only its preferences**, in `preferences.rs`'s file,
-  read once at startup. Anything rumbo can keep, rumbo keeps.
+  read once at startup, and the images pasted into the composer, in
+  `~/.cache/rumbo-gui/pasted/` (`picture.rs`), since a run is given a file
+  by its path and a pasted image has none. Anything rumbo can keep, rumbo
+  keeps.
 - **The window draws with `crates/ui`.** Its views use GPUI and the
   components of `crates/ui`, and nothing else draws; what a view needs
   that no component has becomes one there.

@@ -347,7 +347,7 @@ mod tests {
 
     fn initialize() -> Json {
         json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocol": 2, "dir": "/project", "session": "4cf0261c",
+            "protocol": 3, "dir": "/project", "session": "4cf0261c",
             "provider": "anthropic", "model": "claude-opus-5-5", "functions": []
         }})
     }
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(params.provider, "anthropic");
         assert_eq!(
             host.receive(),
-            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 2, "name": "rumbo-gui", "config": {}}})
+            json!({"jsonrpc": "2.0", "id": 1, "result": {"protocol": 3, "name": "rumbo-gui", "config": {}}})
         );
     }
 

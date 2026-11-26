@@ -17,7 +17,7 @@ use ui::{
 };
 
 use super::{CancelRun, Workspace};
-use crate::picture::{self, Picture};
+use crate::picture;
 
 impl Workspace {
     pub(super) fn render_composer(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -237,7 +237,30 @@ impl Workspace {
             self.toast(Toast::new(said).danger(), cx);
         }
 
-        self.pasted.extend(taken.into_iter().map(Picture::new));
+        // A run is given a file by its path, so the image is saved first.
+        let Some(dir) = picture::pasted_dir(
+            std::env::var_os("XDG_CACHE_HOME").map(Into::into),
+            std::env::var_os("HOME").map(Into::into),
+        ) else {
+            self.toast(
+                Toast::new("There is no folder to keep the pasted image in: HOME is not set")
+                    .danger(),
+                cx,
+            );
+
+            return true;
+        };
+
+        for image in taken {
+            match picture::keep(image, &dir) {
+                Ok(kept) => self.pasted.push(kept),
+                Err(error) => self.toast(
+                    Toast::new(format!("The pasted image was not kept: {error}")).danger(),
+                    cx,
+                ),
+            }
+        }
+
         cx.notify();
 
         true

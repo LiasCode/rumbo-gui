@@ -68,10 +68,10 @@ install -Dm644 rumbo-gui.desktop ~/.local/share/applications/rumbo-gui.desktop
 
 Or have rumbo build it, as a plugin: see [As rumbo's front end](#as-rumbos-front-end).
 
-rumbo must be installed apart: a version later than 0.9, where a rumbo is
-one session and speaks version 2 of the front end protocol, and whose
-`rumbo sessions -json` lists the sessions. An earlier one is refused when
-the window starts it, saying so.
+rumbo must be installed apart: 0.12.0 or later, which speaks version 3 of
+the front end protocol, where a person gives files by their paths, and
+whose `rumbo sessions -json` lists the sessions. Another one is refused
+when the window starts it, saying so.
 
 ## Use
 
